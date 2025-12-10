@@ -373,6 +373,99 @@ static void espnow_rx_task(void *pvParameters)
 
 ---
 
+## Remote Slave Configuration
+
+### The Problem
+
+With BAP cables, each slave retains WiFi connectivity and its own web UI. Users can:
+- Click slave IP in master dashboard → Opens slave web UI
+- Adjust frequency, voltage, fan settings directly
+- View logs, perform OTA updates
+
+With ESP-NOW as primary transport, slaves may not have web access (especially if WiFi is dedicated to ESP-NOW channel). We need a way to manage slaves remotely from the master.
+
+### Solution: Remote Configuration Protocol
+
+New message types for remote configuration:
+
+| Message | Direction | Purpose |
+|---------|-----------|---------|
+| `$CLGET` | Master → Slave | Get setting value |
+| `$CLSET` | Master → Slave | Set setting value |
+| `$CLCFG` | Master → Slave | Get full config snapshot |
+| `$CLCMD` | Master → Slave | Execute command (restart, etc.) |
+| `$CLCFR` | Slave → Master | Config response |
+| `$CLSTR` | Slave → Master | Setting response |
+
+### Configurable Settings
+
+**Mining Settings (Read/Write):**
+- Frequency (MHz)
+- Core Voltage (mV)
+- Fan Speed (%)
+- Fan Mode (Auto/Manual)
+- Target Temperature
+
+**System Settings (Read-Only):**
+- Hostname
+- Device Model
+- Firmware Version
+- Uptime
+- Hashrate, Power, Efficiency
+
+### Master Web UI - Slave Configuration Panel
+
+The master's cluster page will have an expandable panel for each slave:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Slave #1: bitaxe-001                    [Active] [-45 dBm]  │
+├─────────────────────────────────────────────────────────────┤
+│ Hashrate: 425 GH/s    Temp: 52°C    Power: 12.3W           │
+│                                                             │
+│ [▼ Configure]                                               │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ Frequency:    [550] MHz    [Apply]                      │ │
+│ │ Voltage:      [1200] mV    [Apply]                      │ │
+│ │ Fan Speed:    [====●====] 65%  [Auto ▼]                 │ │
+│ │ Target Temp:  [55] °C                                   │ │
+│ │                                                         │ │
+│ │ [Restart] [Identify] [View Logs]                        │ │
+│ └─────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Master API Endpoints
+
+```
+GET /api/cluster/slave/{id}/config
+    Returns full configuration snapshot for slave
+
+GET /api/cluster/slave/{id}/setting/{setting_id}
+    Returns specific setting value
+
+POST /api/cluster/slave/{id}/setting
+    Body: { "setting_id": 0x20, "value": 575 }
+    Sets a setting on the slave
+
+POST /api/cluster/slave/{id}/command
+    Body: { "command": "restart" }
+    Executes command on slave
+
+POST /api/cluster/slaves/setting
+    Body: { "setting_id": 0x20, "value": 550 }
+    Sets setting on ALL slaves (bulk operation)
+```
+
+### Example: Change Frequency on All Slaves
+
+```bash
+# Set all slaves to 550 MHz
+curl -X POST http://master-ip/api/cluster/slaves/setting \
+  -H "Content-Type: application/json" \
+  -d '{"setting_id": 32, "value": 550}'
+```
+
 ## Web UI Changes
 
 ### New Settings Section
