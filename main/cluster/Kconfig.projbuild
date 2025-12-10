@@ -1,0 +1,85 @@
+menu "Clusteraxe Configuration"
+
+    config CLUSTER_MODE_MASTER
+        bool "Build as Cluster Master"
+        default n
+        help
+            Enable cluster master mode. The master maintains the pool connection
+            and distributes work to slave devices via BAP UART.
+
+            Only one device in a cluster should be configured as master.
+
+    config CLUSTER_MODE_SLAVE
+        bool "Build as Cluster Slave"
+        default n
+        depends on !CLUSTER_MODE_MASTER
+        help
+            Enable cluster slave mode. The slave receives work from the master
+            and reports found shares back to the master.
+
+            In slave mode, the device does not connect to the mining pool directly.
+
+    config CLUSTER_MAX_SLAVES
+        int "Maximum number of slaves"
+        default 8
+        range 1 16
+        depends on CLUSTER_MODE_MASTER
+        help
+            Maximum number of slave devices that can connect to this master.
+            UART bandwidth limits practical clusters to ~8 slaves at 115200 baud.
+
+    config CLUSTER_WORK_QUEUE_SIZE
+        int "Work queue depth per slave"
+        default 4
+        range 1 16
+        depends on CLUSTER_MODE_MASTER
+        help
+            Number of pending work items per slave. Higher values provide
+            more buffer for work distribution but use more memory.
+
+    config CLUSTER_SHARE_QUEUE_SIZE
+        int "Share queue depth"
+        default 16
+        range 4 64
+        help
+            Number of pending shares that can be queued. Higher values
+            prevent share loss during bursts but use more memory.
+
+    config CLUSTER_HEARTBEAT_MS
+        int "Heartbeat interval (ms)"
+        default 3000
+        range 1000 10000
+        help
+            Interval in milliseconds between slave heartbeat messages.
+            Lower values detect disconnections faster but increase UART traffic.
+
+    config CLUSTER_TIMEOUT_MS
+        int "Slave timeout (ms)"
+        default 10000
+        range 5000 60000
+        depends on CLUSTER_MODE_MASTER
+        help
+            Time in milliseconds after which a slave is considered disconnected
+            if no heartbeat is received.
+
+    config CLUSTER_DEBUG_LOGGING
+        bool "Enable debug logging"
+        default n
+        help
+            Enable verbose debug logging for cluster operations.
+            Warning: This generates significant log output.
+
+    config CLUSTER_STATS_ENABLED
+        bool "Enable statistics tracking"
+        default y
+        help
+            Track per-slave statistics including hashrate, shares, and temperature.
+
+    config CLUSTER_WEB_API_ENABLED
+        bool "Enable cluster web API"
+        default y
+        help
+            Enable REST API endpoints for cluster status and configuration.
+            Endpoints: /api/cluster/status, /api/cluster/slaves
+
+endmenu
