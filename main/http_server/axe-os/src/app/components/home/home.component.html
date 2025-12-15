@@ -29,11 +29,55 @@
         text="Today is your lucky day! Your device has found a block 🎉">
     </p-message>
 
+    <!-- Cluster Summary (Master Mode Only) -->
+    <ng-container *ngIf="clusterStatus$ | async as clusterStatus">
+        <div class="grid mb-3" *ngIf="clusterStatus.mode === 1">
+            <div class="col-12">
+                <div class="surface-card border-round p-3 mb-2">
+                    <div class="flex align-items-center gap-2 mb-3">
+                        <i class="pi pi-share-alt text-primary text-xl"></i>
+                        <span class="text-xl font-bold">Cluster Dashboard</span>
+                        <span class="text-500 text-sm ml-2">(Master Mode)</span>
+                    </div>
+                    <div class="grid">
+                        <div class="col-6 md:col-3">
+                            <div class="text-center">
+                                <div class="text-500 text-sm mb-1">Active Slaves</div>
+                                <div class="text-2xl font-bold text-primary">{{clusterStatus.activeSlaves || 0}}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 md:col-3">
+                            <div class="text-center">
+                                <div class="text-500 text-sm mb-1">Cluster Hashrate</div>
+                                <div class="text-2xl font-bold text-green-500">{{formatClusterHashrate(getClusterTotalHashrate(clusterStatus, info.hashRate))}}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 md:col-3">
+                            <div class="text-center">
+                                <div class="text-500 text-sm mb-1">Cluster Shares</div>
+                                <div class="text-2xl font-bold text-green-500">{{getClusterTotalShares(clusterStatus, info.sharesAccepted) | number:'1.0-0'}}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 md:col-3">
+                            <div class="text-center">
+                                <div class="text-500 text-sm mb-1">Cluster Power</div>
+                                <div class="text-2xl font-bold">{{getTotalClusterPower(clusterStatus, info.power) | number:'1.1-1'}} W</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </ng-container>
+
     <div class="grid">
         <div class="col-12 md:col-6 xl:col-3">
             <div class="card mb-0">
                 <div class="flex flex-column justify-content-between">
-                    <span class="block text-lg font-medium mb-3">Hashrate</span>
+                    <span class="block text-lg font-medium mb-3">
+                        <ng-container *ngIf="isMasterMode">Device Hashrate</ng-container>
+                        <ng-container *ngIf="!isMasterMode">Hashrate</ng-container>
+                    </span>
 
                     <ng-container *ngIf="!info.power_fault; else powerFault">
                         <div class="flex align-items-center justify-content-between gap-2 mb-3">
@@ -147,7 +191,10 @@
             <div class="card mb-0">
                 <div class="flex justify-content-between mb-3">
                     <div>
-                        <span class="block text-lg font-medium mb-3">Shares</span>
+                        <span class="block text-lg font-medium mb-3">
+                            <ng-container *ngIf="isMasterMode">Device Shares</ng-container>
+                            <ng-container *ngIf="!isMasterMode">Shares</ng-container>
+                        </span>
                         <!-- Standard shares display (Failover mode) -->
                         <div *ngIf="!isDualPoolMode(info)" class="text-900 font-medium text-2xl">
                             {{info.sharesAccepted | number: '1.0-0'}}
@@ -679,6 +726,81 @@
             </div>
         </div>
     </div>
+
+    <!-- Connected Slaves List (Master Mode Only) -->
+    <ng-container *ngIf="clusterStatus$ | async as clusterStatus">
+        <div class="card mt-3" *ngIf="clusterStatus.mode === 1 && clusterStatus.slaves && clusterStatus.slaves.length > 0">
+            <div class="flex justify-content-between align-items-center mb-3">
+                <h4 class="m-0">
+                    <i class="pi pi-users mr-2"></i>
+                    Connected Slaves ({{clusterStatus.slaves.length}})
+                </h4>
+                <a routerLink="/cluster" class="text-primary text-sm cursor-pointer">
+                    <i class="pi pi-cog mr-1"></i>Manage
+                </a>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead>
+                        <tr class="text-500 text-sm">
+                            <th class="text-left p-2">Device</th>
+                            <th class="text-center p-2">Hashrate</th>
+                            <th class="text-center p-2">Temp</th>
+                            <th class="text-center p-2">Power</th>
+                            <th class="text-center p-2">Shares</th>
+                            <th class="text-center p-2">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr *ngFor="let slave of clusterStatus.slaves" class="border-top-1 surface-border">
+                            <td class="p-2">
+                                <div class="flex align-items-center gap-2">
+                                    <i class="pi {{getSlaveStateIcon(slave.state)}}"
+                                       [ngClass]="clusterService.getSlaveStateClass(slave.state)"></i>
+                                    <div>
+                                        <div class="font-medium">{{slave.hostname}}</div>
+                                        <div class="text-500 text-xs">{{slave.ipAddr || 'ESP-NOW'}}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="text-center p-2">
+                                <span class="text-green-500 font-medium">{{formatClusterHashrate(slave.hashrate)}}</span>
+                            </td>
+                            <td class="text-center p-2">
+                                <span [ngClass]="{'text-red-500': slave.temperature >= 70}">
+                                    {{slave.temperature | number:'1.1-1'}}&deg;C
+                                </span>
+                            </td>
+                            <td class="text-center p-2">
+                                {{slave.power | number:'1.1-1'}} W
+                            </td>
+                            <td class="text-center p-2">
+                                <span class="text-green-500">{{slave.sharesAccepted}}</span>
+                                <span class="text-400">/</span>
+                                <span class="text-red-500">{{slave.sharesSubmitted - slave.sharesAccepted}}</span>
+                            </td>
+                            <td class="text-center p-2">
+                                <span class="text-xs px-2 py-1 border-round"
+                                      [ngClass]="clusterService.getSlaveStateClass(slave.state)">
+                                    {{clusterService.getSlaveStateLabel(slave.state)}}
+                                </span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- No slaves connected message -->
+        <div class="card mt-3" *ngIf="clusterStatus.mode === 1 && (!clusterStatus.slaves || clusterStatus.slaves.length === 0)">
+            <div class="text-center py-4">
+                <i class="pi pi-users text-3xl text-500 mb-2"></i>
+                <p class="text-500 m-0">No slaves connected</p>
+                <p class="text-400 text-sm mt-1">Waiting for slave devices to register via ESP-NOW...</p>
+            </div>
+        </div>
+    </ng-container>
 
     <app-confetti *ngIf="info.blockFound"></app-confetti>
 </ng-container>

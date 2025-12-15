@@ -87,10 +87,12 @@ typedef enum {
  * @brief Mining work unit distributed to slaves
  */
 typedef struct {
+    uint8_t  target_slave_id;           // Which slave this work is for (for broadcast filtering)
     uint32_t job_id;                    // Unique job identifier
     uint8_t  prev_block_hash[32];       // Previous block hash
     uint8_t  merkle_root[32];           // Merkle root (or coinbase for construction)
     uint32_t version;                   // Block version
+    uint32_t version_mask;              // Version rolling mask (for AsicBoost)
     uint32_t nbits;                     // Difficulty target (compact)
     uint32_t ntime;                     // Block timestamp
     uint32_t nonce_start;               // Start of assigned nonce range
@@ -99,6 +101,11 @@ typedef struct {
     uint8_t  extranonce2_len;           // Length of extranonce2
     bool     clean_jobs;                // Clear pending work flag
     int64_t  timestamp;                 // When work was distributed
+    uint32_t pool_diff;                 // Pool difficulty requirement
+    // Display info for slave UI
+    uint32_t block_height;              // Current block height
+    char     scriptsig[32];             // Pool tag from coinbase (truncated)
+    char     network_diff_str[16];      // Network difficulty string for display
 } cluster_work_t;
 
 /**
@@ -123,6 +130,7 @@ typedef struct {
     slave_state_t   state;              // Connection state
     char            hostname[32];       // Slave hostname/identifier
     char            ip_addr[16];        // Slave IP address (xxx.xxx.xxx.xxx)
+    uint8_t         mac_addr[6];        // ESP-NOW MAC address
     uint32_t        hashrate;           // Last reported hashrate (GH/s * 100)
     uint32_t        shares_submitted;   // Total shares submitted by slave
     uint32_t        shares_accepted;    // Shares accepted by pool
@@ -359,8 +367,12 @@ esp_err_t cluster_slave_handle_ack(uint8_t assigned_id, const char *hostname);
 
 /**
  * @brief Called by ASIC driver when a share is found in slave mode
+ * @param nonce The winning nonce
+ * @param job_id Numeric job ID
+ * @param version The actual rolled version bits from ASIC
+ * @param ntime The ntime value (may be rolled)
  */
-void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id);
+void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t version, uint32_t ntime);
 
 #endif // CLUSTER_ENABLED
 

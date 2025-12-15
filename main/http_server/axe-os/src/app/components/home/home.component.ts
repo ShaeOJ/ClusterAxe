@@ -1,5 +1,5 @@
 import { Component, OnInit, ViewChild, Input, OnDestroy } from '@angular/core';
-import { interval, map, Observable, shareReplay, startWith, Subscription, switchMap, tap, first, Subject, takeUntil } from 'rxjs';
+import { interval, map, Observable, shareReplay, startWith, Subscription, switchMap, tap, first, Subject, takeUntil, combineLatest, catchError, of } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ToastrService } from 'ngx-toastr';
@@ -11,6 +11,7 @@ import { ShareRejectionExplanationService } from 'src/app/services/share-rejecti
 import { LoadingService } from 'src/app/services/loading.service';
 import { SystemService } from 'src/app/services/system.service';
 import { ThemeService } from 'src/app/services/theme.service';
+import { ClusterService, IClusterStatus, IClusterSlave } from 'src/app/services/cluster.service';
 import { ISystemInfo } from 'src/models/ISystemInfo';
 import { ISystemStatistics } from 'src/models/ISystemStatistics';
 import { Title } from '@angular/platform-browser';
@@ -53,6 +54,11 @@ export class HomeComponent implements OnInit, OnDestroy {
   public info$!: Observable<ISystemInfo>;
   public stats$!: Observable<ISystemStatistics>;
   public pools$!: Observable<SelectItem<PoolLabel>[]>;
+
+  // Cluster integration
+  public clusterStatus$!: Observable<IClusterStatus | null>;
+  public isMasterMode: boolean = false;
+  public clusterHashrateData: number[] = [];
 
   public chartOptions: any;
   public dataLabel: number[] = [];
@@ -108,9 +114,33 @@ export class HomeComponent implements OnInit, OnDestroy {
     private loadingService: LoadingService,
     private toastr: ToastrService,
     private shareRejectReasonsService: ShareRejectionExplanationService,
-    private storageService: LocalStorageService
+    private storageService: LocalStorageService,
+    public clusterService: ClusterService
   ) {
     this.initializeChart();
+    this.initClusterStatus();
+  }
+
+  private initClusterStatus(): void {
+    this.clusterStatus$ = interval(5000).pipe(
+      startWith(0),
+      switchMap(() => this.clusterService.getStatus().pipe(
+        catchError(() => of(null))
+      )),
+      tap(status => {
+        if (status) {
+          this.isMasterMode = status.mode === 1;
+          // Track cluster hashrate for graph
+          if (this.isMasterMode && status.totalHashrate !== undefined) {
+            this.clusterHashrateData.push(status.totalHashrate);
+            if (this.clusterHashrateData.length > 720) {
+              this.clusterHashrateData.shift();
+            }
+          }
+        }
+      }),
+      shareReplay({ refCount: true, bufferSize: 1 })
+    );
   }
 
   ngOnInit(): void {
@@ -373,7 +403,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   private isHashrateAxis(label: eChartLabel | undefined) {
-    return label == eChartLabel.hashrate || label == eChartLabel.hashrate_1m || label == eChartLabel.hashrate_10m || label == eChartLabel.hashrate_1h;
+    return label == eChartLabel.hashrate || label == eChartLabel.hashrate_1m || label == eChartLabel.hashrate_10m || label == eChartLabel.hashrate_1h || label == eChartLabel.clusterHashrate;
   }
 
   private startGetLiveData()
@@ -406,8 +436,12 @@ export class HomeComponent implements OnInit, OnDestroy {
           this.dataLabel.push(new Date().getTime());
           this.hashrateData.push(info.hashRate);
           this.powerData.push(info.power);
-          this.chartY1Data.push(HomeComponent.getDataForLabel(chartY1DataLabel, info));
-          this.chartY2Data.push(HomeComponent.getDataForLabel(chartY2DataLabel, info));
+          // Get latest cluster hashrate for chart if available
+          const latestClusterHashrate = this.clusterHashrateData.length > 0
+            ? this.clusterHashrateData[this.clusterHashrateData.length - 1]
+            : undefined;
+          this.chartY1Data.push(HomeComponent.getDataForLabel(chartY1DataLabel, info, latestClusterHashrate));
+          this.chartY2Data.push(HomeComponent.getDataForLabel(chartY2DataLabel, info, latestClusterHashrate));
 
           this.limitDataPoints();
 
@@ -613,7 +647,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     updateMessage(!info.frequency || info.frequency < 400, 'FREQUENCY_LOW', 'warn', 'Device frequency is set low - See settings');
     updateMessage(info.isUsingFallbackStratum && !this.isDualPoolMode(info), 'FALLBACK_STRATUM', 'warn', 'Using fallback pool - Share stats reset. Check Pool Settings and / or reboot Device.');
     updateMessage(this.isDualPoolMode(info), 'DUAL_POOL_MODE', 'info', `Dual Pool Mode: ${info.poolBalance}% Primary / ${100 - (info.poolBalance ?? 50)}% Secondary${info.secondaryPoolConnected ? '' : ' (Secondary disconnected)'}`);
-    updateMessage(info.version !== info.axeOSVersion, 'VERSION_MISMATCH', 'warn', `Firmware (${info.version}) and AxeOS (${info.axeOSVersion}) versions do not match. Please make sure to update both www.bin and esp-miner.bin.`);
+    updateMessage(info.version !== info.axeOSVersion, 'VERSION_MISMATCH', 'warn', `Firmware (${info.version}) and ClusterAxe UI (${info.axeOSVersion}) versions do not match. Please update firmware.`);
   }
 
   private calculateEfficiency(info: ISystemInfo, key: 'hashRate' | 'expectedHashrate'): number {
@@ -717,6 +751,7 @@ export class HomeComponent implements OnInit, OnDestroy {
       case eChartLabel.hashrate_1m:
       case eChartLabel.hashrate_10m:
       case eChartLabel.hashrate_1h:      return info.expectedHashrate;
+      case eChartLabel.clusterHashrate:  return info.expectedHashrate * 10; // Cluster can have many devices
       case eChartLabel.errorPercentage:  return 1;
       case eChartLabel.asicTemp:         return this.maxTemp;
       case eChartLabel.vrTemp:           return this.maxTemp + 25;
@@ -731,12 +766,13 @@ export class HomeComponent implements OnInit, OnDestroy {
     }
   }
 
-  static getDataForLabel(label: eChartLabel | undefined, info: ISystemInfo): number {
+  static getDataForLabel(label: eChartLabel | undefined, info: ISystemInfo, clusterHashrate?: number): number {
     switch (label) {
       case eChartLabel.hashrate:           return info.hashRate;
       case eChartLabel.hashrate_1m:        return info.hashRate_1m;
       case eChartLabel.hashrate_10m:       return info.hashRate_10m;
       case eChartLabel.hashrate_1h:        return info.hashRate_1h;
+      case eChartLabel.clusterHashrate:    return clusterHashrate !== undefined ? clusterHashrate / 100 : info.hashRate;
       case eChartLabel.errorPercentage:    return info.errorPercentage;
       case eChartLabel.asicTemp:           return info.temp;
       case eChartLabel.vrTemp:             return info.vrTemp;
@@ -788,6 +824,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   dataSourceLabels(info: ISystemInfo) {
     return Object.entries(eChartLabel)
       .filter(([key, ]) => key !== 'vrTemp' || info.vrTemp)
+      .filter(([key, ]) => key !== 'clusterHashrate' || this.isMasterMode)
       .map(([key, value]) => ({name: value, value: key}));
   }
 
@@ -900,5 +937,62 @@ export class HomeComponent implements OnInit, OnDestroy {
     }
 
     return columns;
+  }
+
+  // ========================================================================
+  // Cluster Integration Methods
+  // ========================================================================
+
+  public formatClusterHashrate(hashrate: number | undefined): string {
+    if (hashrate === undefined) return '--';
+    // Cluster hashrate is in GH/s * 100, so divide by 100
+    const gh = hashrate / 100;
+    if (gh >= 1000) {
+      return (gh / 1000).toFixed(2) + ' TH/s';
+    }
+    return gh.toFixed(2) + ' GH/s';
+  }
+
+  public getClusterTotalHashrate(status: IClusterStatus | null, deviceHashrate: number): number {
+    if (!status || status.mode !== 1) return deviceHashrate;
+    // Add device hashrate (in GH/s) to cluster hashrate (in GH/s * 100)
+    // Convert device hashrate to same scale as cluster
+    const deviceInClusterScale = deviceHashrate * 100;
+    return (status.totalHashrate || 0) + deviceInClusterScale;
+  }
+
+  public getClusterTotalShares(status: IClusterStatus | null, deviceShares: number): number {
+    if (!status || status.mode !== 1) return deviceShares;
+    return (status.totalSharesAccepted || 0) + deviceShares;
+  }
+
+  public getClusterTotalRejected(status: IClusterStatus | null, deviceRejected: number): number {
+    if (!status || status.mode !== 1) return deviceRejected;
+    return (status.totalSharesRejected || 0) + deviceRejected;
+  }
+
+  public getTotalClusterPower(status: IClusterStatus | null, devicePower: number): number {
+    if (!status || !status.slaves) return devicePower;
+    const slavePower = status.slaves.reduce((sum, slave) => sum + (slave.power || 0), 0);
+    return slavePower + devicePower;
+  }
+
+  public getSlaveStateIcon(state: number): string {
+    switch (state) {
+      case 0: return 'pi-times-circle';
+      case 1: return 'pi-spin pi-spinner';
+      case 2: return 'pi-check-circle';
+      case 3: return 'pi-exclamation-triangle';
+      default: return 'pi-question-circle';
+    }
+  }
+
+  public formatLastSeen(timestamp: number): string {
+    const now = Date.now();
+    const diff = now - timestamp;
+    if (diff < 1000) return 'Just now';
+    if (diff < 60000) return Math.floor(diff / 1000) + 's ago';
+    if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+    return Math.floor(diff / 3600000) + 'h ago';
   }
 }

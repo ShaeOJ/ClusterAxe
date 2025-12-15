@@ -48,6 +48,7 @@ SRCS
     "./cluster/cluster_master.c"
     "./cluster/cluster_slave.c"
     "./cluster/cluster_integration.c"
+    "./cluster/cluster_espnow.c"
 
 INCLUDE_DIRS
     "."

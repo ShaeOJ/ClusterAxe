@@ -8,6 +8,7 @@ export interface IClusterSlave {
   slaveId: number;
   hostname: string;
   ipAddr: string;
+  macAddr?: string;
   state: number;
   hashrate: number;
   temperature: number;
@@ -20,12 +21,52 @@ export interface IClusterSlave {
   coreVoltage: number;
   power: number;
   voltageIn: number;
+  // ESP-NOW specific
+  rssi?: number;
+}
+
+export interface ISlaveConfig {
+  hostname: string;
+  deviceModel: string;
+  fwVersion: string;
+  uptime: number;
+  freeHeap: number;
+  frequency: number;
+  coreVoltage: number;
+  fanSpeed: number;
+  fanMode: number;
+  targetTemp: number;
+  hashrate: number;
+  power: number;
+  efficiency: number;
+  chipTemp: number;
+}
+
+export interface ISlaveSettingRequest {
+  settingId: number;
+  value: number | string | boolean;
+}
+
+export interface ISlaveCommandRequest {
+  command: string;
+  params?: any;
+}
+
+export interface ITransportInfo {
+  type: string;
+  channel?: number;
+  encrypted?: boolean;
+  discoveryActive?: boolean;
+  selfMac?: string;
+  peerCount?: number;
 }
 
 export interface IClusterStatus {
   enabled: boolean;
   mode: number;
   modeString: string;
+  // Transport info
+  transport?: ITransportInfo;
   // Master fields
   activeSlaves?: number;
   totalHashrate?: number;
@@ -40,6 +81,16 @@ export interface IClusterStatus {
   localFanRpm?: number;
   hostname?: string;
 }
+
+// Setting IDs for remote configuration
+export const CLUSTER_SETTINGS = {
+  // Mining settings (0x20 - 0x3F)
+  FREQUENCY: 0x20,
+  CORE_VOLTAGE: 0x21,
+  FAN_SPEED: 0x22,
+  FAN_MODE: 0x23,
+  TARGET_TEMP: 0x24,
+};
 
 @Injectable({
   providedIn: 'root'
@@ -129,5 +180,124 @@ export class ClusterService {
       case 3: return 'text-orange-500';
       default: return 'text-500';
     }
+  }
+
+  // ========================================================================
+  // Remote Slave Configuration API
+  // ========================================================================
+
+  /**
+   * Get full configuration from a slave
+   */
+  public getSlaveConfig(uri: string = '', slaveId: number): Observable<ISlaveConfig> {
+    if (environment.production) {
+      return this.httpClient.get<ISlaveConfig>(`${uri}/api/cluster/slave/${slaveId}/config`).pipe(timeout(5000));
+    }
+    // Mock data for development
+    return of({
+      hostname: `bitaxe-slave-${slaveId}`,
+      deviceModel: 'Bitaxe Gamma',
+      fwVersion: '2.12.0-cluster',
+      uptime: 3600 * 24,
+      freeHeap: 120000,
+      frequency: 550,
+      coreVoltage: 1200,
+      fanSpeed: 65,
+      fanMode: 0,
+      targetTemp: 55,
+      hashrate: 425,
+      power: 12.5,
+      efficiency: 29.4,
+      chipTemp: 52.5
+    }).pipe(delay(500));
+  }
+
+  /**
+   * Set a single setting on a slave
+   */
+  public setSlaveSetting(uri: string = '', slaveId: number, request: ISlaveSettingRequest): Observable<any> {
+    if (environment.production) {
+      return this.httpClient.post(`${uri}/api/cluster/slave/${slaveId}/setting`, request).pipe(timeout(5000));
+    }
+    return of({ success: true, slaveId, settingId: request.settingId }).pipe(delay(500));
+  }
+
+  /**
+   * Set a setting on ALL slaves
+   */
+  public setAllSlavesSetting(uri: string = '', request: ISlaveSettingRequest): Observable<any> {
+    if (environment.production) {
+      return this.httpClient.post(`${uri}/api/cluster/slaves/setting`, request).pipe(timeout(10000));
+    }
+    return of({ success: true, affectedSlaves: 2 }).pipe(delay(1000));
+  }
+
+  /**
+   * Execute a command on a slave
+   */
+  public sendSlaveCommand(uri: string = '', slaveId: number, request: ISlaveCommandRequest): Observable<any> {
+    if (environment.production) {
+      return this.httpClient.post(`${uri}/api/cluster/slave/${slaveId}/command`, request).pipe(timeout(5000));
+    }
+    return of({ success: true, slaveId, command: request.command }).pipe(delay(500));
+  }
+
+  /**
+   * Execute a command on ALL slaves
+   */
+  public sendAllSlavesCommand(uri: string = '', request: ISlaveCommandRequest): Observable<any> {
+    if (environment.production) {
+      return this.httpClient.post(`${uri}/api/cluster/slaves/command`, request).pipe(timeout(10000));
+    }
+    return of({ success: true, affectedSlaves: 2, command: request.command }).pipe(delay(1000));
+  }
+
+  // Convenience methods
+  public setSlaveFrequency(uri: string = '', slaveId: number, frequency: number): Observable<any> {
+    return this.setSlaveSetting(uri, slaveId, { settingId: CLUSTER_SETTINGS.FREQUENCY, value: frequency });
+  }
+
+  public setSlaveVoltage(uri: string = '', slaveId: number, voltage: number): Observable<any> {
+    return this.setSlaveSetting(uri, slaveId, { settingId: CLUSTER_SETTINGS.CORE_VOLTAGE, value: voltage });
+  }
+
+  public setSlaveFanSpeed(uri: string = '', slaveId: number, speed: number): Observable<any> {
+    return this.setSlaveSetting(uri, slaveId, { settingId: CLUSTER_SETTINGS.FAN_SPEED, value: speed });
+  }
+
+  public restartSlave(uri: string = '', slaveId: number): Observable<any> {
+    return this.sendSlaveCommand(uri, slaveId, { command: 'restart' });
+  }
+
+  public restartAllSlaves(uri: string = ''): Observable<any> {
+    return this.sendAllSlavesCommand(uri, { command: 'restart' });
+  }
+
+  public identifySlave(uri: string = '', slaveId: number): Observable<any> {
+    return this.sendSlaveCommand(uri, slaveId, { command: 'identify' });
+  }
+
+  // RSSI helpers for ESP-NOW
+  public rssiToPercent(rssi: number): number {
+    // Convert RSSI (typically -100 to -30 dBm) to percentage
+    if (rssi >= -30) return 100;
+    if (rssi <= -100) return 0;
+    return Math.round(((rssi + 100) / 70) * 100);
+  }
+
+  public getRssiClass(rssi: number): string {
+    if (rssi >= -50) return 'text-green-500';   // Excellent
+    if (rssi >= -60) return 'text-green-400';   // Good
+    if (rssi >= -70) return 'text-yellow-500';  // Fair
+    if (rssi >= -80) return 'text-orange-500';  // Weak
+    return 'text-red-500';                       // Poor
+  }
+
+  public getRssiLabel(rssi: number): string {
+    if (rssi >= -50) return 'Excellent';
+    if (rssi >= -60) return 'Good';
+    if (rssi >= -70) return 'Fair';
+    if (rssi >= -80) return 'Weak';
+    return 'Poor';
   }
 }

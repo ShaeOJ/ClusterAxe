@@ -55,10 +55,23 @@ void cluster_master_on_mining_notify(GlobalState *GLOBAL_STATE,
  * @param en2_len Length of extranonce2
  * @param ntime Block timestamp
  * @param version Block version
+ * @param slave_id Which slave sent this share (for counter updates)
  */
 void stratum_submit_share_from_cluster(uint32_t job_id, uint32_t nonce,
                                         uint8_t *extranonce2, uint8_t en2_len,
-                                        uint32_t ntime, uint32_t version);
+                                        uint32_t ntime, uint32_t version,
+                                        uint8_t slave_id);
+
+/**
+ * @brief Notify cluster module of share result from pool
+ *
+ * Called by stratum_task.c when pool responds to a share submission.
+ * This updates the slave's shares_accepted/shares_rejected counter.
+ *
+ * @param message_id The stratum message ID of the share submission
+ * @param accepted true if pool accepted, false if rejected
+ */
+void cluster_notify_share_result(int message_id, bool accepted);
 
 /**
  * @brief Get the master's nonce range (slot 0)
@@ -189,6 +202,16 @@ float cluster_get_voltage_in(void);
  * @brief Submit work to ASIC (for slave mode)
  */
 void cluster_submit_work_to_asic(const cluster_work_t *work);
+
+/**
+ * @brief Handle WiFi reconnection event
+ *
+ * Call this when WiFi successfully reconnects to update ESP-NOW channel
+ * and reset registration state so slaves can re-register with master.
+ *
+ * This should be called from the WiFi event handler when IP is obtained.
+ */
+void cluster_on_wifi_reconnect(void);
 
 #endif // CLUSTER_ENABLED
 

@@ -94,7 +94,13 @@ void app_main(void)
         // Continue anyway, as BAP is not critical for core functionality
     }
 
-    // Initialize Clusteraxe module (requires BAP to be initialized first)
+    while (!GLOBAL_STATE.SYSTEM_MODULE.is_connected) {
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+
+    // Initialize Clusteraxe module AFTER WiFi is connected
+    // ESP-NOW requires stable WiFi state - initializing before connection
+    // causes conflicts when wifi_softap_off() changes mode to STA-only
 #if CLUSTER_ENABLED
     esp_err_t cluster_ret = cluster_integration_init(&GLOBAL_STATE);
     if (cluster_ret != ESP_OK) {
@@ -105,10 +111,6 @@ void app_main(void)
     }
 #endif
 
-    while (!GLOBAL_STATE.SYSTEM_MODULE.is_connected) {
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
-
     queue_init(&GLOBAL_STATE.stratum_queue);
     queue_init(&GLOBAL_STATE.stratum_queue_secondary);  // For dual pool mode
     queue_init(&GLOBAL_STATE.ASIC_jobs_queue);
@@ -117,16 +119,23 @@ void app_main(void)
         return;
     }
 
+    // Slaves don't need stratum tasks - they receive work from master
+#if !CLUSTER_IS_SLAVE
     if (xTaskCreate(stratum_task, "stratum admin", 8192, (void *) &GLOBAL_STATE, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Error creating stratum admin task");
     }
-    // Start secondary stratum task for dual pool mode
+    // Start secondary stratum task for dual pool mode (not needed for cluster master either)
+#if !CLUSTER_IS_MASTER
     if (xTaskCreateWithCaps(stratum_secondary_task, "stratum secondary", 8192, (void *) &GLOBAL_STATE, 5, NULL, MALLOC_CAP_SPIRAM) != pdPASS) {
         ESP_LOGE(TAG, "Error creating stratum secondary task");
     }
+#endif
     if (xTaskCreate(create_jobs_task, "stratum miner", 8192, (void *) &GLOBAL_STATE, 10, &GLOBAL_STATE.create_jobs_task_handle) != pdPASS) {
         ESP_LOGE(TAG, "Error creating stratum miner task");
     }
+#else
+    ESP_LOGI(TAG, "Slave mode: Stratum tasks disabled, receiving work from master");
+#endif
     if (xTaskCreate(ASIC_task, "asic", 8192, (void *) &GLOBAL_STATE, 10, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Error creating asic task");
     }

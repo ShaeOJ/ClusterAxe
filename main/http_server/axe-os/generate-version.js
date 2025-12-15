@@ -7,7 +7,7 @@ try {
     version = require('child_process').execSync('git describe --tags --abbrev=0').toString().trim();
 } catch (e) {
     // Fallback if not in a git repository
-    version = 'ESP-Miner-Dual-V5';
+    version = 'ClusterAxe-v1.0.0';
 }
 
 const outputPath = path.join(__dirname, 'dist', 'axe-os', 'version.txt');

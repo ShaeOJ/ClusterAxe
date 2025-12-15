@@ -53,8 +53,8 @@ export class UpdateComponent {
     const file = event.files[0];
     this.firmwareUpload.clear(); // clear the file upload component
 
-    if (file.name != 'esp-miner.bin') {
-      this.toastrService.error('Incorrect file, looking for esp-miner.bin.');
+    if (file.name != 'clusteraxe-master.bin' && file.name != 'clusteraxe-slave.bin') {
+      this.toastrService.error('Incorrect file, looking for clusteraxe-master.bin or clusteraxe-slave.bin.');
       return;
     }
 
@@ -104,7 +104,7 @@ export class UpdateComponent {
             this.websiteUpdateProgress = Math.round((event.loaded / (event.total as number)) * 100);
           } else if (event.type === HttpEventType.Response) {
             if (event.ok) {
-              this.toastrService.success('AxeOS updated. The page will reload in a few seconds.');
+              this.toastrService.success('ClusterAxe UI updated. The page will reload in a few seconds.');
               setTimeout(() => {
                 window.location.reload();
               }, 2000);

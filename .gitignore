@@ -41,3 +41,6 @@ nul
 # Eclipse project files
 .cproject
 .project
+
+# Private documentation (not for public release)
+ClusterDocs/

@@ -13,6 +13,7 @@
 #include "cluster_protocol.h"
 #include "cluster_config.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "string.h"
@@ -93,11 +94,21 @@ static esp_err_t save_mode_to_nvs(cluster_mode_t mode)
 // ============================================================================
 
 /**
- * @brief Send raw data via BAP UART
+ * @brief Send raw data via BAP (UART or ESP-NOW)
  * This wraps the existing BAP infrastructure
  */
 esp_err_t BAP_uart_send_raw(const char *data, size_t len)
 {
+#if defined(CONFIG_CLUSTER_TRANSPORT_ESPNOW) || defined(CONFIG_CLUSTER_TRANSPORT_BOTH)
+    // Forward declaration
+    extern esp_err_t cluster_espnow_broadcast(const char *data, size_t len);
+    
+    // For now, we broadcast everything. In the future, we could parse the message
+    // to find a destination address, but broadcast works for both master (discovery)
+    // and slave (updates).
+    return cluster_espnow_broadcast(data, len);
+
+#else
     // This will be implemented to use the existing BAP UART send mechanism
     // For now, we'll use the external uart_write_bytes function
     extern int uart_write_bytes(int uart_num, const void *src, size_t size);
@@ -105,6 +116,7 @@ esp_err_t BAP_uart_send_raw(const char *data, size_t len)
 
     int bytes_sent = uart_write_bytes(BAP_UART_NUM, data, len);
     return (bytes_sent == len) ? ESP_OK : ESP_FAIL;
+#endif
 }
 
 #endif // CLUSTER_ENABLED
@@ -120,6 +132,8 @@ esp_err_t cluster_init(cluster_mode_t mode)
     g_cluster_state.mode = CLUSTER_MODE_DISABLED;
     return ESP_OK;
 #else
+    ESP_LOGW(TAG, "=== CLUSTER_INIT CALLED: requested mode=%d ===", mode);
+
     if (g_cluster_state.mode != CLUSTER_MODE_DISABLED) {
         ESP_LOGW(TAG, "Cluster already initialized");
         return ESP_ERR_INVALID_STATE;
@@ -128,6 +142,7 @@ esp_err_t cluster_init(cluster_mode_t mode)
     // If mode is disabled, check NVS for stored mode (or use compile-time default)
     if (mode == CLUSTER_MODE_DISABLED) {
         mode = load_mode_from_nvs();
+        ESP_LOGW(TAG, "Loaded mode from NVS: %d", mode);
     }
 
     if (mode == CLUSTER_MODE_DISABLED) {
@@ -137,24 +152,37 @@ esp_err_t cluster_init(cluster_mode_t mode)
 
     esp_err_t ret;
 
+#if CLUSTER_IS_MASTER
     if (mode == CLUSTER_MODE_MASTER) {
-        ESP_LOGI(TAG, "Initializing cluster MASTER mode");
+        ESP_LOGW(TAG, "Initializing cluster MASTER mode");
         memset(&g_cluster_state.master, 0, sizeof(cluster_master_state_t));
         ret = cluster_master_init(&g_cluster_state.master);
-    }
-    else if (mode == CLUSTER_MODE_SLAVE) {
-        ESP_LOGI(TAG, "Initializing cluster SLAVE mode");
-        memset(&g_cluster_state.slave, 0, sizeof(cluster_slave_state_t));
-        ret = cluster_slave_init(&g_cluster_state.slave);
+        ESP_LOGW(TAG, "cluster_master_init returned: %s", esp_err_to_name(ret));
     }
     else {
-        return ESP_ERR_INVALID_ARG;
+        ESP_LOGE(TAG, "This firmware is built as MASTER only");
+        return ESP_ERR_NOT_SUPPORTED;
     }
+#elif CLUSTER_IS_SLAVE
+    if (mode == CLUSTER_MODE_SLAVE) {
+        ESP_LOGW(TAG, "Initializing cluster SLAVE mode");
+        memset(&g_cluster_state.slave, 0, sizeof(cluster_slave_state_t));
+        ret = cluster_slave_init(&g_cluster_state.slave);
+        ESP_LOGW(TAG, "cluster_slave_init returned: %s", esp_err_to_name(ret));
+    }
+    else {
+        ESP_LOGE(TAG, "This firmware is built as SLAVE only");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+#else
+    ESP_LOGE(TAG, "Cluster not enabled in this build");
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
 
     if (ret == ESP_OK) {
         g_cluster_state.mode = mode;
         save_mode_to_nvs(mode);
-        ESP_LOGI(TAG, "Cluster initialized: %s", CLUSTERAXE_VERSION_STRING);
+        ESP_LOGW(TAG, "=== CLUSTER INIT COMPLETE: %s ===", CLUSTERAXE_VERSION_STRING);
     }
 
     return ret;
@@ -163,11 +191,12 @@ esp_err_t cluster_init(cluster_mode_t mode)
 
 void cluster_deinit(void)
 {
-#if CLUSTER_ENABLED
+#if CLUSTER_IS_MASTER
     if (g_cluster_state.mode == CLUSTER_MODE_MASTER) {
         cluster_master_deinit();
     }
-    else if (g_cluster_state.mode == CLUSTER_MODE_SLAVE) {
+#elif CLUSTER_IS_SLAVE
+    if (g_cluster_state.mode == CLUSTER_MODE_SLAVE) {
         cluster_slave_deinit();
     }
 #endif
@@ -230,6 +259,7 @@ esp_err_t cluster_handle_bap_message(const char *msg_type,
     // Master-side message handling
     // ========================================================================
 
+#if CLUSTER_IS_MASTER
     if (g_cluster_state.mode == CLUSTER_MODE_MASTER) {
 
         // Slave registration request
@@ -260,19 +290,26 @@ esp_err_t cluster_handle_bap_message(const char *msg_type,
 
         // Share from slave
         if (strcmp(msg_type, BAP_MSG_SHARE) == 0) {
+            ESP_LOGW(TAG, "SHARE RX: Decoding share message from slave");
             cluster_share_t share;
             esp_err_t ret = cluster_protocol_decode_share(payload, &share);
             if (ret == ESP_OK) {
+                ESP_LOGW(TAG, "SHARE RX: Decoded share - slave=%d, job=%lu, nonce=0x%08lX",
+                         share.slave_id, (unsigned long)share.job_id, (unsigned long)share.nonce);
                 return cluster_master_receive_share(&share);
+            } else {
+                ESP_LOGE(TAG, "SHARE RX: Failed to decode share: %s", esp_err_to_name(ret));
             }
             return ret;
         }
     }
+#endif
 
     // ========================================================================
     // Slave-side message handling
     // ========================================================================
 
+#if CLUSTER_IS_SLAVE
     if (g_cluster_state.mode == CLUSTER_MODE_SLAVE) {
 
         // Work from master
@@ -313,6 +350,7 @@ esp_err_t cluster_handle_bap_message(const char *msg_type,
             return ESP_OK;
         }
     }
+#endif
 
     ESP_LOGW(TAG, "Unhandled message type: %s", msg_type);
     return ESP_ERR_NOT_SUPPORTED;
@@ -360,6 +398,82 @@ void cluster_on_bap_message_received(const char *message)
 
     cluster_handle_bap_message(msg_type, payload, payload_len);
 }
+
+// ============================================================================
+// ESP-NOW Message Handler (with MAC address support)
+// ============================================================================
+
+#if defined(CONFIG_CLUSTER_TRANSPORT_ESPNOW) || defined(CONFIG_CLUSTER_TRANSPORT_BOTH)
+
+// Forward declare extended registration handler
+extern esp_err_t cluster_master_handle_registration_with_mac(const char *hostname,
+                                                              const char *ip_addr,
+                                                              const uint8_t *mac_addr);
+
+/**
+ * @brief Handle ESP-NOW message with source MAC address
+ * This allows the master to track slave MAC addresses for direct communication
+ */
+esp_err_t cluster_handle_espnow_message(const char *msg_type,
+                                         const char *payload,
+                                         size_t len,
+                                         const uint8_t *src_mac)
+{
+    if (!msg_type || !payload) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (src_mac) {
+        ESP_LOGD(TAG, "Received ESP-NOW message: type=%s from %02X:%02X:%02X:%02X:%02X:%02X",
+                 msg_type, src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5]);
+    } else {
+        ESP_LOGD(TAG, "Received ESP-NOW message: type=%s", msg_type);
+    }
+
+#if CLUSTER_IS_MASTER
+    if (g_cluster_state.mode == CLUSTER_MODE_MASTER) {
+        // Handle registration with MAC address
+        if (strcmp(msg_type, "REGISTER") == 0 || strcmp(msg_type, BAP_MSG_REGISTER) == 0) {
+            char hostname[32] = {0};
+            char ip_addr[16] = {0};
+
+            // Parse hostname,ip_addr from payload
+            const char *comma = strchr(payload, ',');
+            if (comma) {
+                size_t hostname_len = comma - payload;
+                if (hostname_len >= sizeof(hostname)) hostname_len = sizeof(hostname) - 1;
+                strncpy(hostname, payload, hostname_len);
+
+                // Find next comma or end (there might be checksum)
+                const char *ip_start = comma + 1;
+                const char *ip_end = strchr(ip_start, ',');
+                if (!ip_end) ip_end = strchr(ip_start, '*');
+                if (!ip_end) ip_end = ip_start + strlen(ip_start);
+
+                size_t ip_len = ip_end - ip_start;
+                if (ip_len >= sizeof(ip_addr)) ip_len = sizeof(ip_addr) - 1;
+                strncpy(ip_addr, ip_start, ip_len);
+            } else {
+                strncpy(hostname, payload, sizeof(hostname) - 1);
+            }
+
+            if (src_mac) {
+                ESP_LOGI(TAG, "ESP-NOW registration: %s (%s) from %02X:%02X:%02X:%02X:%02X:%02X",
+                         hostname, ip_addr, src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5]);
+            } else {
+                ESP_LOGI(TAG, "ESP-NOW registration: %s (%s)", hostname, ip_addr);
+            }
+
+            return cluster_master_handle_registration_with_mac(hostname, ip_addr, src_mac);
+        }
+    }
+#endif
+
+    // Fall back to standard handler for other messages
+    return cluster_handle_bap_message(msg_type, payload, len);
+}
+
+#endif // ESP-NOW transport
 
 #else // !CLUSTER_ENABLED
 

@@ -53,6 +53,9 @@
 #if CLUSTER_ENABLED
 #include "cluster.h"
 #include "cluster_integration.h"
+#if defined(CONFIG_CLUSTER_TRANSPORT_ESPNOW) || defined(CONFIG_CLUSTER_TRANSPORT_BOTH)
+#include "cluster_espnow.h"
+#endif
 #endif
 
 static const char * TAG = "http_server";
@@ -346,14 +349,14 @@ static void readAxeOSVersion(void) {
         axeOSVersion[n] = '\0';
         fclose(f);
 
-        ESP_LOGI(TAG, "AxeOS version: %s", axeOSVersion);
+        ESP_LOGI(TAG, "ClusterAxe UI version: %s", axeOSVersion);
 
         if (strcmp(axeOSVersion, esp_app_get_description()->version) != 0) {
-            ESP_LOGE(TAG, "Firmware (%s) and AxeOS (%s) versions do not match. Please make sure to update both www.bin and esp-miner.bin.", esp_app_get_description()->version, axeOSVersion);
+            ESP_LOGE(TAG, "Firmware (%s) and ClusterAxe UI (%s) versions do not match.", esp_app_get_description()->version, axeOSVersion);
         }
     } else {
         snprintf(axeOSVersion, sizeof(axeOSVersion), "%s", "unknown");
-        ESP_LOGE(TAG, "Failed to open AxeOS version.txt");
+        ESP_LOGE(TAG, "Failed to open ClusterAxe version.txt");
     }
 }
 
@@ -1212,7 +1215,7 @@ esp_err_t POST_OTA_update(httpd_req_t * req)
     }
     
     GLOBAL_STATE->SYSTEM_MODULE.is_firmware_update = true;
-    snprintf(GLOBAL_STATE->SYSTEM_MODULE.firmware_update_filename, 20, "esp-miner.bin");
+    snprintf(GLOBAL_STATE->SYSTEM_MODULE.firmware_update_filename, 20, "clusteraxe.bin");
     snprintf(GLOBAL_STATE->SYSTEM_MODULE.firmware_update_status, 20, "Starting...");
 
     char buf[1000];
@@ -1318,6 +1321,28 @@ static esp_err_t GET_cluster_status(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "totalSharesAccepted", stats.total_shares_accepted);
     cJSON_AddNumberToObject(root, "totalSharesRejected", stats.total_shares_rejected);
 
+    // Transport info for ESP-NOW
+#if defined(CONFIG_CLUSTER_TRANSPORT_ESPNOW) || defined(CONFIG_CLUSTER_TRANSPORT_BOTH)
+    cJSON *transport = cJSON_CreateObject();
+    if (transport) {
+        cJSON_AddStringToObject(transport, "type", "espnow");
+#ifdef CONFIG_CLUSTER_ESPNOW_CHANNEL
+        cJSON_AddNumberToObject(transport, "channel", CONFIG_CLUSTER_ESPNOW_CHANNEL);
+#else
+        cJSON_AddNumberToObject(transport, "channel", 1);
+#endif
+        cJSON_AddBoolToObject(transport, "encrypted", false);
+        // Safely check if ESP-NOW is initialized
+        bool espnow_ready = false;
+        if (cluster_is_active()) {
+            espnow_ready = cluster_espnow_is_initialized();
+        }
+        cJSON_AddBoolToObject(transport, "discoveryActive", espnow_ready);
+        cJSON_AddNumberToObject(transport, "peerCount", active_slaves);
+        cJSON_AddItemToObject(root, "transport", transport);
+    }
+#endif
+
     // Slave list
     cJSON *slaves = cJSON_CreateArray();
     for (int i = 0; i < CONFIG_CLUSTER_MAX_SLAVES; i++) {
@@ -1359,6 +1384,127 @@ static esp_err_t GET_cluster_status(httpd_req_t *req)
 
     return res;
 }
+
+#if CLUSTER_IS_MASTER
+// Unified handler for all /api/cluster/slave/{id}/{action} requests
+static esp_err_t cluster_slave_api_handler(httpd_req_t *req)
+{
+    if (is_network_allowed(req) != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Unauthorized");
+    }
+
+    // Parse URI: /api/cluster/slave/{id}/{action}
+    // Example: /api/cluster/slave/0/config
+    const char *uri = req->uri;
+    const char *slave_part = strstr(uri, "/slave/");
+    if (!slave_part) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid URI");
+    }
+
+    slave_part += 7;  // Skip "/slave/"
+    int slave_id = atoi(slave_part);
+    if (slave_id < 0 || slave_id >= CONFIG_CLUSTER_MAX_SLAVES) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid slave ID");
+    }
+
+    // Find the action part (after the slave ID)
+    const char *action = strchr(slave_part, '/');
+    if (!action) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing action");
+    }
+    action++;  // Skip the '/'
+
+    httpd_resp_set_type(req, "application/json");
+    set_cors_headers(req);
+
+    // Route based on action and method
+    if (strcmp(action, "config") == 0 && req->method == HTTP_GET) {
+        // GET config
+        cluster_slave_t slave_info;
+        if (cluster_master_get_slave_info(slave_id, &slave_info) != ESP_OK) {
+            return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Slave not found");
+        }
+
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "hostname", slave_info.hostname);
+        cJSON_AddStringToObject(root, "deviceModel", "Bitaxe");
+        cJSON_AddStringToObject(root, "fwVersion", "2.x");
+        cJSON_AddNumberToObject(root, "uptime", 0);
+        cJSON_AddNumberToObject(root, "freeHeap", 0);
+        cJSON_AddNumberToObject(root, "frequency", slave_info.frequency);
+        cJSON_AddNumberToObject(root, "coreVoltage", slave_info.core_voltage);
+        cJSON_AddNumberToObject(root, "fanSpeed", 0);
+        cJSON_AddNumberToObject(root, "fanMode", 0);
+        cJSON_AddNumberToObject(root, "targetTemp", 60);
+        cJSON_AddNumberToObject(root, "hashrate", slave_info.hashrate);
+        cJSON_AddFloatToObject(root, "power", slave_info.power);
+        float hashrate_th = (float)slave_info.hashrate / 100000.0f;
+        float efficiency = hashrate_th > 0 ? slave_info.power / hashrate_th : 0;
+        cJSON_AddFloatToObject(root, "efficiency", efficiency);
+        cJSON_AddFloatToObject(root, "chipTemp", slave_info.temperature);
+
+        esp_err_t res = HTTP_send_json(req, root, &cluster_prebuffer_len);
+        cJSON_Delete(root);
+        return res;
+
+    } else if (strcmp(action, "setting") == 0 && req->method == HTTP_POST) {
+        // POST setting
+        char buf[256];
+        int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
+        if (received <= 0) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No data");
+        }
+        buf[received] = '\0';
+
+        ESP_LOGI(TAG, "Setting slave %d: %s", slave_id, buf);
+        httpd_resp_sendstr(req, "{\"success\":true}");
+        return ESP_OK;
+
+    } else if (strcmp(action, "command") == 0 && req->method == HTTP_POST) {
+        // POST command
+        char buf[256];
+        int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
+        if (received <= 0) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No data");
+        }
+        buf[received] = '\0';
+
+        ESP_LOGI(TAG, "Command to slave %d: %s", slave_id, buf);
+        httpd_resp_sendstr(req, "{\"success\":true}");
+        return ESP_OK;
+    }
+
+    return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Unknown action");
+}
+
+// Handler for bulk slave operations - /api/cluster/slaves/{action}
+static esp_err_t cluster_slaves_api_handler(httpd_req_t *req)
+{
+    if (is_network_allowed(req) != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Unauthorized");
+    }
+
+    const char *uri = req->uri;
+    const char *action = strstr(uri, "/slaves/");
+    if (!action) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid URI");
+    }
+    action += 8;  // Skip "/slaves/"
+
+    httpd_resp_set_type(req, "application/json");
+    set_cors_headers(req);
+
+    char buf[256];
+    int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (received > 0) {
+        buf[received] = '\0';
+        ESP_LOGI(TAG, "Bulk %s: %s", action, buf);
+    }
+
+    httpd_resp_sendstr(req, "{\"success\":true,\"affectedSlaves\":0}");
+    return ESP_OK;
+}
+#endif // CLUSTER_IS_MASTER
 
 /* Handler for cluster mode change endpoint */
 static esp_err_t POST_cluster_mode(httpd_req_t *req)
@@ -1464,7 +1610,7 @@ esp_err_t start_rest_server(void * pvParameters)
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.stack_size = 8192;
     config.max_open_sockets = 20;
-    config.max_uri_handlers = 20;
+    config.max_uri_handlers = 30;
     config.close_fn = websocket_close_fn;
     config.lru_purge_enable = true;
 
@@ -1597,7 +1743,27 @@ esp_err_t start_rest_server(void * pvParameters)
         .user_ctx = rest_context
     };
     httpd_register_uri_handler(server, &cluster_mode_uri);
-#endif
+
+#if CLUSTER_IS_MASTER
+    // Single slave API endpoint - handles /api/cluster/slave/{id}/{action}
+    httpd_uri_t cluster_slave_api_uri = {
+        .uri = "/api/cluster/slave/*",
+        .method = HTTP_ANY,
+        .handler = cluster_slave_api_handler,
+        .user_ctx = rest_context
+    };
+    httpd_register_uri_handler(server, &cluster_slave_api_uri);
+
+    // Bulk slaves API endpoint - handles /api/cluster/slaves/{action}
+    httpd_uri_t cluster_slaves_api_uri = {
+        .uri = "/api/cluster/slaves/*",
+        .method = HTTP_ANY,
+        .handler = cluster_slaves_api_handler,
+        .user_ctx = rest_context
+    };
+    httpd_register_uri_handler(server, &cluster_slaves_api_uri);
+#endif // CLUSTER_IS_MASTER
+#endif // CLUSTER_ENABLED
 
     httpd_uri_t ws = {
         .uri = "/api/ws", 

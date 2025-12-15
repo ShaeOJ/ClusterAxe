@@ -57,63 +57,247 @@
                 </div>
             </div>
 
+            <!-- Transport Info -->
+            <div class="surface-card border-round p-3 mb-4" *ngIf="status.transport">
+                <div class="flex align-items-center gap-3">
+                    <div class="flex align-items-center gap-2">
+                        <i class="pi {{getTransportIcon(status.transport.type)}} text-primary"></i>
+                        <span class="font-medium">{{getTransportLabel(status.transport.type)}}</span>
+                    </div>
+                    <span class="text-400">|</span>
+                    <span class="text-500" *ngIf="status.transport.channel">Channel: {{status.transport.channel}}</span>
+                    <span *ngIf="status.transport.encrypted" class="text-green-500">
+                        <i class="pi pi-lock mr-1"></i>Encrypted
+                    </span>
+                    <span *ngIf="status.transport.discoveryActive" class="text-blue-500">
+                        <i class="pi pi-search mr-1"></i>Discovery Active
+                    </span>
+                    <span class="text-500" *ngIf="status.transport.peerCount !== undefined">
+                        Peers: {{status.transport.peerCount}}
+                    </span>
+                </div>
+            </div>
+
+            <!-- Bulk Actions Toolbar -->
+            <div class="flex justify-content-between align-items-center mb-3" *ngIf="status.slaves && status.slaves.length > 0">
+                <h3 class="m-0">Connected Slaves</h3>
+                <div class="flex gap-2">
+                    <button pButton label="Set All Freq" icon="pi pi-bolt" class="p-button-sm p-button-outlined"
+                            (click)="openBulkAction('frequency')" pTooltip="Set frequency on all slaves"></button>
+                    <button pButton label="Set All Voltage" icon="pi pi-sliders-h" class="p-button-sm p-button-outlined"
+                            (click)="openBulkAction('voltage')" pTooltip="Set voltage on all slaves"></button>
+                    <button pButton label="Set All Fan" icon="pi pi-sync" class="p-button-sm p-button-outlined"
+                            (click)="openBulkAction('fan')" pTooltip="Set fan speed on all slaves"></button>
+                    <button pButton label="Restart All" icon="pi pi-refresh" class="p-button-sm p-button-danger p-button-outlined"
+                            (click)="openBulkAction('restart')" pTooltip="Restart all slaves"></button>
+                </div>
+            </div>
+
             <!-- Slave List -->
-            <h3 class="mt-4 mb-3">Connected Slaves</h3>
             <ng-container *ngIf="status.slaves && status.slaves.length > 0; else noSlaves">
-                <p-table [value]="status.slaves" styleClass="p-datatable-sm" [scrollable]="true">
-                    <ng-template pTemplate="header">
-                        <tr>
-                            <th>Status</th>
-                            <th>Device</th>
-                            <th>Hashrate</th>
-                            <th>Temp</th>
-                            <th>Fan</th>
-                            <th>Freq</th>
-                            <th>Voltage</th>
-                            <th>Power</th>
-                            <th>Shares</th>
-                            <th>Last Seen</th>
-                        </tr>
-                    </ng-template>
-                    <ng-template pTemplate="body" let-slave>
-                        <tr>
-                            <td>
-                                <i class="pi {{getSlaveStateIcon(slave.state)}}"
-                                   [ngClass]="clusterService.getSlaveStateClass(slave.state)"></i>
-                                <span class="ml-2" [ngClass]="clusterService.getSlaveStateClass(slave.state)">
-                                    {{clusterService.getSlaveStateLabel(slave.state)}}
-                                </span>
-                            </td>
-                            <td>
-                                <div class="flex flex-column">
-                                    <span class="font-medium">{{slave.hostname}}</span>
-                                    <a *ngIf="slave.ipAddr"
-                                       [href]="'http://' + slave.ipAddr"
-                                       target="_blank"
-                                       class="text-primary text-sm"
-                                       pTooltip="Open slave web interface"
-                                       tooltipPosition="top">
-                                        <i class="pi pi-external-link mr-1" style="font-size: 0.75rem"></i>
-                                        {{slave.ipAddr}}
-                                    </a>
-                                    <span *ngIf="!slave.ipAddr" class="text-400 text-sm">No IP</span>
+                <div class="slave-list">
+                    <ng-container *ngFor="let slave of status.slaves">
+                        <!-- Slave Summary Row -->
+                        <div class="surface-card border-round p-3 mb-2 cursor-pointer"
+                             [ngClass]="{'border-primary border-1': expandedSlaveId === slave.slaveId}"
+                             (click)="toggleSlaveConfig(slave)">
+                            <div class="flex align-items-center justify-content-between">
+                                <div class="flex align-items-center gap-3">
+                                    <!-- Status Icon -->
+                                    <i class="pi {{getSlaveStateIcon(slave.state)}} text-xl"
+                                       [ngClass]="clusterService.getSlaveStateClass(slave.state)"></i>
+
+                                    <!-- Device Info -->
+                                    <div class="flex flex-column">
+                                        <div class="flex align-items-center gap-2">
+                                            <span class="font-bold">{{slave.hostname}}</span>
+                                            <span class="text-500 text-sm">(ID: {{slave.slaveId}})</span>
+                                            <!-- RSSI badge for ESP-NOW -->
+                                            <span *ngIf="slave.rssi !== undefined"
+                                                  class="text-sm px-2 py-1 border-round"
+                                                  [ngClass]="clusterService.getRssiClass(slave.rssi)">
+                                                <i class="pi pi-wifi mr-1"></i>{{clusterService.getRssiLabel(slave.rssi)}}
+                                            </span>
+                                        </div>
+                                        <div class="flex align-items-center gap-2 text-sm">
+                                            <a *ngIf="slave.ipAddr"
+                                               [href]="'http://' + slave.ipAddr"
+                                               target="_blank"
+                                               class="text-primary"
+                                               (click)="$event.stopPropagation()"
+                                               pTooltip="Open slave web interface">
+                                                <i class="pi pi-external-link mr-1" style="font-size: 0.7rem"></i>
+                                                {{slave.ipAddr}}
+                                            </a>
+                                            <span *ngIf="!slave.ipAddr" class="text-400">No IP (ESP-NOW only)</span>
+                                        </div>
+                                    </div>
                                 </div>
-                            </td>
-                            <td class="font-medium text-green-500">{{formatHashrate(slave.hashrate)}}</td>
-                            <td>{{slave.temperature | number:'1.1-1'}} &deg;C</td>
-                            <td>{{slave.fanRpm}} RPM</td>
-                            <td>{{slave.frequency}} MHz</td>
-                            <td>{{slave.coreVoltage}} mV</td>
-                            <td>{{slave.power | number:'1.1-1'}} W</td>
-                            <td>
-                                <span class="text-green-500">{{slave.sharesAccepted}}</span>
-                                <span class="text-500"> / </span>
-                                <span class="text-red-500">{{slave.sharesSubmitted - slave.sharesAccepted}}</span>
-                            </td>
-                            <td>{{formatLastSeen(slave.lastSeen)}}</td>
-                        </tr>
-                    </ng-template>
-                </p-table>
+
+                                <!-- Quick Stats -->
+                                <div class="flex align-items-center gap-4">
+                                    <div class="text-center">
+                                        <div class="text-500 text-xs">Hashrate</div>
+                                        <div class="font-bold text-green-500">{{formatHashrate(slave.hashrate)}}</div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="text-500 text-xs">Temp</div>
+                                        <div class="font-bold">{{slave.temperature | number:'1.1-1'}}&deg;C</div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="text-500 text-xs">Power</div>
+                                        <div class="font-bold">{{slave.power | number:'1.1-1'}}W</div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="text-500 text-xs">Shares</div>
+                                        <div>
+                                            <span class="text-green-500 font-bold">{{slave.sharesAccepted}}</span>
+                                            <span class="text-400">/</span>
+                                            <span class="text-red-500">{{slave.sharesSubmitted - slave.sharesAccepted}}</span>
+                                        </div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="text-500 text-xs">Last Seen</div>
+                                        <div class="text-sm">{{formatLastSeen(slave.lastSeen)}}</div>
+                                    </div>
+                                    <!-- Expand Icon -->
+                                    <i class="pi text-xl text-500"
+                                       [ngClass]="expandedSlaveId === slave.slaveId ? 'pi-chevron-up' : 'pi-chevron-down'"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Expanded Configuration Panel -->
+                        <div class="surface-card border-round p-4 mb-3 ml-4 border-left-3 border-primary"
+                             *ngIf="expandedSlaveId === slave.slaveId"
+                             @fadeInOut>
+                            <ng-container *ngIf="loadingSlaveConfig === slave.slaveId; else configPanel">
+                                <div class="flex justify-content-center py-4">
+                                    <i class="pi pi-spin pi-spinner text-2xl"></i>
+                                </div>
+                            </ng-container>
+
+                            <ng-template #configPanel>
+                                <div class="grid">
+                                    <!-- Device Info Column -->
+                                    <div class="col-12 md:col-4">
+                                        <h4 class="mt-0 mb-3">Device Info</h4>
+                                        <div class="flex flex-column gap-2" *ngIf="getSlaveConfig(slave.slaveId) as config">
+                                            <div class="flex justify-content-between">
+                                                <span class="text-500">Model:</span>
+                                                <span>{{config.deviceModel}}</span>
+                                            </div>
+                                            <div class="flex justify-content-between">
+                                                <span class="text-500">Firmware:</span>
+                                                <span>{{config.fwVersion}}</span>
+                                            </div>
+                                            <div class="flex justify-content-between">
+                                                <span class="text-500">Uptime:</span>
+                                                <span>{{config.uptime | number:'1.0-0'}}s</span>
+                                            </div>
+                                            <div class="flex justify-content-between">
+                                                <span class="text-500">Free Heap:</span>
+                                                <span>{{config.freeHeap | number:'1.0-0'}} bytes</span>
+                                            </div>
+                                            <div class="flex justify-content-between">
+                                                <span class="text-500">Efficiency:</span>
+                                                <span>{{config.efficiency | number:'1.1-1'}} J/TH</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Mining Settings Column -->
+                                    <div class="col-12 md:col-4">
+                                        <h4 class="mt-0 mb-3">Mining Settings</h4>
+                                        <div class="flex flex-column gap-3">
+                                            <!-- Frequency -->
+                                            <div class="flex align-items-center gap-2">
+                                                <label class="w-6rem text-500">Frequency:</label>
+                                                <p-inputNumber [(ngModel)]="editFrequency"
+                                                               [min]="200" [max]="800"
+                                                               suffix=" MHz"
+                                                               styleClass="w-8rem p-inputtext-sm">
+                                                </p-inputNumber>
+                                                <button pButton icon="pi pi-check" class="p-button-sm p-button-success"
+                                                        (click)="saveSlaveFrequency(slave.slaveId); $event.stopPropagation()"
+                                                        [loading]="savingSlaveConfig === slave.slaveId"
+                                                        pTooltip="Apply frequency"></button>
+                                            </div>
+                                            <!-- Voltage -->
+                                            <div class="flex align-items-center gap-2">
+                                                <label class="w-6rem text-500">Voltage:</label>
+                                                <p-inputNumber [(ngModel)]="editVoltage"
+                                                               [min]="1000" [max]="1400"
+                                                               suffix=" mV"
+                                                               styleClass="w-8rem p-inputtext-sm">
+                                                </p-inputNumber>
+                                                <button pButton icon="pi pi-check" class="p-button-sm p-button-success"
+                                                        (click)="saveSlaveVoltage(slave.slaveId); $event.stopPropagation()"
+                                                        [loading]="savingSlaveConfig === slave.slaveId"
+                                                        pTooltip="Apply voltage"></button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Cooling Settings Column -->
+                                    <div class="col-12 md:col-4">
+                                        <h4 class="mt-0 mb-3">Cooling Settings</h4>
+                                        <div class="flex flex-column gap-3">
+                                            <!-- Fan Mode -->
+                                            <div class="flex align-items-center gap-2">
+                                                <label class="w-6rem text-500">Fan Mode:</label>
+                                                <p-dropdown [options]="fanModeOptions"
+                                                            [(ngModel)]="editFanMode"
+                                                            optionLabel="label"
+                                                            optionValue="value"
+                                                            styleClass="w-8rem"
+                                                            (onChange)="saveSlaveFanMode(slave.slaveId)"
+                                                            (click)="$event.stopPropagation()">
+                                                </p-dropdown>
+                                            </div>
+                                            <!-- Fan Speed (only if manual) -->
+                                            <div class="flex align-items-center gap-2" *ngIf="editFanMode === 1">
+                                                <label class="w-6rem text-500">Fan Speed:</label>
+                                                <p-inputNumber [(ngModel)]="editFanSpeed"
+                                                               [min]="0" [max]="100"
+                                                               suffix="%"
+                                                               styleClass="w-8rem p-inputtext-sm">
+                                                </p-inputNumber>
+                                                <button pButton icon="pi pi-check" class="p-button-sm p-button-success"
+                                                        (click)="saveSlaveFanSpeed(slave.slaveId); $event.stopPropagation()"
+                                                        [loading]="savingSlaveConfig === slave.slaveId"
+                                                        pTooltip="Apply fan speed"></button>
+                                            </div>
+                                            <!-- Target Temp (only if auto) -->
+                                            <div class="flex align-items-center gap-2" *ngIf="editFanMode === 0">
+                                                <label class="w-6rem text-500">Target Temp:</label>
+                                                <p-inputNumber [(ngModel)]="editTargetTemp"
+                                                               [min]="40" [max]="75"
+                                                               suffix="&deg;C"
+                                                               styleClass="w-8rem p-inputtext-sm">
+                                                </p-inputNumber>
+                                                <button pButton icon="pi pi-check" class="p-button-sm p-button-success"
+                                                        (click)="saveSlaveTargetTemp(slave.slaveId); $event.stopPropagation()"
+                                                        [loading]="savingSlaveConfig === slave.slaveId"
+                                                        pTooltip="Apply target temp"></button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Action Buttons -->
+                                <div class="flex justify-content-end gap-2 mt-3 pt-3 border-top-1 surface-border">
+                                    <button pButton label="Identify" icon="pi pi-lightbulb" class="p-button-sm p-button-outlined"
+                                            (click)="identifySlave(slave.slaveId); $event.stopPropagation()"
+                                            pTooltip="Flash LED to identify device"></button>
+                                    <button pButton label="Restart" icon="pi pi-refresh" class="p-button-sm p-button-danger p-button-outlined"
+                                            (click)="restartSlave(slave.slaveId); $event.stopPropagation()"
+                                            pTooltip="Restart this slave"></button>
+                                </div>
+                            </ng-template>
+                        </div>
+                    </ng-container>
+                </div>
                 <!-- Cluster Power Summary -->
                 <div class="mt-3 surface-card border-round p-3" *ngIf="status.slaves && status.slaves.length > 0">
                     <div class="flex justify-content-between align-items-center">
@@ -230,3 +414,82 @@
         <button pButton label="Change & Restart" class="p-button-danger" (click)="confirmModeChange()"></button>
     </ng-template>
 </p-dialog>
+
+<!-- Bulk Action Dialog -->
+<p-dialog
+    [header]="getBulkActionTitle()"
+    [(visible)]="showBulkActionDialog"
+    [modal]="true"
+    [style]="{width: '400px'}">
+
+    <!-- Frequency Input -->
+    <div *ngIf="bulkActionType === 'frequency'" class="flex flex-column gap-3">
+        <p class="text-500 mt-0">Set the same frequency on all connected slaves.</p>
+        <div class="flex align-items-center gap-2">
+            <label class="w-6rem">Frequency:</label>
+            <p-inputNumber [(ngModel)]="bulkFrequency"
+                           [min]="200" [max]="800"
+                           suffix=" MHz"
+                           styleClass="flex-1">
+            </p-inputNumber>
+        </div>
+        <p class="text-orange-500 text-sm m-0">
+            <i class="pi pi-exclamation-triangle mr-1"></i>
+            Higher frequencies increase power consumption and heat.
+        </p>
+    </div>
+
+    <!-- Voltage Input -->
+    <div *ngIf="bulkActionType === 'voltage'" class="flex flex-column gap-3">
+        <p class="text-500 mt-0">Set the same core voltage on all connected slaves.</p>
+        <div class="flex align-items-center gap-2">
+            <label class="w-6rem">Voltage:</label>
+            <p-inputNumber [(ngModel)]="bulkVoltage"
+                           [min]="1000" [max]="1400"
+                           suffix=" mV"
+                           styleClass="flex-1">
+            </p-inputNumber>
+        </div>
+        <p class="text-orange-500 text-sm m-0">
+            <i class="pi pi-exclamation-triangle mr-1"></i>
+            Higher voltages may damage hardware. Use with caution.
+        </p>
+    </div>
+
+    <!-- Fan Speed Input -->
+    <div *ngIf="bulkActionType === 'fan'" class="flex flex-column gap-3">
+        <p class="text-500 mt-0">Set the same fan speed percentage on all connected slaves.</p>
+        <div class="flex align-items-center gap-2">
+            <label class="w-6rem">Fan Speed:</label>
+            <p-inputNumber [(ngModel)]="bulkFanSpeed"
+                           [min]="0" [max]="100"
+                           suffix="%"
+                           styleClass="flex-1">
+            </p-inputNumber>
+        </div>
+        <p class="text-500 text-sm m-0">
+            <i class="pi pi-info-circle mr-1"></i>
+            This sets fan mode to Manual on all slaves.
+        </p>
+    </div>
+
+    <!-- Restart Confirmation -->
+    <div *ngIf="bulkActionType === 'restart'" class="flex flex-column gap-3">
+        <p class="text-500 mt-0">This will restart all connected slave devices.</p>
+        <p class="text-orange-500 font-medium m-0">
+            <i class="pi pi-exclamation-triangle mr-2"></i>
+            Mining will be interrupted on all slaves during restart.
+        </p>
+    </div>
+
+    <ng-template pTemplate="footer">
+        <button pButton label="Cancel" class="p-button-text" (click)="cancelBulkAction()"></button>
+        <button pButton
+                [label]="bulkActionType === 'restart' ? 'Restart All' : 'Apply to All'"
+                [class]="bulkActionType === 'restart' ? 'p-button-danger' : 'p-button-primary'"
+                (click)="executeBulkAction()"></button>
+    </ng-template>
+</p-dialog>
+
+<!-- Toast for notifications -->
+<p-toast></p-toast>

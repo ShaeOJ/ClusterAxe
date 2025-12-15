@@ -168,26 +168,46 @@ int cluster_protocol_encode_work(const cluster_work_t *work,
     cluster_protocol_bytes_to_hex(work->merkle_root, 32, merkle_hex);
     cluster_protocol_bytes_to_hex(work->extranonce2, work->extranonce2_len, en2_hex);
 
-    // Build message
-    // Format: $CLWRK,job_id,prevhash,merkle,version,nbits,ntime,nonce_start,nonce_end,en2,en2_len,clean
+    // Build message - core fields only (compact for ESP-NOW 250 byte limit)
+    // Format: $CLWRK,slave_id,job_id,prevhash,merkle,version,version_mask,nbits,ntime,nonce_start,nonce_end,en2,en2_len,clean,pool_diff
     int len = snprintf(buffer, buffer_len,
-                       "$%s,%lu,%s,%s,%lu,%lu,%lu,%lu,%lu,%s,%u,%d",
+                       "$%s,%u,%lu,%s,%s,%lu,%lu,%lu,%lu,%lu,%lu,%s,%u,%d,%lu",
                        BAP_MSG_WORK,
+                       work->target_slave_id,
                        (unsigned long)work->job_id,
                        prev_hash_hex,
                        merkle_hex,
                        (unsigned long)work->version,
+                       (unsigned long)work->version_mask,
                        (unsigned long)work->nbits,
                        (unsigned long)work->ntime,
                        (unsigned long)work->nonce_start,
                        (unsigned long)work->nonce_end,
                        en2_hex,
                        work->extranonce2_len,
-                       work->clean_jobs ? 1 : 0);
+                       work->clean_jobs ? 1 : 0,
+                       (unsigned long)work->pool_diff);
 
     if (len < 0 || (size_t)len >= buffer_len - 10) {
         return -1;
     }
+
+    // Try to add optional display fields if there's room (for UART/larger buffers)
+    // ESP-NOW limit is 250 bytes, so only add these if we have space
+    size_t remaining = buffer_len - len - 10;  // Reserve for checksum
+    if (remaining > 60 && work->block_height > 0) {
+        // Add block_height, scriptsig, network_diff
+        int extra = snprintf(buffer + len, remaining,
+                            ",%lu,%s,%s",
+                            (unsigned long)work->block_height,
+                            work->scriptsig[0] ? work->scriptsig : "-",
+                            work->network_diff_str[0] ? work->network_diff_str : "-");
+        if (extra > 0 && (size_t)extra < remaining) {
+            len += extra;
+        }
+    }
+
+    ESP_LOGD(TAG, "Work message size: %d bytes", len + 5);  // +5 for checksum/terminator
 
     return finalize_message(buffer, buffer_len, len);
 }
@@ -382,9 +402,14 @@ esp_err_t cluster_protocol_decode_work(const char *payload,
 
     memset(work, 0, sizeof(cluster_work_t));
 
-    // job_id
+    // target_slave_id (first field for quick filtering)
     p = get_next_field(p, field, sizeof(field));
     if (!p && strlen(field) == 0) return ESP_ERR_INVALID_ARG;
+    work->target_slave_id = (uint8_t)strtoul(field, NULL, 10);
+
+    // job_id
+    if (!p) return ESP_ERR_INVALID_ARG;
+    p = get_next_field(p, field, sizeof(field));
     work->job_id = strtoul(field, NULL, 10);
 
     // prev_block_hash (hex)
@@ -402,6 +427,11 @@ esp_err_t cluster_protocol_decode_work(const char *payload,
     if (!p) return ESP_ERR_INVALID_ARG;
     p = get_next_field(p, field, sizeof(field));
     work->version = strtoul(field, NULL, 10);
+
+    // version_mask (for AsicBoost version rolling)
+    if (!p) return ESP_ERR_INVALID_ARG;
+    p = get_next_field(p, field, sizeof(field));
+    work->version_mask = strtoul(field, NULL, 10);
 
     // nbits
     if (!p) return ESP_ERR_INVALID_ARG;
@@ -438,8 +468,40 @@ esp_err_t cluster_protocol_decode_work(const char *payload,
     }
 
     // clean_jobs
-    get_next_field(p, field, sizeof(field));
+    p = get_next_field(p, field, sizeof(field));
     work->clean_jobs = (field[0] == '1');
+
+    // pool_diff (may not be present in legacy messages)
+    if (p) {
+        p = get_next_field(p, field, sizeof(field));
+        work->pool_diff = strtoul(field, NULL, 10);
+        ESP_LOGD(TAG, "Decoded pool_diff: %lu", (unsigned long)work->pool_diff);
+    } else {
+        work->pool_diff = 512;  // Default fallback if not provided
+        ESP_LOGW(TAG, "pool_diff not in message, using default: %lu", (unsigned long)work->pool_diff);
+    }
+
+    // block_height (may not be present in legacy messages)
+    if (p) {
+        p = get_next_field(p, field, sizeof(field));
+        work->block_height = strtoul(field, NULL, 10);
+    }
+
+    // scriptsig (may not be present in legacy messages)
+    if (p) {
+        p = get_next_field(p, field, sizeof(field));
+        if (strcmp(field, "-") != 0) {
+            strncpy(work->scriptsig, field, sizeof(work->scriptsig) - 1);
+        }
+    }
+
+    // network_diff_str (may not be present in legacy messages)
+    if (p) {
+        get_next_field(p, field, sizeof(field));
+        if (strcmp(field, "-") != 0) {
+            strncpy(work->network_diff_str, field, sizeof(work->network_diff_str) - 1);
+        }
+    }
 
     work->timestamp = esp_timer_get_time() / 1000;
 

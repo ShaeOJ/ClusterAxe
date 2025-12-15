@@ -615,6 +615,10 @@ void stratum_task(void * pvParameters)
                     if (stratum_is_dual_pool_mode(GLOBAL_STATE)) {
                         GLOBAL_STATE->SYSTEM_MODULE.dual_pool_shares_accepted[POOL_PRIMARY]++;
                     }
+#if CLUSTER_ENABLED && CLUSTER_IS_MASTER
+                    // Update cluster slave's shares_accepted counter if this was a cluster share
+                    cluster_notify_share_result(stratum_api_v1_message.message_id, true);
+#endif
                 } else {
                     ESP_LOGW(TAG, "message result rejected: %s", stratum_api_v1_message.error_str);
                     SYSTEM_notify_rejected_share(GLOBAL_STATE, stratum_api_v1_message.error_str);
@@ -622,6 +626,10 @@ void stratum_task(void * pvParameters)
                     if (stratum_is_dual_pool_mode(GLOBAL_STATE)) {
                         GLOBAL_STATE->SYSTEM_MODULE.dual_pool_shares_rejected[POOL_PRIMARY]++;
                     }
+#if CLUSTER_ENABLED && CLUSTER_IS_MASTER
+                    // Update cluster slave's shares_rejected counter if this was a cluster share
+                    cluster_notify_share_result(stratum_api_v1_message.message_id, false);
+#endif
                 }
             } else if (stratum_api_v1_message.method == STRATUM_RESULT_SETUP) {
                 // Reset retry attempts after successfully receiving data.

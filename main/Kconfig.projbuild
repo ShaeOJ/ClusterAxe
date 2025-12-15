@@ -144,3 +144,164 @@ menu "Stratum Configuration"
             A starting difficulty to use with the fallback pool.
 
 endmenu
+
+menu "ClusterAxe Configuration"
+
+    config CLUSTER_MODE_MASTER
+        bool "Build as Cluster Master"
+        default n
+        help
+            Enable cluster master mode. The master maintains the pool connection
+            and distributes work to slave devices via BAP UART or ESP-NOW.
+
+            Only one device in a cluster should be configured as master.
+
+    config CLUSTER_MODE_SLAVE
+        bool "Build as Cluster Slave"
+        default n
+        depends on !CLUSTER_MODE_MASTER
+        help
+            Enable cluster slave mode. The slave receives work from the master
+            and reports found shares back to the master.
+
+            In slave mode, the device does not connect to the mining pool directly.
+
+    config CLUSTER_MAX_SLAVES
+        int "Maximum number of slaves"
+        default 8
+        range 1 16
+        depends on CLUSTER_MODE_MASTER
+        help
+            Maximum number of slave devices that can connect to this master.
+            UART bandwidth limits practical clusters to ~8 slaves at 115200 baud.
+
+    config CLUSTER_WORK_QUEUE_SIZE
+        int "Work queue depth per slave"
+        default 4
+        range 1 16
+        depends on CLUSTER_MODE_MASTER
+        help
+            Number of pending work items per slave. Higher values provide
+            more buffer for work distribution but use more memory.
+
+    config CLUSTER_SHARE_QUEUE_SIZE
+        int "Share queue depth"
+        default 16
+        range 4 64
+        help
+            Number of pending shares that can be queued. Higher values
+            prevent share loss during bursts but use more memory.
+
+    config CLUSTER_HEARTBEAT_MS
+        int "Heartbeat interval (ms)"
+        default 3000
+        range 1000 10000
+        help
+            Interval in milliseconds between slave heartbeat messages.
+            Lower values detect disconnections faster but increase traffic.
+
+    config CLUSTER_TIMEOUT_MS
+        int "Slave timeout (ms)"
+        default 10000
+        range 5000 60000
+        depends on CLUSTER_MODE_MASTER
+        help
+            Time in milliseconds after which a slave is considered disconnected
+            if no heartbeat is received.
+
+    menu "Transport Configuration"
+
+        choice CLUSTER_TRANSPORT
+            prompt "Cluster Transport Layer"
+            default CLUSTER_TRANSPORT_BAP
+            depends on CLUSTER_MODE_MASTER || CLUSTER_MODE_SLAVE
+
+            config CLUSTER_TRANSPORT_BAP
+                bool "BAP (UART Cable)"
+                help
+                    Use BAP protocol over UART for cluster communication.
+                    Requires physical cable connection between devices.
+                    Most reliable, lowest latency.
+
+            config CLUSTER_TRANSPORT_ESPNOW
+                bool "ESP-NOW (Wireless)"
+                help
+                    Use ESP-NOW for wireless cluster communication.
+                    No cables required, devices communicate via WiFi radio.
+                    Supports up to 20 peers, ~200m range.
+
+            config CLUSTER_TRANSPORT_BOTH
+                bool "Both (Auto-select)"
+                help
+                    Support both transports. ESP-NOW is preferred when available,
+                    BAP used as fallback if cable is connected.
+
+        endchoice
+
+        config CLUSTER_ESPNOW_CHANNEL
+            int "ESP-NOW WiFi Channel"
+            default 1
+            range 1 14
+            depends on CLUSTER_TRANSPORT_ESPNOW || CLUSTER_TRANSPORT_BOTH
+            help
+                WiFi channel for ESP-NOW communication.
+                Should match across all cluster devices.
+                Set to 0 for automatic (use current WiFi channel).
+
+        config CLUSTER_ESPNOW_ENCRYPT
+            bool "Enable ESP-NOW Encryption"
+            default n
+            depends on CLUSTER_TRANSPORT_ESPNOW || CLUSTER_TRANSPORT_BOTH
+            help
+                Enable AES-CCMP encryption for ESP-NOW packets.
+                All devices must use the same encryption key.
+                Reduces max encrypted peers to 17.
+
+        config CLUSTER_ESPNOW_PMK
+            string "ESP-NOW Primary Master Key"
+            default "ClusterAxe_PMK!!"
+            depends on CLUSTER_ESPNOW_ENCRYPT
+            help
+                16-character primary master key for ESP-NOW encryption.
+                Must be exactly 16 characters.
+
+        config CLUSTER_ESPNOW_DISCOVERY_INTERVAL_MS
+            int "Discovery Beacon Interval (ms)"
+            default 1000
+            range 500 5000
+            depends on CLUSTER_TRANSPORT_ESPNOW || CLUSTER_TRANSPORT_BOTH
+            help
+                How often master broadcasts discovery beacons (milliseconds).
+                Lower values = faster discovery, higher traffic.
+
+        config CLUSTER_ESPNOW_AUTO_PAIR
+            bool "Enable Automatic Pairing"
+            default y
+            depends on CLUSTER_TRANSPORT_ESPNOW || CLUSTER_TRANSPORT_BOTH
+            help
+                Automatically pair with discovered peers.
+                If disabled, peers must be manually added.
+
+    endmenu
+
+    config CLUSTER_DEBUG_LOGGING
+        bool "Enable debug logging"
+        default n
+        help
+            Enable verbose debug logging for cluster operations.
+            Warning: This generates significant log output.
+
+    config CLUSTER_STATS_ENABLED
+        bool "Enable statistics tracking"
+        default y
+        help
+            Track per-slave statistics including hashrate, shares, and temperature.
+
+    config CLUSTER_WEB_API_ENABLED
+        bool "Enable cluster web API"
+        default y
+        help
+            Enable REST API endpoints for cluster status and configuration.
+            Endpoints: /api/cluster/status, /api/cluster/slaves
+
+endmenu

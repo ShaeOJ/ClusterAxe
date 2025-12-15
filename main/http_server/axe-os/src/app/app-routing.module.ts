@@ -14,7 +14,7 @@ import { ClusterComponent } from './components/cluster/cluster.component';
 import { AppLayoutComponent } from './layout/app.layout.component';
 import { ApModeGuard } from './guards/ap-mode.guard';
 
-const TITLE_PREFIX = 'AxeOS';
+const TITLE_PREFIX = 'ClusterAxe';
 
 const routes: Routes = [
   {

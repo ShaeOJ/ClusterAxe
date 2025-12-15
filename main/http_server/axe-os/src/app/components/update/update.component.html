@@ -37,9 +37,13 @@
                         <div class="text-orange-500 mb-3">Download both files for update!</div>
 
                         <div *ngFor="let asset of latestRelease.assets">
-                            <div *ngIf="asset.name == 'esp-miner.bin'">
+                            <div *ngIf="asset.name == 'clusteraxe-master.bin'">
                                 <a style="text-decoration: underline;" target="_blank"
-                                    [href]="asset.browser_download_url">esp-miner.bin</a>
+                                    [href]="asset.browser_download_url">clusteraxe-master.bin</a>
+                            </div>
+                            <div *ngIf="asset.name == 'clusteraxe-slave.bin'">
+                                <a style="text-decoration: underline;" target="_blank"
+                                    [href]="asset.browser_download_url">clusteraxe-slave.bin</a>
                             </div>
                             <div *ngIf="asset.name == 'www.bin'">
                                 <a style="text-decoration: underline;" target="_blank"
@@ -60,7 +64,7 @@
         </div>
         <div class="col-12 lg:col-6 xl:col-4">
             <div class="card h-full">
-                <h3>Update AxeOS <span *ngIf="websiteUpdateProgress != null">{{websiteUpdateProgress}} %</span></h3>
+                <h3>Update ClusterAxe UI <span *ngIf="websiteUpdateProgress != null">{{websiteUpdateProgress}} %</span></h3>
 
                 <p-fileUpload #websiteUpload [customUpload]="true" mode="basic" accept=".bin" (uploadHandler)="otaWWWUpdate($event)"
                     [auto]="true" chooseLabel="Browse"></p-fileUpload>
@@ -74,7 +78,7 @@
                 <p-fileUpload #firmwareUpload [customUpload]="true" mode="basic" accept=".bin" (uploadHandler)="otaUpdate($event)"
                     [auto]="true" chooseLabel="Browse"></p-fileUpload>
 
-                <small>(esp-miner.bin)</small>
+                <small>(clusteraxe-master.bin / clusteraxe-slave.bin)</small>
             </div>
 
         </div>

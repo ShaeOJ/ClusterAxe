@@ -39,6 +39,8 @@ import { TooltipModule } from 'primeng/tooltip';
 import { DialogModule } from 'primeng/dialog';
 import { DialogService as PrimeDialogService } from 'primeng/dynamicdialog';
 import { DialogService, DialogListComponent } from './services/dialog.service';
+import { ToastModule } from 'primeng/toast';
+import { MessageService } from 'primeng/api';
 
 const components = [
   AppComponent,
@@ -88,12 +90,14 @@ const components = [
     AppLayoutModule,
     MessageModule,
     TooltipModule,
-    DialogModule
+    DialogModule,
+    ToastModule
   ],
   providers: [
     { provide: LocationStrategy, useClass: HashLocationStrategy },
     DialogService,
     PrimeDialogService,
+    MessageService,
     provideHttpClient()
   ],
   bootstrap: [AppComponent]
