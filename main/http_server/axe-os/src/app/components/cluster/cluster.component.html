@@ -1,326 +1,228 @@
 <ng-container *ngIf="clusterStatus$ | async as status; else loadingTemplate">
-    <!-- Cluster Status Card -->
-    <div class="card mb-4">
-        <div class="flex justify-content-between align-items-center mb-4">
-            <h2 class="m-0">Cluster Status</h2>
-            <div class="flex align-items-center gap-2">
-                <span class="text-500">Mode:</span>
-                <p-dropdown
-                    [options]="modeOptions"
-                    [(ngModel)]="selectedMode"
-                    optionLabel="label"
-                    optionValue="value"
-                    (onChange)="onModeChange($event)"
-                    styleClass="w-8rem">
-                </p-dropdown>
+<div class="flex justify-content-center">
+<div class="w-full" style="max-width: 900px;">
+    <!-- Header with Mode -->
+    <div class="flex justify-content-between align-items-center mb-3">
+        <h2 class="m-0 text-xl">Cluster</h2>
+        <p-dropdown
+            [options]="modeOptions"
+            [(ngModel)]="selectedMode"
+            optionLabel="label"
+            optionValue="value"
+            (onChange)="onModeChange($event)"
+            styleClass="w-7rem">
+        </p-dropdown>
+    </div>
+
+    <!-- Disabled Mode -->
+    <ng-container *ngIf="status.mode === 0">
+        <div class="surface-card border-round text-center py-5">
+            <i class="pi pi-ban text-4xl text-500 mb-3"></i>
+            <p class="text-500">Cluster mode is disabled</p>
+            <p class="text-400 text-sm">Select Master or Slave mode to enable</p>
+        </div>
+    </ng-container>
+
+    <!-- Master Mode -->
+    <ng-container *ngIf="status.mode === 1">
+        <!-- Stats Row -->
+        <div class="flex flex-wrap justify-content-center gap-2 mb-3">
+            <div class="surface-card border-round p-2 px-3 text-center flex-grow-1" style="min-width: 120px;">
+                <div class="text-400 text-xs mb-1">Slaves</div>
+                <div class="text-xl font-bold text-primary">{{status.activeSlaves}}</div>
+            </div>
+            <div class="surface-card border-round p-2 px-3 text-center flex-grow-1" style="min-width: 140px;">
+                <div class="text-400 text-xs mb-1">Hashrate</div>
+                <div class="text-xl font-bold text-green-500">{{formatHashrate(status.totalHashrate || 0)}}</div>
+            </div>
+            <div class="surface-card border-round p-2 px-3 text-center flex-grow-1" style="min-width: 100px;">
+                <div class="text-400 text-xs mb-1">Shares</div>
+                <div class="text-xl font-bold">
+                    <span class="text-green-500">{{status.totalSharesAccepted || 0}}</span>
+                    <span class="text-red-500 text-sm" *ngIf="(status.totalSharesRejected || 0) > 0">/{{status.totalSharesRejected}}</span>
+                </div>
+            </div>
+            <div class="surface-card border-round p-2 px-3 text-center flex-grow-1" style="min-width: 100px;" *ngIf="status.transport">
+                <div class="text-400 text-xs mb-1">Transport</div>
+                <div class="text-sm font-medium">
+                    <i class="pi {{getTransportIcon(status.transport.type)}} mr-1 text-primary"></i>{{getTransportLabel(status.transport.type)}}
+                </div>
             </div>
         </div>
 
-        <!-- Disabled Mode -->
-        <ng-container *ngIf="status.mode === 0">
-            <div class="text-center py-5">
-                <i class="pi pi-ban text-4xl text-500 mb-3"></i>
-                <p class="text-500 text-lg">Cluster mode is disabled</p>
-                <p class="text-400 text-sm">Select Master or Slave mode to enable clustering</p>
-            </div>
-        </ng-container>
-
-        <!-- Master Mode -->
-        <ng-container *ngIf="status.mode === 1">
-            <div class="grid">
-                <!-- Summary Stats -->
-                <div class="col-12 md:col-6 lg:col-3">
-                    <div class="surface-card shadow-1 border-round p-3 text-center">
-                        <div class="text-500 mb-2">Active Slaves</div>
-                        <div class="text-3xl font-bold text-primary">{{status.activeSlaves}}</div>
-                    </div>
-                </div>
-                <div class="col-12 md:col-6 lg:col-3">
-                    <div class="surface-card shadow-1 border-round p-3 text-center">
-                        <div class="text-500 mb-2">Cluster Hashrate</div>
-                        <div class="text-3xl font-bold text-green-500">{{formatHashrate(status.totalHashrate || 0)}}</div>
-                    </div>
-                </div>
-                <div class="col-12 md:col-6 lg:col-3">
-                    <div class="surface-card shadow-1 border-round p-3 text-center">
-                        <div class="text-500 mb-2">Shares Accepted</div>
-                        <div class="text-3xl font-bold text-green-500">{{status.totalSharesAccepted || 0}}</div>
-                    </div>
-                </div>
-                <div class="col-12 md:col-6 lg:col-3">
-                    <div class="surface-card shadow-1 border-round p-3 text-center">
-                        <div class="text-500 mb-2">Shares Rejected</div>
-                        <div class="text-3xl font-bold" [ngClass]="{'text-red-500': (status.totalSharesRejected || 0) > 0, 'text-green-500': (status.totalSharesRejected || 0) === 0}">
-                            {{status.totalSharesRejected || 0}}
+        <!-- Auto-Tune (Compact) -->
+        <div class="surface-card border-round p-3 mb-3">
+                <div class="flex flex-column md:flex-row align-items-center gap-3">
+                    <!-- Oscilloscope (compact) -->
+                    <div class="oscilloscope-container flex-shrink-0" [class.active]="autotuneStatus?.running"
+                         style="width: 200px; border-radius: 8px; overflow: hidden;">
+                        <div class="oscilloscope-screen" style="height: 80px;">
+                            <svg viewBox="0 0 200 100" class="oscilloscope-wave">
+                                <line x1="0" y1="50" x2="200" y2="50" class="grid-line"/>
+                                <line x1="100" y1="0" x2="100" y2="100" class="grid-line"/>
+                                <path [attr.d]="getOscilloscopePath()" class="wave-path" [class.animated]="autotuneStatus?.running"/>
+                            </svg>
+                            <div class="scanline" *ngIf="autotuneStatus?.running"></div>
                         </div>
                     </div>
-                </div>
-            </div>
 
-            <!-- Transport Info -->
-            <div class="surface-card border-round p-3 mb-4" *ngIf="status.transport">
-                <div class="flex align-items-center gap-3">
-                    <div class="flex align-items-center gap-2">
-                        <i class="pi {{getTransportIcon(status.transport.type)}} text-primary"></i>
-                        <span class="font-medium">{{getTransportLabel(status.transport.type)}}</span>
-                    </div>
-                    <span class="text-400">|</span>
-                    <span class="text-500" *ngIf="status.transport.channel">Channel: {{status.transport.channel}}</span>
-                    <span *ngIf="status.transport.encrypted" class="text-green-500">
-                        <i class="pi pi-lock mr-1"></i>Encrypted
-                    </span>
-                    <span *ngIf="status.transport.discoveryActive" class="text-blue-500">
-                        <i class="pi pi-search mr-1"></i>Discovery Active
-                    </span>
-                    <span class="text-500" *ngIf="status.transport.peerCount !== undefined">
-                        Peers: {{status.transport.peerCount}}
-                    </span>
-                </div>
-            </div>
-
-            <!-- Autotune Section -->
-            <div class="autotune-section surface-card border-round p-4 mb-4">
-                <div class="flex justify-content-between align-items-center mb-3">
-                    <div class="flex align-items-center gap-3">
-                        <i class="pi pi-sliders-v text-2xl text-primary"></i>
-                        <div>
-                            <h3 class="m-0">Auto-Tuning</h3>
-                            <span class="text-500 text-sm">Optimize frequency and voltage for efficiency</span>
+                    <!-- Controls -->
+                    <div class="flex-grow-1 w-full">
+                        <div class="flex flex-column md:flex-row align-items-start md:align-items-center gap-2 mb-2">
+                            <span class="font-bold">Auto-Tune</span>
+                            <span class="text-500 text-sm" *ngIf="autotuneStatus">
+                                {{getAutotuneStateLabel(autotuneStatus.stateCode)}}
+                                <span *ngIf="autotuneStatus.running"> - {{autotuneStatus?.progress || 0}}%</span>
+                            </span>
                         </div>
-                    </div>
-                    <div class="flex align-items-center gap-2">
-                        <span class="text-500 text-sm mr-2">{{autotuneEnabled ? 'Enabled' : 'Disabled'}}</span>
-                        <p-inputSwitch [(ngModel)]="autotuneEnabled"
-                                       (onChange)="toggleAutotune()"
-                                       [disabled]="autotuneLoading">
-                        </p-inputSwitch>
-                    </div>
-                </div>
 
-                <!-- Autotune Status Display -->
-                <ng-container *ngIf="autotuneStatus">
-                    <div class="grid">
-                        <!-- Oscilloscope Display -->
-                        <div class="col-12 md:col-6">
-                            <div class="oscilloscope-container" [class.active]="autotuneStatus.running">
-                                <div class="oscilloscope-header">
-                                    <span class="oscilloscope-title">SIGNAL ANALYSIS</span>
-                                    <span class="oscilloscope-status" [ngClass]="getAutotuneStateClass(autotuneStatus.stateCode)">
-                                        {{getAutotuneStateLabel(autotuneStatus.stateCode)}}
-                                    </span>
-                                </div>
-                                <div class="oscilloscope-screen">
-                                    <svg viewBox="0 0 200 100" class="oscilloscope-wave">
-                                        <!-- Grid lines -->
-                                        <line x1="0" y1="50" x2="200" y2="50" class="grid-line"/>
-                                        <line x1="100" y1="0" x2="100" y2="100" class="grid-line"/>
-                                        <!-- Wave path -->
-                                        <path [attr.d]="getOscilloscopePath()" class="wave-path" [class.animated]="autotuneStatus.running"/>
-                                    </svg>
-                                    <!-- Scan line effect -->
-                                    <div class="scanline" *ngIf="autotuneStatus.running"></div>
-                                </div>
-                                <div class="oscilloscope-footer">
-                                    <span>FREQ: {{autotuneStatus.currentFrequency}} MHz</span>
-                                    <span>VOLT: {{autotuneStatus.currentVoltage}} mV</span>
-                                </div>
+                        <!-- Profile Dropdown + Start Button -->
+                        <div class="flex flex-column md:flex-row gap-2">
+                            <p-dropdown [options]="autotuneModeOptions"
+                                        [(ngModel)]="selectedAutotuneMode"
+                                        optionLabel="label"
+                                        optionValue="value"
+                                        placeholder="Select Mode"
+                                        styleClass="w-full md:w-12rem">
+                            </p-dropdown>
+
+                            <ng-container *ngIf="!autotuneStatus?.running">
+                                <button pButton label="Start" icon="pi pi-play"
+                                        class="p-button-success p-button-sm"
+                                        (click)="startAutotune()"
+                                        [disabled]="autotuneLoading"
+                                        [loading]="autotuneLoading">
+                                </button>
+                            </ng-container>
+                            <ng-container *ngIf="autotuneStatus?.running">
+                                <button pButton label="Stop" icon="pi pi-stop"
+                                        class="p-button-danger p-button-sm"
+                                        (click)="stopAutotune(false)"
+                                        [loading]="autotuneLoading">
+                                </button>
+                                <button pButton label="Apply Best" icon="pi pi-check"
+                                        class="p-button-success p-button-sm"
+                                        (click)="stopAutotune(true)"
+                                        [loading]="autotuneLoading">
+                                </button>
+                            </ng-container>
+                        </div>
+
+                        <!-- Progress bar when running -->
+                        <div *ngIf="autotuneStatus?.running" class="mt-2">
+                            <p-progressBar [value]="autotuneStatus?.progress || 0" [showValue]="false" styleClass="h-0.5rem"></p-progressBar>
+                            <div class="flex justify-content-between text-xs text-500 mt-1">
+                                <span>{{autotuneStatus?.currentFrequency || 0}} MHz &#64; {{autotuneStatus?.currentVoltage || 0}} mV</span>
+                                <span>Test {{autotuneStatus?.testsCompleted || 0}}/{{autotuneStatus?.testsTotal || 0}}</span>
                             </div>
                         </div>
 
-                        <!-- Current Values and Progress -->
-                        <div class="col-12 md:col-6">
-                            <div class="flex flex-column gap-3">
-                                <!-- Progress Bar -->
-                                <div *ngIf="autotuneStatus.running">
-                                    <div class="flex justify-content-between mb-1">
-                                        <span class="text-500">Progress</span>
-                                        <span class="font-medium">{{autotuneStatus.progress}}%</span>
-                                    </div>
-                                    <p-progressBar [value]="autotuneStatus.progress" [showValue]="false" styleClass="h-1rem"></p-progressBar>
-                                    <div class="flex justify-content-between mt-1 text-sm text-500">
-                                        <span>Test {{autotuneStatus.testsCompleted}}/{{autotuneStatus.testsTotal}}</span>
-                                        <span>{{formatDuration(autotuneStatus.totalDuration)}}</span>
-                                    </div>
-                                </div>
-
-                                <!-- Best Found Values -->
-                                <div class="surface-ground border-round p-3" *ngIf="autotuneStatus.bestFrequency > 0">
-                                    <div class="text-500 text-sm mb-2">Best Settings Found</div>
-                                    <div class="grid">
-                                        <div class="col-6">
-                                            <div class="text-sm text-500">Frequency</div>
-                                            <div class="text-xl font-bold text-green-500">{{autotuneStatus.bestFrequency}} MHz</div>
-                                        </div>
-                                        <div class="col-6">
-                                            <div class="text-sm text-500">Voltage</div>
-                                            <div class="text-xl font-bold text-green-500">{{autotuneStatus.bestVoltage}} mV</div>
-                                        </div>
-                                        <div class="col-6">
-                                            <div class="text-sm text-500">Efficiency</div>
-                                            <div class="text-lg font-medium">{{autotuneStatus.bestEfficiency | number:'1.2-2'}} J/TH</div>
-                                        </div>
-                                        <div class="col-6">
-                                            <div class="text-sm text-500">Hashrate</div>
-                                            <div class="text-lg font-medium">{{autotuneStatus.bestHashrate | number:'1.2-2'}} GH/s</div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Current Test Values -->
-                                <div class="flex gap-3" *ngIf="autotuneStatus.running">
-                                    <div class="flex-1 surface-ground border-round p-2 text-center">
-                                        <div class="text-xs text-500">Testing</div>
-                                        <div class="font-bold">{{autotuneStatus.currentFrequency}} MHz</div>
-                                    </div>
-                                    <div class="flex-1 surface-ground border-round p-2 text-center">
-                                        <div class="text-xs text-500">At</div>
-                                        <div class="font-bold">{{autotuneStatus.currentVoltage}} mV</div>
-                                    </div>
-                                </div>
-
-                                <!-- Mode Display -->
-                                <div class="flex align-items-center gap-2">
-                                    <span class="text-500">Mode:</span>
-                                    <span class="font-medium capitalize">{{autotuneStatus.mode}}</span>
-                                </div>
-
-                                <!-- Error Display -->
-                                <div class="text-red-500" *ngIf="autotuneStatus.error">
-                                    <i class="pi pi-exclamation-circle mr-2"></i>
-                                    {{autotuneStatus.error}}
-                                </div>
-                            </div>
+                        <!-- Best result when found -->
+                        <div *ngIf="(autotuneStatus?.bestFrequency || 0) > 0 && !autotuneStatus?.running" class="mt-2 text-sm">
+                            <span class="text-500">Best: </span>
+                            <span class="text-green-500 font-medium">
+                                {{autotuneStatus?.bestFrequency}} MHz &#64; {{autotuneStatus?.bestVoltage}} mV
+                                ({{autotuneStatus?.bestEfficiency | number:'1.1-1'}} J/TH)
+                            </span>
                         </div>
                     </div>
-
-                    <!-- Action Buttons -->
-                    <div class="flex justify-content-end gap-2 mt-3 pt-3 border-top-1 surface-border">
-                        <ng-container *ngIf="!autotuneStatus.running">
-                            <button pButton label="Start Autotune" icon="pi pi-play"
-                                    class="p-button-primary"
-                                    (click)="openAutotuneDialog()"
-                                    [disabled]="!autotuneEnabled || autotuneLoading"
-                                    [loading]="autotuneLoading">
-                            </button>
-                        </ng-container>
-                        <ng-container *ngIf="autotuneStatus.running">
-                            <button pButton label="Stop & Revert" icon="pi pi-times"
-                                    class="p-button-outlined p-button-secondary"
-                                    (click)="stopAutotune(false)"
-                                    [loading]="autotuneLoading">
-                            </button>
-                            <button pButton label="Stop & Apply Best" icon="pi pi-check"
-                                    class="p-button-success"
-                                    (click)="stopAutotune(true)"
-                                    [loading]="autotuneLoading">
-                            </button>
-                        </ng-container>
-                    </div>
-                </ng-container>
-
-                <!-- Initial State (no autotune data yet) -->
-                <ng-container *ngIf="!autotuneStatus">
-                    <div class="text-center py-4">
-                        <i class="pi pi-spin pi-spinner text-2xl text-500 mb-2" *ngIf="autotuneLoading"></i>
-                        <p class="text-500 m-0" *ngIf="!autotuneLoading">Enable autotune to optimize ASIC settings</p>
-                    </div>
-                </ng-container>
+                </div>
             </div>
 
-            <!-- Bulk Actions Toolbar -->
+            <!-- Connected Slaves Header -->
             <div class="flex justify-content-between align-items-center mb-3" *ngIf="status.slaves && status.slaves.length > 0">
-                <h3 class="m-0">Connected Slaves</h3>
+                <div class="flex align-items-center gap-2">
+                    <i class="pi pi-server text-primary text-xl"></i>
+                    <h3 class="m-0">Connected Slaves</h3>
+                    <span class="text-500">({{status.activeSlaves || status.slaves.length}})</span>
+                </div>
                 <div class="flex gap-2">
-                    <button pButton label="Set All Freq" icon="pi pi-bolt" class="p-button-sm p-button-outlined"
-                            (click)="openBulkAction('frequency')" pTooltip="Set frequency on all slaves"></button>
-                    <button pButton label="Set All Voltage" icon="pi pi-sliders-h" class="p-button-sm p-button-outlined"
-                            (click)="openBulkAction('voltage')" pTooltip="Set voltage on all slaves"></button>
-                    <button pButton label="Set All Fan" icon="pi pi-sync" class="p-button-sm p-button-outlined"
-                            (click)="openBulkAction('fan')" pTooltip="Set fan speed on all slaves"></button>
-                    <button pButton label="Restart All" icon="pi pi-refresh" class="p-button-sm p-button-danger p-button-outlined"
-                            (click)="openBulkAction('restart')" pTooltip="Restart all slaves"></button>
+                    <button pButton icon="pi pi-bolt" class="p-button-sm p-button-outlined p-button-rounded"
+                            (click)="openBulkAction('frequency')" pTooltip="Set frequency on all"></button>
+                    <button pButton icon="pi pi-sliders-h" class="p-button-sm p-button-outlined p-button-rounded"
+                            (click)="openBulkAction('voltage')" pTooltip="Set voltage on all"></button>
+                    <button pButton icon="pi pi-refresh" class="p-button-sm p-button-danger p-button-outlined p-button-rounded"
+                            (click)="openBulkAction('restart')" pTooltip="Restart all"></button>
                 </div>
             </div>
 
             <!-- Slave List -->
             <ng-container *ngIf="status.slaves && status.slaves.length > 0; else noSlaves">
                 <div class="slave-list">
-                    <ng-container *ngFor="let slave of status.slaves">
-                        <!-- Slave Summary Row -->
-                        <div class="surface-card border-round p-3 mb-2 cursor-pointer"
-                             [ngClass]="{'border-primary border-1': expandedSlaveId === slave.slaveId}"
+                    <ng-container *ngFor="let slave of status.slaves; trackBy: trackBySlave">
+                        <!-- Slave Card -->
+                        <div class="surface-card border-round p-3 mb-2 cursor-pointer hover:surface-hover transition-colors transition-duration-150"
+                             [ngClass]="{'border-primary border-2': expandedSlaveId === slave.slot, 'border-1 border-transparent': expandedSlaveId !== slave.slot}"
                              (click)="toggleSlaveConfig(slave)">
-                            <div class="flex align-items-center justify-content-between">
-                                <div class="flex align-items-center gap-3">
-                                    <!-- Status Icon -->
-                                    <i class="pi {{getSlaveStateIcon(slave.state)}} text-xl"
+                            <div class="grid align-items-center">
+                                <!-- Left: Status + Name -->
+                                <div class="col-12 md:col-3 flex align-items-center gap-2">
+                                    <i class="pi {{getSlaveStateIcon(slave.state)}} text-lg"
                                        [ngClass]="clusterService.getSlaveStateClass(slave.state)"></i>
-
-                                    <!-- Device Info -->
-                                    <div class="flex flex-column">
-                                        <div class="flex align-items-center gap-2">
-                                            <span class="font-bold">{{slave.hostname}}</span>
-                                            <span class="text-500 text-sm">(ID: {{slave.slaveId}})</span>
-                                            <!-- RSSI badge for ESP-NOW -->
-                                            <span *ngIf="slave.rssi !== undefined"
-                                                  class="text-sm px-2 py-1 border-round"
-                                                  [ngClass]="clusterService.getRssiClass(slave.rssi)">
-                                                <i class="pi pi-wifi mr-1"></i>{{clusterService.getRssiLabel(slave.rssi)}}
-                                            </span>
-                                        </div>
-                                        <div class="flex align-items-center gap-2 text-sm">
-                                            <a *ngIf="slave.ipAddr"
-                                               [href]="'http://' + slave.ipAddr"
-                                               target="_blank"
-                                               class="text-primary"
-                                               (click)="$event.stopPropagation()"
-                                               pTooltip="Open slave web interface">
-                                                <i class="pi pi-external-link mr-1" style="font-size: 0.7rem"></i>
-                                                {{slave.ipAddr}}
-                                            </a>
-                                            <span *ngIf="!slave.ipAddr" class="text-400">No IP (ESP-NOW only)</span>
+                                    <div>
+                                        <div class="font-bold">{{slave.hostname}}</div>
+                                        <div class="text-xs text-400">
+                                            <span *ngIf="slave.ipAddr">{{slave.ipAddr}}</span>
+                                            <span *ngIf="!slave.ipAddr">ESP-NOW</span>
                                         </div>
                                     </div>
                                 </div>
 
-                                <!-- Quick Stats -->
-                                <div class="flex align-items-center gap-4">
-                                    <div class="text-center">
-                                        <div class="text-500 text-xs">Hashrate</div>
-                                        <div class="font-bold text-green-500">{{formatHashrate(slave.hashrate)}}</div>
-                                    </div>
-                                    <div class="text-center">
-                                        <div class="text-500 text-xs">Temp</div>
-                                        <div class="font-bold">{{slave.temperature | number:'1.1-1'}}&deg;C</div>
-                                    </div>
-                                    <div class="text-center">
-                                        <div class="text-500 text-xs">Power</div>
-                                        <div class="font-bold">{{slave.power | number:'1.1-1'}}W</div>
-                                    </div>
-                                    <div class="text-center">
-                                        <div class="text-500 text-xs">Shares</div>
-                                        <div>
-                                            <span class="text-green-500 font-bold">{{slave.sharesAccepted}}</span>
-                                            <span class="text-400">/</span>
-                                            <span class="text-red-500">{{slave.sharesSubmitted - slave.sharesAccepted}}</span>
+                                <!-- Center: Stats with Icons -->
+                                <div class="col-12 md:col-7">
+                                    <div class="flex justify-content-center gap-3 md:gap-5 flex-wrap">
+                                        <!-- Hashrate -->
+                                        <div class="flex align-items-center gap-2">
+                                            <i class="pi pi-chart-line text-green-500"></i>
+                                            <div>
+                                                <div class="text-xs text-500">Hashrate</div>
+                                                <div class="font-bold text-green-500">{{formatHashrate(slave.hashrate)}}</div>
+                                            </div>
+                                        </div>
+                                        <!-- Temp -->
+                                        <div class="flex align-items-center gap-2">
+                                            <i class="pi pi-sun" [ngClass]="{'text-orange-500': slave.temperature > 60, 'text-red-500': slave.temperature > 70, 'text-blue-500': slave.temperature <= 60}"></i>
+                                            <div>
+                                                <div class="text-xs text-500">Temp</div>
+                                                <div class="font-bold" [ngClass]="{'text-orange-500': slave.temperature > 60, 'text-red-500': slave.temperature > 70}">{{slave.temperature | number:'1.0-0'}}°C</div>
+                                            </div>
+                                        </div>
+                                        <!-- Power -->
+                                        <div class="flex align-items-center gap-2">
+                                            <i class="pi pi-bolt text-yellow-500"></i>
+                                            <div>
+                                                <div class="text-xs text-500">Power</div>
+                                                <div class="font-bold">{{slave.power | number:'1.1-1'}}W</div>
+                                            </div>
+                                        </div>
+                                        <!-- Shares -->
+                                        <div class="flex align-items-center gap-2">
+                                            <i class="pi pi-check-circle text-green-500"></i>
+                                            <div>
+                                                <div class="text-xs text-500">Shares</div>
+                                                <div>
+                                                    <span class="font-bold text-green-500">{{slave.sharesAccepted}}</span>
+                                                    <span class="text-red-500 text-sm" *ngIf="(slave.sharesSubmitted - slave.sharesAccepted) > 0">/{{slave.sharesSubmitted - slave.sharesAccepted}}</span>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div class="text-center">
-                                        <div class="text-500 text-xs">Last Seen</div>
-                                        <div class="text-sm">{{formatLastSeen(slave.lastSeen)}}</div>
-                                    </div>
-                                    <!-- Expand Icon -->
-                                    <i class="pi text-xl text-500"
-                                       [ngClass]="expandedSlaveId === slave.slaveId ? 'pi-chevron-up' : 'pi-chevron-down'"></i>
+                                </div>
+
+                                <!-- Right: Expand -->
+                                <div class="col-12 md:col-2 flex justify-content-end align-items-center gap-2">
+                                    <span class="text-xs text-400 hidden md:inline">{{formatLastSeen(slave.lastSeen)}}</span>
+                                    <i class="pi text-lg text-500"
+                                       [ngClass]="expandedSlaveId === slave.slot ? 'pi-chevron-up' : 'pi-chevron-down'"></i>
                                 </div>
                             </div>
                         </div>
 
                         <!-- Expanded Configuration Panel -->
                         <div class="surface-card border-round p-4 mb-3 ml-4 border-left-3 border-primary"
-                             *ngIf="expandedSlaveId === slave.slaveId"
+                             *ngIf="expandedSlaveId === slave.slot"
                              @fadeInOut>
-                            <ng-container *ngIf="loadingSlaveConfig === slave.slaveId; else configPanel">
+                            <ng-container *ngIf="loadingSlaveConfig === slave.slot; else configPanel">
                                 <div class="flex justify-content-center py-4">
                                     <i class="pi pi-spin pi-spinner text-2xl"></i>
                                 </div>
@@ -331,7 +233,7 @@
                                     <!-- Device Info Column -->
                                     <div class="col-12 md:col-4">
                                         <h4 class="mt-0 mb-3">Device Info</h4>
-                                        <div class="flex flex-column gap-2" *ngIf="getSlaveConfig(slave.slaveId) as config">
+                                        <div class="flex flex-column gap-2" *ngIf="getSlaveConfig(slave.slot) as config">
                                             <div class="flex justify-content-between">
                                                 <span class="text-500">Model:</span>
                                                 <span>{{config.deviceModel}}</span>
@@ -368,8 +270,8 @@
                                                                styleClass="w-8rem p-inputtext-sm">
                                                 </p-inputNumber>
                                                 <button pButton icon="pi pi-check" class="p-button-sm p-button-success"
-                                                        (click)="saveSlaveFrequency(slave.slaveId); $event.stopPropagation()"
-                                                        [loading]="savingSlaveConfig === slave.slaveId"
+                                                        (click)="saveSlaveFrequency(slave.slot); $event.stopPropagation()"
+                                                        [loading]="savingSlaveConfig === slave.slot"
                                                         pTooltip="Apply frequency"></button>
                                             </div>
                                             <!-- Voltage -->
@@ -381,8 +283,8 @@
                                                                styleClass="w-8rem p-inputtext-sm">
                                                 </p-inputNumber>
                                                 <button pButton icon="pi pi-check" class="p-button-sm p-button-success"
-                                                        (click)="saveSlaveVoltage(slave.slaveId); $event.stopPropagation()"
-                                                        [loading]="savingSlaveConfig === slave.slaveId"
+                                                        (click)="saveSlaveVoltage(slave.slot); $event.stopPropagation()"
+                                                        [loading]="savingSlaveConfig === slave.slot"
                                                         pTooltip="Apply voltage"></button>
                                             </div>
                                         </div>
@@ -400,7 +302,7 @@
                                                             optionLabel="label"
                                                             optionValue="value"
                                                             styleClass="w-8rem"
-                                                            (onChange)="saveSlaveFanMode(slave.slaveId)"
+                                                            (onChange)="saveSlaveFanMode(slave.slot)"
                                                             (click)="$event.stopPropagation()">
                                                 </p-dropdown>
                                             </div>
@@ -413,8 +315,8 @@
                                                                styleClass="w-8rem p-inputtext-sm">
                                                 </p-inputNumber>
                                                 <button pButton icon="pi pi-check" class="p-button-sm p-button-success"
-                                                        (click)="saveSlaveFanSpeed(slave.slaveId); $event.stopPropagation()"
-                                                        [loading]="savingSlaveConfig === slave.slaveId"
+                                                        (click)="saveSlaveFanSpeed(slave.slot); $event.stopPropagation()"
+                                                        [loading]="savingSlaveConfig === slave.slot"
                                                         pTooltip="Apply fan speed"></button>
                                             </div>
                                             <!-- Target Temp (only if auto) -->
@@ -426,21 +328,123 @@
                                                                styleClass="w-8rem p-inputtext-sm">
                                                 </p-inputNumber>
                                                 <button pButton icon="pi pi-check" class="p-button-sm p-button-success"
-                                                        (click)="saveSlaveTargetTemp(slave.slaveId); $event.stopPropagation()"
-                                                        [loading]="savingSlaveConfig === slave.slaveId"
+                                                        (click)="saveSlaveTargetTemp(slave.slot); $event.stopPropagation()"
+                                                        [loading]="savingSlaveConfig === slave.slot"
                                                         pTooltip="Apply target temp"></button>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
+                                <!-- Slave Auto-Tune Section -->
+                                <div class="mt-4 pt-3 border-top-1 surface-border">
+                                    <div class="flex justify-content-between align-items-center mb-3">
+                                        <div class="flex align-items-center gap-2">
+                                            <i class="pi pi-sliders-v text-primary"></i>
+                                            <h4 class="m-0">Auto-Tune</h4>
+                                        </div>
+                                        <button pButton icon="pi pi-refresh" class="p-button-text p-button-sm"
+                                                (click)="refreshSlaveAutotune(slave.slot); $event.stopPropagation()"
+                                                [loading]="slaveAutotuneLoading === slave.slot"
+                                                pTooltip="Refresh autotune status"></button>
+                                    </div>
+
+                                    <!-- Autotune Status -->
+                                    <ng-container *ngIf="getSlaveAutotuneStatus(slave.slot) as slaveAutotune">
+                                        <div class="grid">
+                                            <!-- Status Display -->
+                                            <div class="col-12 md:col-6">
+                                                <div class="surface-ground border-round p-3">
+                                                    <div class="flex justify-content-between mb-2">
+                                                        <span class="text-500">Status:</span>
+                                                        <span [ngClass]="getAutotuneStateClass(slaveAutotune.stateCode)" class="font-medium">
+                                                            {{getAutotuneStateLabel(slaveAutotune.stateCode)}}
+                                                        </span>
+                                                    </div>
+                                                    <div class="flex justify-content-between mb-2" *ngIf="slaveAutotune.running">
+                                                        <span class="text-500">Progress:</span>
+                                                        <span class="font-medium">{{slaveAutotune.progress}}%</span>
+                                                    </div>
+                                                    <div class="flex justify-content-between mb-2" *ngIf="slaveAutotune.running">
+                                                        <span class="text-500">Testing:</span>
+                                                        <span class="font-medium">{{slaveAutotune.currentFrequency}} MHz &#64; {{slaveAutotune.currentVoltage}} mV</span>
+                                                    </div>
+                                                    <div class="flex justify-content-between" *ngIf="slaveAutotune.mode">
+                                                        <span class="text-500">Mode:</span>
+                                                        <span class="font-medium capitalize">{{slaveAutotune.mode}}</span>
+                                                    </div>
+                                                    <!-- Progress bar when running -->
+                                                    <div *ngIf="slaveAutotune.running" class="mt-2">
+                                                        <p-progressBar [value]="slaveAutotune.progress" [showValue]="false" styleClass="h-0.5rem"></p-progressBar>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Best Found Values -->
+                                            <div class="col-12 md:col-6" *ngIf="slaveAutotune.bestFrequency > 0">
+                                                <div class="surface-ground border-round p-3">
+                                                    <div class="text-500 text-sm mb-2">Best Settings Found</div>
+                                                    <div class="grid">
+                                                        <div class="col-6">
+                                                            <div class="text-xs text-500">Frequency</div>
+                                                            <div class="font-bold text-green-500">{{slaveAutotune.bestFrequency}} MHz</div>
+                                                        </div>
+                                                        <div class="col-6">
+                                                            <div class="text-xs text-500">Voltage</div>
+                                                            <div class="font-bold text-green-500">{{slaveAutotune.bestVoltage}} mV</div>
+                                                        </div>
+                                                        <div class="col-6">
+                                                            <div class="text-xs text-500">Efficiency</div>
+                                                            <div class="font-medium">{{slaveAutotune.bestEfficiency | number:'1.2-2'}} J/TH</div>
+                                                        </div>
+                                                        <div class="col-6">
+                                                            <div class="text-xs text-500">Hashrate</div>
+                                                            <div class="font-medium">{{slaveAutotune.bestHashrate | number:'1.2-2'}} GH/s</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Autotune Action Buttons -->
+                                        <div class="flex gap-2 mt-3">
+                                            <ng-container *ngIf="!slaveAutotune.running">
+                                                <button pButton label="Start Auto-Tune" icon="pi pi-play"
+                                                        class="p-button-sm p-button-outlined"
+                                                        (click)="openSlaveAutotuneDialog(slave.slot); $event.stopPropagation()"
+                                                        [loading]="slaveAutotuneLoading === slave.slot">
+                                                </button>
+                                            </ng-container>
+                                            <ng-container *ngIf="slaveAutotune.running">
+                                                <button pButton label="Stop & Revert" icon="pi pi-times"
+                                                        class="p-button-sm p-button-outlined p-button-secondary"
+                                                        (click)="stopSlaveAutotune(slave.slot, false); $event.stopPropagation()"
+                                                        [loading]="slaveAutotuneLoading === slave.slot">
+                                                </button>
+                                                <button pButton label="Stop & Apply Best" icon="pi pi-check"
+                                                        class="p-button-sm p-button-success"
+                                                        (click)="stopSlaveAutotune(slave.slot, true); $event.stopPropagation()"
+                                                        [loading]="slaveAutotuneLoading === slave.slot">
+                                                </button>
+                                            </ng-container>
+                                        </div>
+                                    </ng-container>
+
+                                    <!-- No autotune data yet -->
+                                    <ng-container *ngIf="!getSlaveAutotuneStatus(slave.slot)">
+                                        <div class="surface-ground border-round p-3 text-center">
+                                            <span class="text-500 text-sm">Click refresh to load autotune status</span>
+                                        </div>
+                                    </ng-container>
+                                </div>
+
                                 <!-- Action Buttons -->
                                 <div class="flex justify-content-end gap-2 mt-3 pt-3 border-top-1 surface-border">
                                     <button pButton label="Identify" icon="pi pi-lightbulb" class="p-button-sm p-button-outlined"
-                                            (click)="identifySlave(slave.slaveId); $event.stopPropagation()"
+                                            (click)="identifySlave(slave.slot); $event.stopPropagation()"
                                             pTooltip="Flash LED to identify device"></button>
                                     <button pButton label="Restart" icon="pi pi-refresh" class="p-button-sm p-button-danger p-button-outlined"
-                                            (click)="restartSlave(slave.slaveId); $event.stopPropagation()"
+                                            (click)="restartSlave(slave.slot); $event.stopPropagation()"
                                             pTooltip="Restart this slave"></button>
                                 </div>
                             </ng-template>
@@ -536,7 +540,8 @@
                 </div>
             </div>
         </ng-container>
-    </div>
+</div>
+</div>
 </ng-container>
 
 <ng-template #loadingTemplate>
@@ -688,6 +693,168 @@
     <ng-template pTemplate="footer">
         <button pButton label="Cancel" class="p-button-text" (click)="showAutotuneDialog = false"></button>
         <button pButton label="Start" icon="pi pi-play" class="p-button-primary" (click)="startAutotune()"></button>
+    </ng-template>
+</p-dialog>
+
+<!-- Slave Autotune Mode Selection Dialog -->
+<p-dialog
+    header="Start Slave Auto-Tuning"
+    [(visible)]="showSlaveAutotuneDialog"
+    [modal]="true"
+    [style]="{width: '450px'}">
+
+    <div class="flex flex-column gap-4">
+        <p class="text-500 mt-0">
+            Auto-tuning will test different frequency and voltage combinations on the selected slave to find optimal settings.
+        </p>
+
+        <div class="flex flex-column gap-2">
+            <label class="font-medium">Optimization Mode</label>
+            <p-dropdown [options]="autotuneModeOptions"
+                        [(ngModel)]="slaveAutotuneMode"
+                        optionLabel="label"
+                        optionValue="value"
+                        styleClass="w-full">
+            </p-dropdown>
+        </div>
+
+        <div class="surface-ground border-round p-3">
+            <div class="flex flex-column gap-2 text-sm">
+                <div *ngIf="slaveAutotuneMode === 'efficiency'">
+                    <i class="pi pi-bolt text-green-500 mr-2"></i>
+                    <strong>Efficiency Mode:</strong> Finds the best J/TH ratio. Lower power consumption while maintaining hashrate.
+                </div>
+                <div *ngIf="slaveAutotuneMode === 'hashrate'">
+                    <i class="pi pi-chart-line text-blue-500 mr-2"></i>
+                    <strong>Hashrate Mode:</strong> Maximizes hashrate regardless of power consumption.
+                </div>
+                <div *ngIf="slaveAutotuneMode === 'balanced'">
+                    <i class="pi pi-sliders-h text-orange-500 mr-2"></i>
+                    <strong>Balanced Mode:</strong> Finds a middle ground between efficiency and hashrate.
+                </div>
+            </div>
+        </div>
+
+        <div class="text-orange-500 text-sm">
+            <i class="pi pi-exclamation-triangle mr-2"></i>
+            Auto-tuning is performed via HTTP proxy to the slave. This may take several minutes.
+        </div>
+    </div>
+
+    <ng-template pTemplate="footer">
+        <button pButton label="Cancel" class="p-button-text" (click)="showSlaveAutotuneDialog = false"></button>
+        <button pButton label="Start" icon="pi pi-play" class="p-button-primary"
+                (click)="startSlaveAutotune()"
+                [loading]="slaveAutotuneLoading !== null">
+        </button>
+    </ng-template>
+</p-dialog>
+
+<!-- Save Profile Dialog -->
+<p-dialog
+    header="Save Current Settings as Profile"
+    [(visible)]="showSaveProfileDialog"
+    [modal]="true"
+    [style]="{width: '400px'}">
+
+    <div class="flex flex-column gap-4">
+        <p class="text-500 mt-0">
+            Save the current autotune settings as a reusable profile.
+        </p>
+
+        <div class="flex flex-column gap-2">
+            <label class="font-medium">Profile Name</label>
+            <input type="text" pInputText [(ngModel)]="newProfileName"
+                   placeholder="e.g., Efficiency Max, Summer Settings"
+                   class="w-full">
+        </div>
+
+        <div class="surface-ground border-round p-3" *ngIf="autotuneStatus">
+            <div class="text-500 text-sm mb-2">Settings to Save</div>
+            <div class="flex gap-4">
+                <div>
+                    <span class="text-500">Frequency:</span>
+                    <span class="font-bold ml-1">
+                        {{autotuneStatus.bestFrequency || autotuneStatus.currentFrequency}} MHz
+                    </span>
+                </div>
+                <div>
+                    <span class="text-500">Voltage:</span>
+                    <span class="font-bold ml-1">
+                        {{autotuneStatus.bestVoltage || autotuneStatus.currentVoltage}} mV
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <ng-template pTemplate="footer">
+        <button pButton label="Cancel" class="p-button-text" (click)="showSaveProfileDialog = false"></button>
+        <button pButton label="Save Profile" icon="pi pi-save" class="p-button-primary"
+                (click)="saveCurrentAsProfile()"
+                [disabled]="!newProfileName.trim()">
+        </button>
+    </ng-template>
+</p-dialog>
+
+<!-- Apply Profile Dialog -->
+<p-dialog
+    header="Apply Profile"
+    [(visible)]="showApplyProfileDialog"
+    [modal]="true"
+    [style]="{width: '450px'}">
+
+    <div class="flex flex-column gap-4" *ngIf="selectedProfileSlot !== null">
+        <ng-container *ngIf="getProfileBySlot(selectedProfileSlot) as profile">
+            <div class="surface-ground border-round p-3">
+                <div class="font-bold text-lg mb-2">{{profile.name}}</div>
+                <div class="flex gap-4">
+                    <div>
+                        <span class="text-500">Frequency:</span>
+                        <span class="font-bold ml-1">{{profile.frequency}} MHz</span>
+                    </div>
+                    <div>
+                        <span class="text-500">Voltage:</span>
+                        <span class="font-bold ml-1">{{profile.voltage}} mV</span>
+                    </div>
+                </div>
+            </div>
+        </ng-container>
+
+        <div class="flex flex-column gap-2">
+            <label class="font-medium">Apply To</label>
+            <p-dropdown [options]="[
+                    {label: 'Master Device', value: 'master'},
+                    {label: 'Specific Slave', value: 'slave'},
+                    {label: 'All Devices', value: 'all'}
+                ]"
+                        [(ngModel)]="profileApplyTarget"
+                        optionLabel="label"
+                        optionValue="value"
+                        styleClass="w-full">
+            </p-dropdown>
+        </div>
+
+        <div class="flex flex-column gap-2" *ngIf="profileApplyTarget === 'slave'">
+            <label class="font-medium">Select Slave</label>
+            <p-inputNumber [(ngModel)]="profileApplySlaveId"
+                           [min]="0"
+                           placeholder="Slave ID"
+                           styleClass="w-full">
+            </p-inputNumber>
+        </div>
+
+        <div class="text-orange-500 text-sm">
+            <i class="pi pi-exclamation-triangle mr-2"></i>
+            Settings will be applied immediately. Mining may be briefly interrupted.
+        </div>
+    </div>
+
+    <ng-template pTemplate="footer">
+        <button pButton label="Cancel" class="p-button-text" (click)="showApplyProfileDialog = false"></button>
+        <button pButton label="Apply" icon="pi pi-play" class="p-button-primary"
+                (click)="applyProfile()">
+        </button>
     </ng-template>
 </p-dialog>
 

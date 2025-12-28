@@ -81,6 +81,20 @@ export interface IAutotuneStatus {
   error?: string;
 }
 
+export interface IAutotuneProfile {
+  slot?: number;
+  name: string;
+  frequency: number;
+  voltage: number;
+  fanSpeed?: number;
+  targetTemp?: number;
+  savedAt?: number;
+}
+
+export interface IProfilesResponse {
+  profiles: IAutotuneProfile[];
+}
+
 export interface IClusterStatus {
   enabled: boolean;
   mode: number;
@@ -93,6 +107,7 @@ export interface IClusterStatus {
   totalShares?: number;
   totalSharesAccepted?: number;
   totalSharesRejected?: number;
+  currentTime?: number;  // Device time (ms since boot) for calculating last seen
   slaves?: IClusterSlave[];
   // Slave fields
   connectedToMaster?: boolean;
@@ -100,6 +115,8 @@ export interface IClusterStatus {
   localTemperature?: number;
   localFanRpm?: number;
   hostname?: string;
+  sharesFound?: number;
+  sharesSubmitted?: number;
 }
 
 // Setting IDs for remote configuration
@@ -346,6 +363,127 @@ export class ClusterService {
       return this.httpClient.post(`${uri}/api/cluster/autotune`, { action: 'stop', applyBest }).pipe(timeout(5000));
     }
     return of({ success: true }).pipe(delay(500));
+  }
+
+  // ========================================================================
+  // Slave Autotune API (via HTTP proxy)
+  // ========================================================================
+
+  /**
+   * Get autotune status from a specific slave (proxied via master)
+   */
+  public getSlaveAutotuneStatus(uri: string = '', slaveId: number): Observable<IAutotuneStatus> {
+    if (environment.production) {
+      return this.httpClient.get<IAutotuneStatus>(`${uri}/api/cluster/slave/${slaveId}/autotune/status`).pipe(timeout(10000));
+    }
+    // Mock data for development
+    return of({
+      state: 'idle',
+      stateCode: 0,
+      mode: 'efficiency',
+      enabled: false,
+      running: false,
+      currentFrequency: 500,
+      currentVoltage: 1150,
+      bestFrequency: 0,
+      bestVoltage: 0,
+      bestEfficiency: 0,
+      bestHashrate: 0,
+      progress: 0,
+      testsCompleted: 0,
+      testsTotal: 0,
+      testDuration: 0,
+      totalDuration: 0
+    }).pipe(delay(500));
+  }
+
+  /**
+   * Start autotune on a specific slave
+   */
+  public startSlaveAutotune(uri: string = '', slaveId: number, mode: string = 'efficiency'): Observable<any> {
+    if (environment.production) {
+      return this.httpClient.post(`${uri}/api/cluster/slave/${slaveId}/autotune`, { action: 'start', mode }).pipe(timeout(10000));
+    }
+    return of({ success: true }).pipe(delay(500));
+  }
+
+  /**
+   * Stop autotune on a specific slave
+   */
+  public stopSlaveAutotune(uri: string = '', slaveId: number, applyBest: boolean = true): Observable<any> {
+    if (environment.production) {
+      return this.httpClient.post(`${uri}/api/cluster/slave/${slaveId}/autotune`, { action: 'stop', applyBest }).pipe(timeout(10000));
+    }
+    return of({ success: true }).pipe(delay(500));
+  }
+
+  /**
+   * Enable/disable autotune on a specific slave
+   */
+  public setSlaveAutotuneEnabled(uri: string = '', slaveId: number, enable: boolean): Observable<any> {
+    if (environment.production) {
+      const action = enable ? 'enable' : 'disable';
+      return this.httpClient.post(`${uri}/api/cluster/slave/${slaveId}/autotune`, { action }).pipe(timeout(10000));
+    }
+    return of({ success: true }).pipe(delay(500));
+  }
+
+  // ========================================================================
+  // Autotune Profiles API
+  // ========================================================================
+
+  public getProfiles(uri: string = ''): Observable<IProfilesResponse> {
+    if (environment.production) {
+      return this.httpClient.get<IProfilesResponse>(`${uri}/api/cluster/profiles`).pipe(timeout(5000));
+    }
+    // Mock data for development
+    return of({
+      profiles: [
+        {
+          slot: 0,
+          name: 'Efficiency Mode',
+          frequency: 500,
+          voltage: 1150,
+          fanSpeed: 50,
+          targetTemp: 55,
+          savedAt: Date.now() / 1000 - 86400
+        },
+        {
+          slot: 1,
+          name: 'Max Performance',
+          frequency: 600,
+          voltage: 1250,
+          fanSpeed: 80,
+          targetTemp: 60,
+          savedAt: Date.now() / 1000 - 3600
+        }
+      ]
+    }).pipe(delay(500));
+  }
+
+  public saveProfile(uri: string = '', profile: IAutotuneProfile): Observable<any> {
+    if (environment.production) {
+      return this.httpClient.post(`${uri}/api/cluster/profile`, profile).pipe(timeout(5000));
+    }
+    return of({ success: true, slot: 0 }).pipe(delay(500));
+  }
+
+  public deleteProfile(uri: string = '', slot: number): Observable<any> {
+    if (environment.production) {
+      return this.httpClient.delete(`${uri}/api/cluster/profile/${slot}`).pipe(timeout(5000));
+    }
+    return of({ success: true }).pipe(delay(500));
+  }
+
+  public applyProfile(uri: string = '', slot: number, target: string = 'master', slaveId?: number): Observable<any> {
+    if (environment.production) {
+      const body: any = { target };
+      if (slaveId !== undefined) {
+        body.slaveId = slaveId;
+      }
+      return this.httpClient.post(`${uri}/api/cluster/profile/${slot}/apply`, body).pipe(timeout(10000));
+    }
+    return of({ success: true, appliedCount: 2 }).pipe(delay(500));
   }
 
   // RSSI helpers for ESP-NOW

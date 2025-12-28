@@ -11,29 +11,89 @@
 }
 
 // ============================================================================
-// Oscilloscope / Pip-Boy Style Animation
+// Vault-Tec / Pip-Boy Style Autotune Interface
 // ============================================================================
 
 .autotune-section {
   border: 1px solid var(--surface-border);
+  background: linear-gradient(180deg, rgba(10, 15, 10, 0.95) 0%, rgba(5, 10, 5, 0.98) 100%);
+}
+
+// Vault-Tec Header
+.vault-tec-header {
+  background: linear-gradient(180deg, #1a3a1a 0%, #0d1f0d 100%);
+  border-bottom: 2px solid #2ecc40;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  .vault-tec-logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      border: 2px solid #2ecc40;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #2ecc40;
+      font-weight: bold;
+      font-size: 14px;
+      text-shadow: 0 0 10px rgba(46, 204, 64, 0.5);
+      box-shadow: 0 0 10px rgba(46, 204, 64, 0.3);
+    }
+
+    .logo-text {
+      font-family: 'Courier New', monospace;
+
+      .vault-tec-title {
+        color: #2ecc40;
+        font-size: 14px;
+        font-weight: bold;
+        letter-spacing: 3px;
+        text-shadow: 0 0 10px rgba(46, 204, 64, 0.5);
+      }
+
+      .vault-tec-subtitle {
+        color: #1a8a30;
+        font-size: 9px;
+        letter-spacing: 2px;
+      }
+    }
+  }
+}
+
+// Centered Oscilloscope Container
+.oscilloscope-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+  background: radial-gradient(ellipse at center, #0d1f0d 0%, #050a05 100%);
 }
 
 .oscilloscope-container {
   background: #0a0f0a;
-  border: 2px solid #1a3a1a;
-  border-radius: 8px;
+  border: 3px solid #1a3a1a;
+  border-radius: 12px;
   overflow: hidden;
   font-family: 'Courier New', monospace;
+  width: 100%;
+  max-width: 400px;
 
   &.active {
     border-color: #2ecc40;
-    box-shadow: 0 0 20px rgba(46, 204, 64, 0.3);
+    box-shadow: 0 0 30px rgba(46, 204, 64, 0.4), inset 0 0 20px rgba(46, 204, 64, 0.1);
   }
 }
 
 .oscilloscope-header {
   background: linear-gradient(180deg, #1a3a1a 0%, #0d1f0d 100%);
-  padding: 8px 12px;
+  padding: 10px 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -42,7 +102,7 @@
 
 .oscilloscope-title {
   color: #2ecc40;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: bold;
   letter-spacing: 2px;
   text-shadow: 0 0 10px rgba(46, 204, 64, 0.5);
@@ -53,12 +113,15 @@
   font-weight: bold;
   letter-spacing: 1px;
   text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .oscilloscope-screen {
   position: relative;
   background: radial-gradient(ellipse at center, #0d1f0d 0%, #050a05 100%);
-  height: 120px;
+  height: 140px;
   overflow: hidden;
 
   // CRT scan lines effect
@@ -71,8 +134,8 @@
     bottom: 0;
     background: repeating-linear-gradient(
       0deg,
-      rgba(0, 0, 0, 0.1) 0px,
-      rgba(0, 0, 0, 0.1) 1px,
+      rgba(0, 0, 0, 0.15) 0px,
+      rgba(0, 0, 0, 0.15) 1px,
       transparent 1px,
       transparent 2px
     );
@@ -88,7 +151,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.5) 100%);
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(0, 0, 0, 0.6) 100%);
     pointer-events: none;
     z-index: 3;
   }
@@ -109,10 +172,10 @@
   .wave-path {
     fill: none;
     stroke: #2ecc40;
-    stroke-width: 2;
+    stroke-width: 2.5;
     stroke-linecap: round;
     stroke-linejoin: round;
-    filter: drop-shadow(0 0 4px #2ecc40);
+    filter: drop-shadow(0 0 6px #2ecc40);
 
     &.animated {
       animation: wave-glow 0.5s ease-in-out infinite alternate;
@@ -127,7 +190,7 @@
   }
   100% {
     stroke: #5dff5d;
-    filter: drop-shadow(0 0 8px #5dff5d);
+    filter: drop-shadow(0 0 12px #5dff5d);
   }
 }
 
@@ -140,7 +203,7 @@
   background: linear-gradient(
     180deg,
     transparent 0%,
-    rgba(46, 204, 64, 0.3) 50%,
+    rgba(46, 204, 64, 0.4) 50%,
     transparent 100%
   );
   animation: scanline-move 2s linear infinite;
@@ -158,18 +221,254 @@
 
 .oscilloscope-footer {
   background: linear-gradient(180deg, #0d1f0d 0%, #1a3a1a 100%);
-  padding: 8px 12px;
+  padding: 10px 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   border-top: 1px solid #2a4a2a;
   color: #2ecc40;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 1px;
   text-shadow: 0 0 5px rgba(46, 204, 64, 0.5);
 }
 
-// Capitalize helper
+// ============================================================================
+// Device Gauge Cards
+// ============================================================================
+
+.device-gauges {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  padding: 16px;
+  background: rgba(10, 15, 10, 0.9);
+}
+
+.device-gauge-card {
+  background: linear-gradient(180deg, #0d1f0d 0%, #0a150a 100%);
+  border: 2px solid #1a3a1a;
+  border-radius: 8px;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+  transition: all 0.3s ease;
+
+  &.active {
+    border-color: #2ecc40;
+    box-shadow: 0 0 15px rgba(46, 204, 64, 0.3);
+  }
+
+  &.tuning {
+    border-color: #f1c40f;
+    box-shadow: 0 0 15px rgba(241, 196, 15, 0.3);
+    animation: tuning-pulse 1s ease-in-out infinite;
+  }
+}
+
+@keyframes tuning-pulse {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(241, 196, 15, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(241, 196, 15, 0.5);
+  }
+}
+
+.device-gauge-header {
+  background: linear-gradient(180deg, #1a3a1a 0%, #0d1f0d 100%);
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #2a4a2a;
+
+  .device-name {
+    color: #2ecc40;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-shadow: 0 0 8px rgba(46, 204, 64, 0.5);
+  }
+
+  .device-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #2ecc40;
+      box-shadow: 0 0 6px #2ecc40;
+
+      &.tuning {
+        background: #f1c40f;
+        box-shadow: 0 0 6px #f1c40f;
+        animation: blink 0.5s ease-in-out infinite;
+      }
+
+      &.offline {
+        background: #555;
+        box-shadow: none;
+      }
+    }
+  }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.device-gauge-body {
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.gauge-item {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid #1a3a1a;
+  border-radius: 6px;
+  padding: 8px 10px;
+  text-align: center;
+
+  .gauge-label {
+    color: #1a8a30;
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .gauge-value {
+    color: #2ecc40;
+    font-size: 16px;
+    font-weight: bold;
+    text-shadow: 0 0 8px rgba(46, 204, 64, 0.5);
+
+    &.warning {
+      color: #f1c40f;
+      text-shadow: 0 0 8px rgba(241, 196, 15, 0.5);
+    }
+
+    &.danger {
+      color: #e74c3c;
+      text-shadow: 0 0 8px rgba(231, 76, 60, 0.5);
+    }
+  }
+
+  .gauge-unit {
+    color: #1a8a30;
+    font-size: 10px;
+    margin-left: 2px;
+  }
+}
+
+.device-gauge-footer {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 8px 12px;
+  border-top: 1px solid #1a3a1a;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  .toggle-label {
+    color: #1a8a30;
+    font-size: 10px;
+    letter-spacing: 1px;
+  }
+}
+
+// ============================================================================
+// Device Selection Panel
+// ============================================================================
+
+.device-selection-panel {
+  background: linear-gradient(180deg, #0d1f0d 0%, #0a150a 100%);
+  border: 1px solid #1a3a1a;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px;
+
+  .panel-header {
+    color: #2ecc40;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+    text-shadow: 0 0 8px rgba(46, 204, 64, 0.5);
+    font-family: 'Courier New', monospace;
+  }
+}
+
+.device-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid #1a3a1a;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(46, 204, 64, 0.1);
+    border-color: #2a4a2a;
+  }
+
+  &.selected {
+    border-color: #2ecc40;
+    background: rgba(46, 204, 64, 0.15);
+  }
+
+  .device-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    .device-icon {
+      color: #2ecc40;
+      font-size: 18px;
+    }
+
+    .device-details {
+      .device-name {
+        color: #2ecc40;
+        font-size: 12px;
+        font-weight: bold;
+        font-family: 'Courier New', monospace;
+      }
+
+      .device-stats {
+        color: #1a8a30;
+        font-size: 10px;
+        font-family: 'Courier New', monospace;
+      }
+    }
+  }
+}
+
+// ============================================================================
+// Utilities
+// ============================================================================
+
 .capitalize {
   text-transform: capitalize;
+}
+
+.pip-boy-text {
+  font-family: 'Courier New', monospace;
+  color: #2ecc40;
+  text-shadow: 0 0 8px rgba(46, 204, 64, 0.5);
+}
+
+.pip-boy-border {
+  border: 2px solid #1a3a1a;
+
+  &.active {
+    border-color: #2ecc40;
+  }
 }

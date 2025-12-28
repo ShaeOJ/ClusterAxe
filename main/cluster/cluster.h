@@ -374,6 +374,13 @@ esp_err_t cluster_slave_handle_ack(uint8_t assigned_id, const char *hostname);
  */
 void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t version, uint32_t ntime);
 
+/**
+ * @brief Get slave share statistics
+ * @param shares_found Output: number of shares found locally
+ * @param shares_submitted Output: number of shares submitted to master
+ */
+void cluster_slave_get_shares(uint32_t *shares_found, uint32_t *shares_submitted);
+
 #endif // CLUSTER_ENABLED
 
 // ============================================================================

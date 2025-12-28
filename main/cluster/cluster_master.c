@@ -535,7 +535,8 @@ esp_err_t cluster_master_handle_heartbeat_ex(const cluster_heartbeat_data_t *dat
     slave->hashrate = data->hashrate;
     slave->temperature = data->temp;
     slave->fan_rpm = data->fan_rpm;
-    slave->shares_submitted = data->shares;
+    // NOTE: Don't overwrite shares_submitted here - master tracks that when receiving shares from slave
+    // data->shares is slave's LOCAL share count, not shares submitted TO master
 
     // Extended fields
     slave->frequency = data->frequency;

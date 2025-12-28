@@ -1,6 +1,6 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { Observable, interval, startWith, switchMap, catchError, of, BehaviorSubject, Subscription } from 'rxjs';
-import { ClusterService, IClusterStatus, IClusterSlave, ISlaveConfig, IAutotuneStatus, CLUSTER_SETTINGS } from '../../services/cluster.service';
+import { ClusterService, IClusterStatus, IClusterSlave, ISlaveConfig, IAutotuneStatus, IAutotuneProfile, CLUSTER_SETTINGS } from '../../services/cluster.service';
 import { SystemService } from '../../services/system.service';
 import { MessageService } from 'primeng/api';
 import { trigger, transition, style, animate } from '@angular/animations';
@@ -26,6 +26,7 @@ export class ClusterComponent implements OnInit, OnDestroy {
   public clusterStatus$: Observable<IClusterStatus | null>;
   public loading$ = new BehaviorSubject<boolean>(true);
   public error$ = new BehaviorSubject<string | null>(null);
+  public deviceCurrentTime: number = 0;  // Device time (ms since boot) for last seen calculation
 
   // Mode options for dropdown
   public modeOptions = [
@@ -64,13 +65,20 @@ export class ClusterComponent implements OnInit, OnDestroy {
     { label: 'Manual', value: 1 }
   ];
 
-  // Autotune state
+  // Autotune state (master)
   public autotuneStatus: IAutotuneStatus | null = null;
   public autotuneEnabled = false;
   public autotuneLoading = false;
   public showAutotuneDialog = false;
   public selectedAutotuneMode = 'efficiency';
   public autotuneSubscription: Subscription | null = null;
+
+  // Slave autotune state
+  public slaveAutotuneStatus: Map<number, IAutotuneStatus> = new Map();
+  public slaveAutotuneLoading: number | null = null;
+  public showSlaveAutotuneDialog = false;
+  public slaveAutotuneTarget: number | null = null;
+  public slaveAutotuneMode = 'efficiency';
 
   // Autotune mode options
   public autotuneModeOptions = [
@@ -81,6 +89,55 @@ export class ClusterComponent implements OnInit, OnDestroy {
 
   // Oscilloscope wave points for animation
   public oscilloscopePoints: number[] = [];
+
+  // Profile state
+  public profiles: IAutotuneProfile[] = [];
+  public profilesLoading = false;
+  public showSaveProfileDialog = false;
+  public showApplyProfileDialog = false;
+  public newProfileName = '';
+  public selectedProfileSlot: number | null = null;
+  public profileApplyTarget: 'master' | 'slave' | 'all' = 'master';
+  public profileApplySlaveId: number | null = null;
+
+  // Preset profiles (built-in defaults)
+  public presetProfiles = [
+    {
+      name: 'Max Efficiency',
+      description: 'Lowest power consumption with stable hashrate',
+      frequency: 400,
+      voltage: 1100,
+      maxTemp: 65,
+      icon: 'pi-bolt',
+      color: 'green'
+    },
+    {
+      name: 'Balanced',
+      description: 'Good balance of power and performance',
+      frequency: 500,
+      voltage: 1200,
+      maxTemp: 60,
+      icon: 'pi-sliders-h',
+      color: 'orange'
+    },
+    {
+      name: 'Max Hashrate',
+      description: 'Maximum performance - tests up to 800 MHz',
+      frequency: 650,
+      voltage: 1300,
+      maxTemp: 67,
+      icon: 'pi-chart-line',
+      color: 'blue'
+    }
+  ];
+
+  // Safety limits
+  public safetyLimits = {
+    maxVoltage: 1300,      // mV - absolute maximum voltage
+    maxTemperature: 67,    // °C - will throttle above this
+    criticalTemperature: 72, // °C - will shutdown above this
+    minFanSpeed: 20        // % - minimum fan speed when mining
+  };
 
   private refreshInterval = 3000; // 3 seconds
 
@@ -108,9 +165,15 @@ export class ClusterComponent implements OnInit, OnDestroy {
         this.error$.next(null);
         this.selectedMode = status.mode;
 
+        // Store device current time for last seen calculations
+        if (status.currentTime) {
+          this.deviceCurrentTime = status.currentTime;
+        }
+
         // Start autotune polling if in master mode
         if (status.mode === 1 && !this.autotuneSubscription) {
           this.startAutotunePolling();
+          this.loadProfiles();
         } else if (status.mode !== 1 && this.autotuneSubscription) {
           this.stopAutotunePolling();
         }
@@ -195,8 +258,9 @@ export class ClusterComponent implements OnInit, OnDestroy {
   }
 
   formatLastSeen(timestamp: number): string {
-    const now = Date.now();
-    const diff = now - timestamp;
+    // Use device current time (ms since boot) to calculate difference
+    const diff = this.deviceCurrentTime - timestamp;
+    if (diff < 0 || diff > 86400000) return 'Unknown';  // Sanity check
     if (diff < 1000) return 'Just now';
     if (diff < 60000) return Math.floor(diff / 1000) + 's ago';
     if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
@@ -218,24 +282,29 @@ export class ClusterComponent implements OnInit, OnDestroy {
     return slaves.reduce((sum, slave) => sum + (slave.power || 0), 0);
   }
 
+  // TrackBy function to prevent ngFor from recreating DOM elements
+  trackBySlave(index: number, slave: IClusterSlave): number {
+    return slave.slot;
+  }
+
   // ========================================================================
   // Slave Configuration Panel Methods
   // ========================================================================
 
   toggleSlaveConfig(slave: IClusterSlave): void {
-    if (this.expandedSlaveId === slave.slaveId) {
+    if (this.expandedSlaveId === slave.slot) {
       this.expandedSlaveId = null;
     } else {
-      this.expandedSlaveId = slave.slaveId;
-      this.loadSlaveConfig(slave.slaveId);
+      this.expandedSlaveId = slave.slot;
+      this.loadSlaveConfig(slave.slot);
     }
   }
 
-  loadSlaveConfig(slaveId: number): void {
-    this.loadingSlaveConfig = slaveId;
-    this.clusterService.getSlaveConfig('', slaveId).subscribe({
+  loadSlaveConfig(slot: number): void {
+    this.loadingSlaveConfig = slot;
+    this.clusterService.getSlaveConfig('', slot).subscribe({
       next: (config) => {
-        this.slaveConfigs.set(slaveId, config);
+        this.slaveConfigs.set(slot, config);
         this.editFrequency = config.frequency;
         this.editVoltage = config.coreVoltage;
         this.editFanSpeed = config.fanSpeed;
@@ -247,15 +316,29 @@ export class ClusterComponent implements OnInit, OnDestroy {
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
-          detail: `Failed to load configuration for slave ${slaveId}`
+          detail: `Failed to load configuration for slave ${slot}`
         });
         this.loadingSlaveConfig = null;
       }
     });
+
+    // Also load slave's autotune status
+    this.loadSlaveAutotuneStatus(slot);
   }
 
-  getSlaveConfig(slaveId: number): ISlaveConfig | undefined {
-    return this.slaveConfigs.get(slaveId);
+  loadSlaveAutotuneStatus(slot: number): void {
+    this.clusterService.getSlaveAutotuneStatus('', slot).subscribe({
+      next: (status) => {
+        this.slaveAutotuneStatus.set(slot, status);
+      },
+      error: () => {
+        // Silently fail - slave may not support autotune
+      }
+    });
+  }
+
+  getSlaveConfig(slot: number): ISlaveConfig | undefined {
+    return this.slaveConfigs.get(slot);
   }
 
   saveSlaveFrequency(slaveId: number): void {
@@ -421,6 +504,80 @@ export class ClusterComponent implements OnInit, OnDestroy {
         });
       }
     });
+  }
+
+  // ========================================================================
+  // Slave Autotune Methods
+  // ========================================================================
+
+  getSlaveAutotuneStatus(slaveId: number): IAutotuneStatus | undefined {
+    return this.slaveAutotuneStatus.get(slaveId);
+  }
+
+  openSlaveAutotuneDialog(slaveId: number): void {
+    this.slaveAutotuneTarget = slaveId;
+    this.slaveAutotuneMode = 'efficiency';
+    this.showSlaveAutotuneDialog = true;
+  }
+
+  startSlaveAutotune(): void {
+    if (this.slaveAutotuneTarget === null) return;
+
+    this.showSlaveAutotuneDialog = false;
+    this.slaveAutotuneLoading = this.slaveAutotuneTarget;
+
+    this.clusterService.startSlaveAutotune('', this.slaveAutotuneTarget, this.slaveAutotuneMode).subscribe({
+      next: () => {
+        this.slaveAutotuneLoading = null;
+        this.messageService.add({
+          severity: 'info',
+          summary: 'Autotune Started',
+          detail: `Slave ${this.slaveAutotuneTarget} is now autotuning`
+        });
+        // Refresh status after a delay
+        setTimeout(() => {
+          if (this.slaveAutotuneTarget !== null) {
+            this.loadSlaveAutotuneStatus(this.slaveAutotuneTarget);
+          }
+        }, 2000);
+      },
+      error: () => {
+        this.slaveAutotuneLoading = null;
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to start slave autotune'
+        });
+      }
+    });
+  }
+
+  stopSlaveAutotune(slaveId: number, applyBest: boolean): void {
+    this.slaveAutotuneLoading = slaveId;
+
+    this.clusterService.stopSlaveAutotune('', slaveId, applyBest).subscribe({
+      next: () => {
+        this.slaveAutotuneLoading = null;
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Autotune Stopped',
+          detail: applyBest ? 'Best settings applied' : 'Settings reverted'
+        });
+        this.loadSlaveAutotuneStatus(slaveId);
+      },
+      error: () => {
+        this.slaveAutotuneLoading = null;
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to stop slave autotune'
+        });
+      }
+    });
+  }
+
+  refreshSlaveAutotune(slaveId: number): void {
+    this.loadSlaveAutotuneStatus(slaveId);
   }
 
   // ========================================================================
@@ -681,5 +838,177 @@ export class ClusterComponent implements OnInit, OnDestroy {
     if (ms < 1000) return `${ms}ms`;
     if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
     return `${(ms / 60000).toFixed(1)}m`;
+  }
+
+  // ========================================================================
+  // Profile Methods
+  // ========================================================================
+
+  loadProfiles(): void {
+    this.profilesLoading = true;
+    this.clusterService.getProfiles('').subscribe({
+      next: (response) => {
+        this.profiles = response.profiles;
+        this.profilesLoading = false;
+      },
+      error: () => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to load profiles'
+        });
+        this.profilesLoading = false;
+      }
+    });
+  }
+
+  openSaveProfileDialog(): void {
+    this.newProfileName = '';
+    this.showSaveProfileDialog = true;
+  }
+
+  saveCurrentAsProfile(): void {
+    if (!this.newProfileName.trim()) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Warning',
+        detail: 'Please enter a profile name'
+      });
+      return;
+    }
+
+    // Get current settings from autotune status or use defaults
+    const profile: IAutotuneProfile = {
+      name: this.newProfileName.trim(),
+      frequency: this.autotuneStatus?.bestFrequency || this.autotuneStatus?.currentFrequency || 500,
+      voltage: this.autotuneStatus?.bestVoltage || this.autotuneStatus?.currentVoltage || 1200
+    };
+
+    this.clusterService.saveProfile('', profile).subscribe({
+      next: () => {
+        this.showSaveProfileDialog = false;
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Success',
+          detail: `Profile "${profile.name}" saved`
+        });
+        this.loadProfiles();
+      },
+      error: () => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to save profile'
+        });
+      }
+    });
+  }
+
+  deleteProfile(slot: number, name: string): void {
+    this.clusterService.deleteProfile('', slot).subscribe({
+      next: () => {
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Success',
+          detail: `Profile "${name}" deleted`
+        });
+        this.loadProfiles();
+      },
+      error: () => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to delete profile'
+        });
+      }
+    });
+  }
+
+  openApplyProfileDialog(slot: number): void {
+    this.selectedProfileSlot = slot;
+    this.profileApplyTarget = 'master';
+    this.profileApplySlaveId = null;
+    this.showApplyProfileDialog = true;
+  }
+
+  applyProfile(): void {
+    if (this.selectedProfileSlot === null) return;
+
+    const slaveId = this.profileApplyTarget === 'slave' ? this.profileApplySlaveId ?? undefined : undefined;
+
+    this.clusterService.applyProfile('', this.selectedProfileSlot, this.profileApplyTarget, slaveId).subscribe({
+      next: (result) => {
+        this.showApplyProfileDialog = false;
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Success',
+          detail: `Profile applied to ${result.appliedCount} setting(s)`
+        });
+      },
+      error: () => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to apply profile'
+        });
+      }
+    });
+  }
+
+  getProfileBySlot(slot: number): IAutotuneProfile | undefined {
+    return this.profiles.find(p => p.slot === slot);
+  }
+
+  formatProfileDate(timestamp: number): string {
+    if (!timestamp) return 'Unknown';
+    return new Date(timestamp * 1000).toLocaleDateString();
+  }
+
+  // ========================================================================
+  // Preset Profile Methods
+  // ========================================================================
+
+  applyPresetProfile(preset: typeof this.presetProfiles[0]): void {
+    // Apply preset settings via system service
+    this.autotuneLoading = true;
+
+    // Apply frequency and voltage settings
+    this.systemService.updateSystem('', {
+      frequency: preset.frequency,
+      coreVoltage: preset.voltage
+    }).subscribe({
+      next: () => {
+        this.autotuneLoading = false;
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Preset Applied',
+          detail: `${preset.name}: ${preset.frequency} MHz @ ${preset.voltage} mV`
+        });
+      },
+      error: () => {
+        this.autotuneLoading = false;
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to apply preset profile'
+        });
+      }
+    });
+  }
+
+  // Check if current temperature exceeds safety limit
+  isTemperatureWarning(temp: number): boolean {
+    return temp >= this.safetyLimits.maxTemperature;
+  }
+
+  isTemperatureCritical(temp: number): boolean {
+    return temp >= this.safetyLimits.criticalTemperature;
+  }
+
+  // Get temperature status class
+  getTemperatureClass(temp: number): string {
+    if (temp >= this.safetyLimits.criticalTemperature) return 'danger';
+    if (temp >= this.safetyLimits.maxTemperature) return 'warning';
+    return '';
   }
 }

@@ -703,4 +703,14 @@ void cluster_slave_deinit(void)
     ESP_LOGI(TAG, "Cluster slave deinitialized");
 }
 
+void cluster_slave_get_shares(uint32_t *shares_found, uint32_t *shares_submitted)
+{
+    if (shares_found) {
+        *shares_found = g_slave ? g_slave->shares_found : 0;
+    }
+    if (shares_submitted) {
+        *shares_submitted = g_slave ? g_slave->shares_submitted : 0;
+    }
+}
+
 #endif // CLUSTER_ENABLED && CLUSTER_IS_SLAVE

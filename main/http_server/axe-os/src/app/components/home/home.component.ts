@@ -58,6 +58,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   // Cluster integration
   public clusterStatus$!: Observable<IClusterStatus | null>;
   public isMasterMode: boolean = false;
+  public isSlaveMode: boolean = false;
   public clusterHashrateData: number[] = [];
 
   public chartOptions: any;
@@ -130,6 +131,7 @@ export class HomeComponent implements OnInit, OnDestroy {
       tap(status => {
         if (status) {
           this.isMasterMode = status.mode === 1;
+          this.isSlaveMode = status.mode === 2;
           // Track cluster hashrate for graph
           if (this.isMasterMode && status.totalHashrate !== undefined) {
             this.clusterHashrateData.push(status.totalHashrate);
@@ -236,12 +238,14 @@ export class HomeComponent implements OnInit, OnDestroy {
           fill: true,
           backgroundColor: primaryColor + '30',
           borderColor: primaryColor,
-          tension: 0,
-          pointRadius: 2,
-          pointHoverRadius: 5,
-          borderWidth: 1,
+          tension: 0.4,  // Smooth the line
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          borderWidth: 2,
           yAxisID: 'y',
-          hidden: false
+          hidden: false,
+          spanGaps: true,  // Connect across missing data
+          order: 0  // Draw last (on top)
         },
         {
           type: 'line',
@@ -250,12 +254,14 @@ export class HomeComponent implements OnInit, OnDestroy {
           fill: false,
           backgroundColor: textColorSecondary,
           borderColor: textColorSecondary,
-          tension: 0,
-          pointRadius: 2,
-          pointHoverRadius: 5,
-          borderWidth: 1,
+          tension: 0.4,  // Smooth the line
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          borderWidth: 1,  // Thinner line for temp
           yAxisID: 'y2',
-          hidden: false
+          hidden: false,
+          spanGaps: true,  // Connect across missing data
+          order: 1  // Draw first (behind)
         }
       ]
     };
@@ -303,29 +309,34 @@ export class HomeComponent implements OnInit, OnDestroy {
           type: 'linear',
           display: true,
           position: 'left',
+          beginAtZero: false,
+          grace: '5%',  // Add small padding above/below data
           ticks: {
             color: primaryColor,
+            maxTicksLimit: 6,  // Limit number of ticks for cleaner look
             callback: (value: number) => HomeComponent.cbFormatValue(value, this.chartData.datasets[0].label, {tickmark: true})
           },
           grid: {
             color: surfaceBorder,
             drawBorder: false
-          },
-          suggestedMax: 0
+          }
         },
         y2: {
           type: 'linear',
           display: true,
           position: 'right',
+          suggestedMin: 30,   // Reasonable temp range
+          suggestedMax: 75,   // Reasonable temp range
           ticks: {
             color: textColorSecondary,
+            maxTicksLimit: 5,
+            stepSize: 10,  // Nice round intervals
             callback: (value: number) => HomeComponent.cbFormatValue(value, this.chartData.datasets[1].label, {tickmark: true})
           },
           grid: {
             drawOnChartArea: false,
             color: surfaceBorder
-          },
-          suggestedMax: 80
+          }
         }
       }
     };
@@ -806,19 +817,48 @@ export class HomeComponent implements OnInit, OnDestroy {
     }
   }
 
-  static cbFormatValue(value: number, datasetLabel: eChartLabel, args?: any): string {
-    switch (datasetLabel) {
-      case eChartLabel.hashrate:
-      case eChartLabel.hashrate_1m:
-      case eChartLabel.hashrate_10m:
-      case eChartLabel.hashrate_1h:
-        return HashSuffixPipe.transform(value, args);
-      case eChartLabel.freeHeap:
-        return ByteSuffixPipe.transform(value, args);
-      default:
-        const settings = HomeComponent.getSettingsForLabel(datasetLabel);
-        return value.toLocaleString(undefined, { useGrouping: false, maximumFractionDigits: args?.tickmark ? undefined : settings.precision }) + settings.suffix;
+  static cbFormatValue(value: number, datasetLabel: eChartLabel | string | undefined, args?: any): string {
+    // Handle undefined or empty labels
+    if (!datasetLabel) {
+      return value.toFixed(0);
     }
+
+    // Convert string to check against enum values (handles both enum keys and values)
+    const label = String(datasetLabel);
+
+    // Check for all hashrate-related labels (compare against both enum values and keys)
+    const isHashrate = label === eChartLabel.hashrate || label === 'hashrate' ||
+                       label === eChartLabel.hashrate_1m || label === 'hashrate_1m' ||
+                       label === eChartLabel.hashrate_10m || label === 'hashrate_10m' ||
+                       label === eChartLabel.hashrate_1h || label === 'hashrate_1h' ||
+                       label === 'Hashrate' || label === 'Hashrate 1m' ||
+                       label === 'Hashrate 10m' || label === 'Hashrate 1h';
+
+    if (isHashrate) {
+      return HashSuffixPipe.transform(value, args);
+    }
+
+    // Check for cluster hashrate
+    const isClusterHashrate = label === eChartLabel.clusterHashrate ||
+                               label === 'clusterHashrate' ||
+                               label === 'Cluster Hashrate';
+    if (isClusterHashrate) {
+      // Cluster hashrate is already in GH/s (after division by 100)
+      if (value >= 1000) {
+        return (value / 1000).toFixed(args?.tickmark ? 1 : 2) + ' TH/s';
+      }
+      return value.toFixed(args?.tickmark ? 0 : 1) + ' GH/s';
+    }
+
+    // Check for free heap
+    const isFreeHeap = label === eChartLabel.freeHeap || label === 'freeHeap' || label === 'Free Heap';
+    if (isFreeHeap) {
+      return ByteSuffixPipe.transform(value, args);
+    }
+
+    // Default formatting for other labels
+    const settings = HomeComponent.getSettingsForLabel(datasetLabel as eChartLabel);
+    return value.toLocaleString(undefined, { useGrouping: false, maximumFractionDigits: args?.tickmark ? undefined : settings.precision }) + settings.suffix;
   }
 
   dataSourceLabels(info: ISystemInfo) {
@@ -954,11 +994,9 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   public getClusterTotalHashrate(status: IClusterStatus | null, deviceHashrate: number): number {
-    if (!status || status.mode !== 1) return deviceHashrate;
-    // Add device hashrate (in GH/s) to cluster hashrate (in GH/s * 100)
-    // Convert device hashrate to same scale as cluster
-    const deviceInClusterScale = deviceHashrate * 100;
-    return (status.totalHashrate || 0) + deviceInClusterScale;
+    if (!status || status.mode !== 1) return deviceHashrate * 100; // Convert to cluster scale
+    // Backend already includes master's hashrate in totalHashrate, so don't add again
+    return (status.totalHashrate || 0);
   }
 
   public getClusterTotalShares(status: IClusterStatus | null, deviceShares: number): number {
