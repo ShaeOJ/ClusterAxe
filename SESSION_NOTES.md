@@ -268,3 +268,196 @@ idf.py -p COM3 flash
    - Device Stats instead of Block Header
 3. Charts are smoother with better axis formatting
 4. Cluster page is centered with max-width 900px
+
+---
+
+## Session Continuation: December 28, 2025 (Part 2)
+
+---
+
+## 6. Master Device Settings Section
+
+### Problem
+The cluster page only showed slave devices - no way to view/edit master device settings.
+
+### Solution
+Added a collapsible "Master Device" card on the cluster page.
+
+**`cluster.component.html`**
+- Master Device card with stats (hashrate, temp, power, frequency)
+- Expandable panel with:
+  - Device Info (model, firmware, hostname, efficiency)
+  - Mining Settings (editable frequency 200-800 MHz, voltage 1000-1300 mV)
+  - Cooling Settings (fan mode dropdown, fan speed slider)
+  - "Include master in cluster auto-tune" checkbox
+
+**`cluster.component.ts`**
+- Added master device properties: `masterInfo`, `masterFrequency`, `masterVoltage`, etc.
+- Added methods: `loadMasterInfo()`, `saveMasterFrequency()`, `saveMasterVoltage()`, etc.
+- Master info loaded from SystemService on init
+
+---
+
+## 7. Autotune Mode Limits
+
+### Problem
+Autotune modes didn't have proper limits - user wanted specific constraints per mode.
+
+### Solution
+Updated `cluster_autotune.c` with mode-specific limits:
+
+| Mode | Max Frequency | Max Voltage | Description |
+|------|--------------|-------------|-------------|
+| Efficiency | 550 MHz | 1175 mV | Best J/TH with low voltage |
+| Balanced | 725 MHz | 1200 mV | Good performance, moderate power |
+| Max Hashrate | 800 MHz | 1300 mV | Push for hashrate (temp limited) |
+
+**Changes:**
+```c
+#define FREQ_MAX_MHZ_EFFICIENCY  550
+#define FREQ_MAX_MHZ_BALANCED    725
+#define FREQ_MAX_MHZ_HASHRATE    800
+
+#define VOLTAGE_MAX_MV_EFFICIENCY  1175
+#define VOLTAGE_MAX_MV_BALANCED    1200
+#define VOLTAGE_MAX_MV_HASHRATE    1300
+
+#define VOLTAGE_STEP_MV   25  // Smaller steps for finer tuning
+```
+
+Added `get_max_voltage_for_mode()` function.
+
+Updated UI to show limits in mode dropdown and descriptions.
+
+---
+
+## 8. Autotune Inclusion Toggles
+
+### Problem
+User wanted ability to include/exclude devices from cluster-wide autotune.
+
+### Solution
+
+**Master Toggle:**
+- Checkbox in expanded master device panel
+- `masterIncludeInAutotune` property
+
+**Slave Toggles:**
+- Checkbox in each slave's expanded config panel
+- `slaveAutotuneIncluded` Set tracks which slaves are included
+- All slaves included by default
+
+---
+
+## 9. Voltage Display Fix
+
+### Problem
+Autotune showed "800 MHz @ 27521 mV" - voltage way too high. Slaves showed 7120 mV.
+
+### Root Cause
+`cluster_get_core_voltage()` was reading INPUT voltage (~5V) instead of CORE voltage (~1.2V).
+
+### Solution
+
+**`cluster_integration.c`:**
+```c
+#include "power/vcore.h"
+
+uint16_t cluster_get_core_voltage(void)
+{
+    if (!g_global_state) {
+        return 0;
+    }
+    // Get actual core voltage in mV from VCORE module
+    int16_t voltage_mv = VCORE_get_voltage_mv(g_global_state);
+    return (voltage_mv > 0) ? (uint16_t)voltage_mv : 0;
+}
+```
+
+**UI Validation (`cluster.component.ts`):**
+```typescript
+// If voltage > 1500mV, it's wrong data from old firmware
+if (config.coreVoltage > 1500) {
+    this.editVoltage = 1200; // Default to safe value
+    console.warn(`Slave reported invalid voltage - rebuild slave firmware`);
+}
+```
+
+**Note:** Slaves need to be rebuilt and reflashed to report correct voltage.
+
+---
+
+## 10. Chart Y-Axis Auto-Scaling
+
+### Problem
+Hashrate Y-axis scale was too large, data didn't fill the chart area.
+
+### Solution
+
+**`home.component.ts`:**
+```typescript
+y: {
+    beginAtZero: false,
+    ticks: { maxTicksLimit: 6 },
+    // Tightly fit the data with minimal padding
+    afterDataLimits: (scale: any) => {
+        const range = scale.max - scale.min;
+        if (range > 0) {
+            const padding = range * 0.05;  // Just 5% padding
+            scale.min = Math.max(0, scale.min - padding);
+            scale.max = scale.max + padding;
+        } else {
+            // Flat line - create ±5% range
+            scale.min = Math.max(0, scale.max * 0.95);
+            scale.max = scale.max * 1.05;
+        }
+    }
+}
+```
+
+---
+
+## 11. ESP-NOW Slave Autotune UI
+
+### Problem
+"Click refresh to load autotune status" stayed empty for ESP-NOW slaves.
+
+### Root Cause
+ESP-NOW slaves don't have IP addresses, so HTTP proxy fails.
+
+### Solution
+Updated UI to show helpful message:
+- ESP-NOW slaves: "ESP-NOW slaves require direct access for autotune"
+- Slaves with IP: Shows Start Auto-Tune button + link to slave web UI
+
+---
+
+## Files Changed (Part 2)
+
+| File | Changes |
+|------|---------|
+| `cluster_autotune.c` | Mode-specific freq/voltage limits, smaller step sizes |
+| `cluster_autotune.h` | Updated mode enum comments with limits |
+| `cluster_integration.c` | Fixed `cluster_get_core_voltage()` to use VCORE |
+| `cluster.component.ts` | Master device methods, autotune toggles, voltage validation |
+| `cluster.component.html` | Master device card, autotune toggles, mode descriptions |
+| `home.component.ts` | Chart Y-axis auto-scaling |
+
+---
+
+## Git Commits
+
+```
+f273330 Improve slave UI and chart display
+ea9591b Fix autotune build errors
+cff882d Add auto-tuning feature with oscilloscope UI
+2271262 Add master device settings, autotune mode limits, and UI improvements
+```
+
+---
+
+## Remaining Tasks
+
+1. **Rebuild slave firmware** - Slaves need reflashing to report correct voltage
+2. **Test autotune** - Verify mode limits work correctly
+3. **Chart fine-tuning** - May need further adjustment based on real data
