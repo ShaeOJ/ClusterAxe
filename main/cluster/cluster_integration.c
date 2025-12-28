@@ -710,4 +710,9 @@ void cluster_on_wifi_reconnect(void)
 #endif
 }
 
+GlobalState* cluster_get_global_state(void)
+{
+    return g_global_state;
+}
+
 #endif // CLUSTER_ENABLED

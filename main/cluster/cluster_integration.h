@@ -213,6 +213,12 @@ void cluster_submit_work_to_asic(const cluster_work_t *work);
  */
 void cluster_on_wifi_reconnect(void);
 
+/**
+ * @brief Get the stored GlobalState pointer
+ * @return GlobalState pointer, or NULL if not initialized
+ */
+GlobalState* cluster_get_global_state(void);
+
 #endif // CLUSTER_ENABLED
 
 #ifdef __cplusplus

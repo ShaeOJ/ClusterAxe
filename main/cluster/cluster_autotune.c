@@ -45,11 +45,6 @@ static const char *TAG = "autotune";
 #define VOLTAGE_MIN_MV    1000
 #define VOLTAGE_MAX_MV    1350
 
-// NVS keys
-#define NVS_AUTOTUNE_ENABLED    "at_enabled"
-#define NVS_AUTOTUNE_BEST_FREQ  "at_best_freq"
-#define NVS_AUTOTUNE_BEST_VOLT  "at_best_volt"
-
 // ============================================================================
 // State
 // ============================================================================
@@ -57,6 +52,7 @@ static const char *TAG = "autotune";
 static struct {
     autotune_status_t status;
     bool initialized;
+    bool enabled;           // Runtime enabled flag (not persisted)
     bool task_running;
     TaskHandle_t task_handle;
     SemaphoreHandle_t mutex;
@@ -156,10 +152,11 @@ esp_err_t cluster_autotune_init(void)
     memset(&g_autotune.status, 0, sizeof(g_autotune.status));
     g_autotune.status.state = AUTOTUNE_STATE_IDLE;
     g_autotune.status.mode = AUTOTUNE_MODE_EFFICIENCY;
+    g_autotune.enabled = false;
 
-    // Load best values from NVS if available
-    g_autotune.status.best_frequency = nvs_config_get_u16(NVS_AUTOTUNE_BEST_FREQ);
-    g_autotune.status.best_voltage = nvs_config_get_u16(NVS_AUTOTUNE_BEST_VOLT);
+    // Best values start at 0 (will be populated during autotune)
+    g_autotune.status.best_frequency = 0;
+    g_autotune.status.best_voltage = 0;
 
     g_autotune.initialized = true;
     ESP_LOGI(TAG, "Autotune module initialized");
@@ -277,7 +274,7 @@ esp_err_t cluster_autotune_get_status(autotune_status_t *status)
 
 esp_err_t cluster_autotune_set_enabled(bool enable)
 {
-    nvs_config_set_u16(NVS_AUTOTUNE_ENABLED, enable ? 1 : 0);
+    g_autotune.enabled = enable;
 
     if (enable && !g_autotune.task_running) {
         return cluster_autotune_start(AUTOTUNE_MODE_EFFICIENCY);
@@ -290,12 +287,12 @@ esp_err_t cluster_autotune_set_enabled(bool enable)
 
 bool cluster_autotune_is_enabled(void)
 {
-    return nvs_config_get_u16(NVS_AUTOTUNE_ENABLED) != 0;
+    return g_autotune.enabled;
 }
 
 esp_err_t cluster_autotune_apply_settings(uint16_t frequency_mhz, uint16_t voltage_mv)
 {
-    extern GlobalState *GLOBAL_STATE;
+    GlobalState *GLOBAL_STATE = cluster_get_global_state();
 
     if (!GLOBAL_STATE) {
         ESP_LOGE(TAG, "GLOBAL_STATE not available");
@@ -337,8 +334,7 @@ void cluster_autotune_task(void *pvParameters)
 
     ESP_LOGI(TAG, "Autotune task started");
 
-    extern GlobalState *GLOBAL_STATE;
-    g_autotune.global_state = GLOBAL_STATE;
+    g_autotune.global_state = cluster_get_global_state();
 
     // Starting frequency/voltage - begin with current settings
     uint16_t test_freq = g_autotune.status.current_frequency;
@@ -445,10 +441,6 @@ void cluster_autotune_task(void *pvParameters)
 
                 ESP_LOGI(TAG, "New best: %d MHz, %d mV, %.2f J/TH",
                          best_freq, best_voltage, best_efficiency);
-
-                // Save to NVS
-                nvs_config_set_u16(NVS_AUTOTUNE_BEST_FREQ, best_freq);
-                nvs_config_set_u16(NVS_AUTOTUNE_BEST_VOLT, best_voltage);
             }
 
             // Update progress
