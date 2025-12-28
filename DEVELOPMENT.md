@@ -101,21 +101,21 @@ ClusterAxe is a distributed Bitcoin mining firmware for BitAxe devices. It enabl
 
 ## Roadmap
 
-### Phase 1: Stability & Polish (Short Term)
+### Phase 1: Stability & Polish (Short Term) - MOSTLY COMPLETE
 
 #### Branding & Firmware Naming
-- [ ] **Change AxeOS logo to ClusterAxe** throughout UI
+- [x] **Change AxeOS logo to ClusterAxe** throughout UI
 - [ ] **Fix firmware version mismatch issue**
 - [x] **Rename firmware binaries**: `clusteraxe-master.bin` / `clusteraxe-slave.bin`
-- [ ] Update OTA logic to accept ClusterAxe filenames (currently requires rename to `esp-miner.bin`)
+- [x] Update OTA logic to accept ClusterAxe filenames
 - [ ] Update version strings and identifiers throughout codebase
 
 #### Master UI Improvements
-- [ ] **Amalgamate Dashboard + Cluster into single "Cluster Dashboard"**
+- [x] **Amalgamate Dashboard + Cluster into single "Cluster Dashboard"**
   - Show Master's own hashrate separately
   - Show Cluster total hashrate (master + all slaves combined)
-  - Hashrate graph should display cluster total hashrate over time
-- [ ] **Remove/Disable Swarm feature** - not needed for ClusterAxe
+  - Show cluster power, shares, active slaves
+- [ ] **Remove/Disable Swarm feature** - still in menu, not needed for ClusterAxe
 - [ ] **Update system for OTA**:
   - Pull firmware updates from ClusterAxe GitHub repo (not ESP-Miner)
   - Master should be able to push OTA updates to slaves
