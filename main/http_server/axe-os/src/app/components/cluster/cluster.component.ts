@@ -52,6 +52,20 @@ export class ClusterComponent implements OnInit, OnDestroy {
   public editFanMode: number = 0;
   public editTargetTemp: number = 0;
 
+  // Master device settings
+  public masterInfo: any = null;
+  public masterFrequency: number = 500;
+  public masterVoltage: number = 1200;
+  public masterFanSpeed: number = 50;
+  public masterFanMode: number = 0;
+  public masterTargetTemp: number = 55;
+  public masterExpanded: boolean = false;
+  public savingMasterConfig: boolean = false;
+  public masterIncludeInAutotune: boolean = true;
+
+  // Slave autotune inclusion
+  public slaveAutotuneIncluded: Set<number> = new Set();
+
   // Bulk actions
   public showBulkActionDialog = false;
   public bulkActionType: 'frequency' | 'voltage' | 'fan' | 'restart' | null = null;
@@ -80,11 +94,11 @@ export class ClusterComponent implements OnInit, OnDestroy {
   public slaveAutotuneTarget: number | null = null;
   public slaveAutotuneMode = 'efficiency';
 
-  // Autotune mode options
+  // Autotune mode options with limits
   public autotuneModeOptions = [
-    { label: 'Efficiency (J/TH)', value: 'efficiency' },
-    { label: 'Max Hashrate', value: 'hashrate' },
-    { label: 'Balanced', value: 'balanced' }
+    { label: 'Efficiency (550 MHz / 1175 mV)', value: 'efficiency' },
+    { label: 'Max Hashrate (800 MHz / 1300 mV)', value: 'hashrate' },
+    { label: 'Balanced (725 MHz / 1200 mV)', value: 'balanced' }
   ];
 
   // Oscilloscope wave points for animation
@@ -174,8 +188,14 @@ export class ClusterComponent implements OnInit, OnDestroy {
         if (status.mode === 1 && !this.autotuneSubscription) {
           this.startAutotunePolling();
           this.loadProfiles();
+          this.loadMasterInfo();
         } else if (status.mode !== 1 && this.autotuneSubscription) {
           this.stopAutotunePolling();
+        }
+
+        // Initialize slave autotune inclusion (all enabled by default)
+        if (status.slaves) {
+          this.initSlaveAutotuneInclusion(status.slaves);
         }
       }
     });
@@ -306,7 +326,14 @@ export class ClusterComponent implements OnInit, OnDestroy {
       next: (config) => {
         this.slaveConfigs.set(slot, config);
         this.editFrequency = config.frequency;
-        this.editVoltage = config.coreVoltage;
+        // Validate voltage - if it's way too high, it's likely wrong data from old firmware
+        // Valid range is 1000-1300 mV
+        if (config.coreVoltage > 1500) {
+          this.editVoltage = 1200; // Default to safe value
+          console.warn(`Slave ${slot} reported invalid voltage ${config.coreVoltage}mV - using default 1200mV. Rebuild slave firmware.`);
+        } else {
+          this.editVoltage = config.coreVoltage;
+        }
         this.editFanSpeed = config.fanSpeed;
         this.editFanMode = config.fanMode;
         this.editTargetTemp = config.targetTemp;
@@ -1010,5 +1037,152 @@ export class ClusterComponent implements OnInit, OnDestroy {
     if (temp >= this.safetyLimits.criticalTemperature) return 'danger';
     if (temp >= this.safetyLimits.maxTemperature) return 'warning';
     return '';
+  }
+
+  // ========================================================================
+  // Master Device Settings Methods
+  // ========================================================================
+
+  loadMasterInfo(): void {
+    this.systemService.getInfo('').subscribe({
+      next: (info) => {
+        this.masterInfo = info;
+        this.masterFrequency = info.frequency || 500;
+        this.masterVoltage = info.coreVoltage || 1200;
+        this.masterFanSpeed = info.fanspeed || 50;
+        this.masterFanMode = info.autofanspeed === 1 ? 0 : 1; // 0 = auto, 1 = manual
+        this.masterTargetTemp = info.autofanspeed === 1 ? 55 : this.masterTargetTemp;
+      },
+      error: () => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to load master device info'
+        });
+      }
+    });
+  }
+
+  toggleMasterExpanded(): void {
+    this.masterExpanded = !this.masterExpanded;
+    if (this.masterExpanded && !this.masterInfo) {
+      this.loadMasterInfo();
+    }
+  }
+
+  saveMasterFrequency(): void {
+    this.savingMasterConfig = true;
+    this.systemService.updateSystem('', { frequency: this.masterFrequency }).subscribe({
+      next: () => {
+        this.savingMasterConfig = false;
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Success',
+          detail: `Master frequency updated to ${this.masterFrequency} MHz`
+        });
+      },
+      error: () => {
+        this.savingMasterConfig = false;
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to update master frequency'
+        });
+      }
+    });
+  }
+
+  saveMasterVoltage(): void {
+    this.savingMasterConfig = true;
+    this.systemService.updateSystem('', { coreVoltage: this.masterVoltage }).subscribe({
+      next: () => {
+        this.savingMasterConfig = false;
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Success',
+          detail: `Master voltage updated to ${this.masterVoltage} mV`
+        });
+      },
+      error: () => {
+        this.savingMasterConfig = false;
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to update master voltage'
+        });
+      }
+    });
+  }
+
+  saveMasterFanSpeed(): void {
+    this.savingMasterConfig = true;
+    this.systemService.updateSystem('', { fanspeed: this.masterFanSpeed }).subscribe({
+      next: () => {
+        this.savingMasterConfig = false;
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Success',
+          detail: `Master fan speed updated to ${this.masterFanSpeed}%`
+        });
+      },
+      error: () => {
+        this.savingMasterConfig = false;
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to update master fan speed'
+        });
+      }
+    });
+  }
+
+  saveMasterFanMode(): void {
+    this.savingMasterConfig = true;
+    this.systemService.updateSystem('', { autofanspeed: this.masterFanMode === 0 ? 1 : 0 }).subscribe({
+      next: () => {
+        this.savingMasterConfig = false;
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Success',
+          detail: `Master fan mode updated to ${this.masterFanMode === 0 ? 'Auto' : 'Manual'}`
+        });
+      },
+      error: () => {
+        this.savingMasterConfig = false;
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to update master fan mode'
+        });
+      }
+    });
+  }
+
+  // ========================================================================
+  // Autotune Inclusion Toggle Methods
+  // ========================================================================
+
+  toggleMasterAutotune(): void {
+    this.masterIncludeInAutotune = !this.masterIncludeInAutotune;
+    // This would be sent to backend when starting cluster-wide autotune
+  }
+
+  toggleSlaveAutotuneIncluded(slaveId: number): void {
+    if (this.slaveAutotuneIncluded.has(slaveId)) {
+      this.slaveAutotuneIncluded.delete(slaveId);
+    } else {
+      this.slaveAutotuneIncluded.add(slaveId);
+    }
+  }
+
+  isSlaveAutotuneIncluded(slaveId: number): boolean {
+    return this.slaveAutotuneIncluded.has(slaveId);
+  }
+
+  // Initialize all slaves as included by default
+  initSlaveAutotuneInclusion(slaves: IClusterSlave[]): void {
+    if (this.slaveAutotuneIncluded.size === 0 && slaves) {
+      slaves.forEach(slave => this.slaveAutotuneIncluded.add(slave.slot));
+    }
   }
 }

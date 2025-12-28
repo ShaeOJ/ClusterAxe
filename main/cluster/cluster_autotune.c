@@ -37,15 +37,18 @@ static const char *TAG = "autotune";
 
 // Frequency/voltage step sizes
 #define FREQ_STEP_MHZ     25
-#define VOLTAGE_STEP_MV   50
+#define VOLTAGE_STEP_MV   25           // Smaller steps for finer tuning
 
-// Limits (will be adjusted based on mode)
+// Limits per mode
 #define FREQ_MIN_MHZ      400
-#define FREQ_MAX_MHZ_EFFICIENCY  575   // Conservative max for efficiency mode
-#define FREQ_MAX_MHZ_BALANCED    650   // Medium max for balanced mode
-#define FREQ_MAX_MHZ_HASHRATE    800   // High max for hashrate mode
+#define FREQ_MAX_MHZ_EFFICIENCY  550   // Conservative - best J/TH
+#define FREQ_MAX_MHZ_BALANCED    725   // Medium - balance of both
+#define FREQ_MAX_MHZ_HASHRATE    800   // Maximum - push for hashrate
+
 #define VOLTAGE_MIN_MV    1000
-#define VOLTAGE_MAX_MV    1300         // Safety limit
+#define VOLTAGE_MAX_MV_EFFICIENCY  1175   // Low voltage for efficiency
+#define VOLTAGE_MAX_MV_BALANCED    1200   // Medium voltage
+#define VOLTAGE_MAX_MV_HASHRATE    1300   // Safety limit for max hashrate
 
 // Temperature safety limits
 #define TEMP_TARGET_C         65       // Target max temperature
@@ -120,6 +123,20 @@ static uint16_t get_max_freq_for_mode(autotune_mode_t mode)
             return FREQ_MAX_MHZ_HASHRATE;
         default:
             return FREQ_MAX_MHZ_EFFICIENCY;
+    }
+}
+
+static uint16_t get_max_voltage_for_mode(autotune_mode_t mode)
+{
+    switch (mode) {
+        case AUTOTUNE_MODE_EFFICIENCY:
+            return VOLTAGE_MAX_MV_EFFICIENCY;
+        case AUTOTUNE_MODE_BALANCED:
+            return VOLTAGE_MAX_MV_BALANCED;
+        case AUTOTUNE_MODE_HASHRATE:
+            return VOLTAGE_MAX_MV_HASHRATE;
+        default:
+            return VOLTAGE_MAX_MV_EFFICIENCY;
     }
 }
 
@@ -373,13 +390,15 @@ void cluster_autotune_task(void *pvParameters)
     uint16_t best_voltage = test_voltage;
     float best_hashrate = 0;
 
-    // Get max frequency based on mode
+    // Get max frequency and voltage based on mode
     uint16_t freq_max = get_max_freq_for_mode(g_autotune.status.mode);
-    ESP_LOGI(TAG, "Mode %d: testing up to %d MHz", g_autotune.status.mode, freq_max);
+    uint16_t voltage_max = get_max_voltage_for_mode(g_autotune.status.mode);
+    ESP_LOGI(TAG, "Mode %d: testing up to %d MHz, %d mV",
+             g_autotune.status.mode, freq_max, voltage_max);
 
     // Calculate total tests (simplified grid search)
     int freq_steps = (freq_max - FREQ_MIN_MHZ) / FREQ_STEP_MHZ + 1;
-    int voltage_steps = (VOLTAGE_MAX_MV - VOLTAGE_MIN_MV) / VOLTAGE_STEP_MV + 1;
+    int voltage_steps = (voltage_max - VOLTAGE_MIN_MV) / VOLTAGE_STEP_MV + 1;
     g_autotune.status.tests_total = freq_steps * voltage_steps;
 
     lock();
@@ -397,7 +416,7 @@ void cluster_autotune_task(void *pvParameters)
 
     // Main autotune loop - test different frequency/voltage combinations
     for (test_freq = FREQ_MIN_MHZ; test_freq <= freq_max && g_autotune.task_running; test_freq += FREQ_STEP_MHZ) {
-        for (test_voltage = VOLTAGE_MIN_MV; test_voltage <= VOLTAGE_MAX_MV && g_autotune.task_running; test_voltage += VOLTAGE_STEP_MV) {
+        for (test_voltage = VOLTAGE_MIN_MV; test_voltage <= voltage_max && g_autotune.task_running; test_voltage += VOLTAGE_STEP_MV) {
 
             lock();
             g_autotune.status.state = AUTOTUNE_STATE_ADJUSTING;

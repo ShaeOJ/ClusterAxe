@@ -50,6 +50,178 @@
             </div>
         </div>
 
+        <!-- Master Device Card -->
+        <div class="surface-card border-round p-3 mb-3 cursor-pointer hover:surface-hover transition-colors transition-duration-150"
+             [ngClass]="{'border-primary border-2': masterExpanded, 'border-1 border-transparent': !masterExpanded}"
+             (click)="toggleMasterExpanded()">
+            <div class="grid align-items-center">
+                <!-- Left: Icon + Name -->
+                <div class="col-12 md:col-3 flex align-items-center gap-2">
+                    <i class="pi pi-desktop text-lg text-primary"></i>
+                    <div>
+                        <div class="font-bold">Master Device</div>
+                        <div class="text-xs text-400">This device</div>
+                    </div>
+                </div>
+
+                <!-- Center: Stats -->
+                <div class="col-12 md:col-7">
+                    <div class="flex justify-content-center gap-3 md:gap-5 flex-wrap" *ngIf="masterInfo">
+                        <!-- Hashrate -->
+                        <div class="flex align-items-center gap-2">
+                            <i class="pi pi-chart-line text-green-500"></i>
+                            <div>
+                                <div class="text-xs text-500">Hashrate</div>
+                                <div class="font-bold text-green-500">{{formatHashrate(masterInfo.hashRate || 0)}}</div>
+                            </div>
+                        </div>
+                        <!-- Temp -->
+                        <div class="flex align-items-center gap-2">
+                            <i class="pi pi-sun" [ngClass]="{'text-orange-500': masterInfo.temp > 60, 'text-red-500': masterInfo.temp > 70, 'text-blue-500': masterInfo.temp <= 60}"></i>
+                            <div>
+                                <div class="text-xs text-500">Temp</div>
+                                <div class="font-bold" [ngClass]="{'text-orange-500': masterInfo.temp > 60, 'text-red-500': masterInfo.temp > 70}">{{masterInfo.temp | number:'1.0-0'}}°C</div>
+                            </div>
+                        </div>
+                        <!-- Power -->
+                        <div class="flex align-items-center gap-2">
+                            <i class="pi pi-bolt text-yellow-500"></i>
+                            <div>
+                                <div class="text-xs text-500">Power</div>
+                                <div class="font-bold">{{masterInfo.power | number:'1.1-1'}}W</div>
+                            </div>
+                        </div>
+                        <!-- Freq -->
+                        <div class="flex align-items-center gap-2">
+                            <i class="pi pi-sliders-h text-cyan-500"></i>
+                            <div>
+                                <div class="text-xs text-500">Freq</div>
+                                <div class="font-bold">{{masterInfo.frequency}} MHz</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Expand -->
+                <div class="col-12 md:col-2 flex justify-content-end align-items-center gap-2">
+                    <i class="pi text-lg text-500"
+                       [ngClass]="masterExpanded ? 'pi-chevron-up' : 'pi-chevron-down'"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Expanded Master Configuration Panel -->
+        <div class="surface-card border-round p-4 mb-3 border-left-3 border-primary"
+             *ngIf="masterExpanded"
+             @fadeInOut>
+            <div class="grid">
+                <!-- Device Info Column -->
+                <div class="col-12 md:col-4">
+                    <h4 class="mt-0 mb-3">Device Info</h4>
+                    <div class="flex flex-column gap-2" *ngIf="masterInfo">
+                        <div class="flex justify-content-between">
+                            <span class="text-500">Model:</span>
+                            <span>{{masterInfo.ASICModel}}</span>
+                        </div>
+                        <div class="flex justify-content-between">
+                            <span class="text-500">Firmware:</span>
+                            <span>{{masterInfo.version}}</span>
+                        </div>
+                        <div class="flex justify-content-between">
+                            <span class="text-500">Hostname:</span>
+                            <span>{{masterInfo.hostname}}</span>
+                        </div>
+                        <div class="flex justify-content-between">
+                            <span class="text-500">Efficiency:</span>
+                            <span>{{masterInfo.power && masterInfo.hashRate ? ((masterInfo.power / (masterInfo.hashRate / 1000)) | number:'1.1-1') : 'N/A'}} J/TH</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mining Settings Column -->
+                <div class="col-12 md:col-4">
+                    <h4 class="mt-0 mb-3">Mining Settings</h4>
+                    <div class="flex flex-column gap-3">
+                        <!-- Frequency -->
+                        <div class="flex align-items-center gap-2">
+                            <label class="w-6rem text-500">Frequency:</label>
+                            <p-inputNumber [(ngModel)]="masterFrequency"
+                                           [min]="200" [max]="800"
+                                           suffix=" MHz"
+                                           styleClass="w-8rem p-inputtext-sm"
+                                           (click)="$event.stopPropagation()">
+                            </p-inputNumber>
+                            <button pButton icon="pi pi-check" class="p-button-sm p-button-success"
+                                    (click)="saveMasterFrequency(); $event.stopPropagation()"
+                                    [loading]="savingMasterConfig"
+                                    pTooltip="Apply frequency"></button>
+                        </div>
+                        <!-- Voltage -->
+                        <div class="flex align-items-center gap-2">
+                            <label class="w-6rem text-500">Voltage:</label>
+                            <p-inputNumber [(ngModel)]="masterVoltage"
+                                           [min]="1000" [max]="1300"
+                                           suffix=" mV"
+                                           styleClass="w-8rem p-inputtext-sm"
+                                           (click)="$event.stopPropagation()">
+                            </p-inputNumber>
+                            <button pButton icon="pi pi-check" class="p-button-sm p-button-success"
+                                    (click)="saveMasterVoltage(); $event.stopPropagation()"
+                                    [loading]="savingMasterConfig"
+                                    pTooltip="Apply voltage"></button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cooling Settings Column -->
+                <div class="col-12 md:col-4">
+                    <h4 class="mt-0 mb-3">Cooling Settings</h4>
+                    <div class="flex flex-column gap-3">
+                        <!-- Fan Mode -->
+                        <div class="flex align-items-center gap-2">
+                            <label class="w-6rem text-500">Fan Mode:</label>
+                            <p-dropdown [options]="fanModeOptions"
+                                        [(ngModel)]="masterFanMode"
+                                        optionLabel="label"
+                                        optionValue="value"
+                                        styleClass="w-8rem"
+                                        (onChange)="saveMasterFanMode()"
+                                        (click)="$event.stopPropagation()">
+                            </p-dropdown>
+                        </div>
+                        <!-- Fan Speed (only if manual) -->
+                        <div class="flex align-items-center gap-2" *ngIf="masterFanMode === 1">
+                            <label class="w-6rem text-500">Fan Speed:</label>
+                            <p-inputNumber [(ngModel)]="masterFanSpeed"
+                                           [min]="0" [max]="100"
+                                           suffix="%"
+                                           styleClass="w-8rem p-inputtext-sm"
+                                           (click)="$event.stopPropagation()">
+                            </p-inputNumber>
+                            <button pButton icon="pi pi-check" class="p-button-sm p-button-success"
+                                    (click)="saveMasterFanSpeed(); $event.stopPropagation()"
+                                    [loading]="savingMasterConfig"
+                                    pTooltip="Apply fan speed"></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Autotune Toggle for Master -->
+            <div class="mt-3 pt-3 border-top-1 surface-border">
+                <div class="flex align-items-center gap-3">
+                    <p-checkbox [(ngModel)]="masterIncludeInAutotune"
+                                [binary]="true"
+                                inputId="masterAutotune"
+                                (click)="$event.stopPropagation()">
+                    </p-checkbox>
+                    <label for="masterAutotune" class="cursor-pointer" (click)="$event.stopPropagation()">
+                        Include master in cluster auto-tune
+                    </label>
+                </div>
+            </div>
+        </div>
+
         <!-- Auto-Tune (Compact) -->
         <div class="surface-card border-round p-3 mb-3">
                 <div class="flex flex-column md:flex-row align-items-center gap-3">
@@ -278,7 +450,7 @@
                                             <div class="flex align-items-center gap-2">
                                                 <label class="w-6rem text-500">Voltage:</label>
                                                 <p-inputNumber [(ngModel)]="editVoltage"
-                                                               [min]="1000" [max]="1400"
+                                                               [min]="1000" [max]="1300"
                                                                suffix=" mV"
                                                                styleClass="w-8rem p-inputtext-sm">
                                                 </p-inputNumber>
@@ -432,10 +604,45 @@
 
                                     <!-- No autotune data yet -->
                                     <ng-container *ngIf="!getSlaveAutotuneStatus(slave.slot)">
-                                        <div class="surface-ground border-round p-3 text-center">
-                                            <span class="text-500 text-sm">Click refresh to load autotune status</span>
+                                        <div class="surface-ground border-round p-3">
+                                            <div class="flex align-items-center gap-2 mb-2">
+                                                <i class="pi pi-info-circle text-blue-500"></i>
+                                                <span class="text-500 text-sm">
+                                                    <span *ngIf="!slave.ipAddr">ESP-NOW slaves require direct access for autotune.</span>
+                                                    <span *ngIf="slave.ipAddr">Click refresh to load autotune status.</span>
+                                                </span>
+                                            </div>
+                                            <div class="flex gap-2" *ngIf="slave.ipAddr">
+                                                <button pButton label="Start Auto-Tune" icon="pi pi-play"
+                                                        class="p-button-sm p-button-outlined"
+                                                        (click)="openSlaveAutotuneDialog(slave.slot); $event.stopPropagation()"
+                                                        [loading]="slaveAutotuneLoading === slave.slot">
+                                                </button>
+                                            </div>
+                                            <a *ngIf="slave.ipAddr"
+                                               [href]="'http://' + slave.ipAddr"
+                                               target="_blank"
+                                               class="text-xs text-primary"
+                                               (click)="$event.stopPropagation()">
+                                                Open slave web UI
+                                            </a>
                                         </div>
                                     </ng-container>
+                                </div>
+
+                                <!-- Cluster Autotune Toggle -->
+                                <div class="mt-3 pt-3 border-top-1 surface-border">
+                                    <div class="flex align-items-center gap-3">
+                                        <p-checkbox [ngModel]="isSlaveAutotuneIncluded(slave.slot)"
+                                                    (ngModelChange)="toggleSlaveAutotuneIncluded(slave.slot)"
+                                                    [binary]="true"
+                                                    [inputId]="'slaveAutotune' + slave.slot"
+                                                    (click)="$event.stopPropagation()">
+                                        </p-checkbox>
+                                        <label [for]="'slaveAutotune' + slave.slot" class="cursor-pointer" (click)="$event.stopPropagation()">
+                                            Include in cluster auto-tune
+                                        </label>
+                                    </div>
                                 </div>
 
                                 <!-- Action Buttons -->
@@ -599,7 +806,7 @@
         <div class="flex align-items-center gap-2">
             <label class="w-6rem">Voltage:</label>
             <p-inputNumber [(ngModel)]="bulkVoltage"
-                           [min]="1000" [max]="1400"
+                           [min]="1000" [max]="1300"
                            suffix=" mV"
                            styleClass="flex-1">
             </p-inputNumber>
@@ -671,15 +878,15 @@
             <div class="flex flex-column gap-2 text-sm">
                 <div *ngIf="selectedAutotuneMode === 'efficiency'">
                     <i class="pi pi-bolt text-green-500 mr-2"></i>
-                    <strong>Efficiency Mode:</strong> Finds the best J/TH ratio. Lower power consumption while maintaining hashrate.
+                    <strong>Efficiency Mode:</strong> Best J/TH ratio with low voltage. Tests up to 550 MHz and 1175 mV max.
                 </div>
                 <div *ngIf="selectedAutotuneMode === 'hashrate'">
                     <i class="pi pi-chart-line text-blue-500 mr-2"></i>
-                    <strong>Hashrate Mode:</strong> Maximizes hashrate regardless of power consumption.
+                    <strong>Max Hashrate:</strong> Pushes frequency and voltage to find highest hashrate within temperature limits. Up to 800 MHz and 1300 mV.
                 </div>
                 <div *ngIf="selectedAutotuneMode === 'balanced'">
                     <i class="pi pi-sliders-h text-orange-500 mr-2"></i>
-                    <strong>Balanced Mode:</strong> Finds a middle ground between efficiency and hashrate.
+                    <strong>Balanced Mode:</strong> Good performance without excessive power. Tests up to 725 MHz and 1200 mV max.
                 </div>
             </div>
         </div>
@@ -722,15 +929,15 @@
             <div class="flex flex-column gap-2 text-sm">
                 <div *ngIf="slaveAutotuneMode === 'efficiency'">
                     <i class="pi pi-bolt text-green-500 mr-2"></i>
-                    <strong>Efficiency Mode:</strong> Finds the best J/TH ratio. Lower power consumption while maintaining hashrate.
+                    <strong>Efficiency Mode:</strong> Best J/TH ratio with low voltage. Tests up to 550 MHz and 1175 mV max.
                 </div>
                 <div *ngIf="slaveAutotuneMode === 'hashrate'">
                     <i class="pi pi-chart-line text-blue-500 mr-2"></i>
-                    <strong>Hashrate Mode:</strong> Maximizes hashrate regardless of power consumption.
+                    <strong>Max Hashrate:</strong> Pushes frequency and voltage to find highest hashrate within temperature limits. Up to 800 MHz and 1300 mV.
                 </div>
                 <div *ngIf="slaveAutotuneMode === 'balanced'">
                     <i class="pi pi-sliders-h text-orange-500 mr-2"></i>
-                    <strong>Balanced Mode:</strong> Finds a middle ground between efficiency and hashrate.
+                    <strong>Balanced Mode:</strong> Good performance without excessive power. Tests up to 725 MHz and 1200 mV max.
                 </div>
             </div>
         </div>

@@ -19,6 +19,7 @@
 #include "mining.h"
 #include "nvs_config.h"
 #include "power/power.h"
+#include "power/vcore.h"
 #include <inttypes.h>
 
 #if CLUSTER_ENABLED
@@ -150,8 +151,9 @@ uint16_t cluster_get_core_voltage(void)
     if (!g_global_state) {
         return 0;
     }
-    // voltage is in Volts, convert to mV
-    return (uint16_t)(g_global_state->POWER_MANAGEMENT_MODULE.voltage * 1000);
+    // Get actual core voltage in mV from VCORE module
+    int16_t voltage_mv = VCORE_get_voltage_mv(g_global_state);
+    return (voltage_mv > 0) ? (uint16_t)voltage_mv : 0;
 }
 
 float cluster_get_power(void)

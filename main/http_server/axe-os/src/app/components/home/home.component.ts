@@ -310,15 +310,29 @@ export class HomeComponent implements OnInit, OnDestroy {
           display: true,
           position: 'left',
           beginAtZero: false,
-          grace: '5%',  // Add small padding above/below data
           ticks: {
             color: primaryColor,
-            maxTicksLimit: 6,  // Limit number of ticks for cleaner look
+            maxTicksLimit: 6,
             callback: (value: number) => HomeComponent.cbFormatValue(value, this.chartData.datasets[0].label, {tickmark: true})
           },
           grid: {
             color: surfaceBorder,
             drawBorder: false
+          },
+          // Tightly fit the data with minimal padding
+          afterDataLimits: (scale: any) => {
+            const range = scale.max - scale.min;
+            if (range > 0) {
+              // Add just 5% padding for tight fit
+              const padding = range * 0.05;
+              scale.min = Math.max(0, scale.min - padding);
+              scale.max = scale.max + padding;
+            } else {
+              // Flat line - create small range around the value
+              const value = scale.max;
+              scale.min = Math.max(0, value * 0.95);
+              scale.max = value * 1.05;
+            }
           }
         },
         y2: {
