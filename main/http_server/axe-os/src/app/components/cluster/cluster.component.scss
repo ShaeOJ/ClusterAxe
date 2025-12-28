@@ -9,3 +9,167 @@
 .shadow-1 {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
+
+// ============================================================================
+// Oscilloscope / Pip-Boy Style Animation
+// ============================================================================
+
+.autotune-section {
+  border: 1px solid var(--surface-border);
+}
+
+.oscilloscope-container {
+  background: #0a0f0a;
+  border: 2px solid #1a3a1a;
+  border-radius: 8px;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+
+  &.active {
+    border-color: #2ecc40;
+    box-shadow: 0 0 20px rgba(46, 204, 64, 0.3);
+  }
+}
+
+.oscilloscope-header {
+  background: linear-gradient(180deg, #1a3a1a 0%, #0d1f0d 100%);
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #2a4a2a;
+}
+
+.oscilloscope-title {
+  color: #2ecc40;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px rgba(46, 204, 64, 0.5);
+}
+
+.oscilloscope-status {
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.oscilloscope-screen {
+  position: relative;
+  background: radial-gradient(ellipse at center, #0d1f0d 0%, #050a05 100%);
+  height: 120px;
+  overflow: hidden;
+
+  // CRT scan lines effect
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.1) 0px,
+      rgba(0, 0, 0, 0.1) 1px,
+      transparent 1px,
+      transparent 2px
+    );
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  // Vignette effect
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.5) 100%);
+    pointer-events: none;
+    z-index: 3;
+  }
+}
+
+.oscilloscope-wave {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  z-index: 1;
+
+  .grid-line {
+    stroke: #1a3a1a;
+    stroke-width: 0.5;
+    stroke-dasharray: 4 4;
+  }
+
+  .wave-path {
+    fill: none;
+    stroke: #2ecc40;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 4px #2ecc40);
+
+    &.animated {
+      animation: wave-glow 0.5s ease-in-out infinite alternate;
+    }
+  }
+}
+
+@keyframes wave-glow {
+  0% {
+    stroke: #2ecc40;
+    filter: drop-shadow(0 0 4px #2ecc40);
+  }
+  100% {
+    stroke: #5dff5d;
+    filter: drop-shadow(0 0 8px #5dff5d);
+  }
+}
+
+.scanline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(46, 204, 64, 0.3) 50%,
+    transparent 100%
+  );
+  animation: scanline-move 2s linear infinite;
+  z-index: 4;
+}
+
+@keyframes scanline-move {
+  0% {
+    top: -4px;
+  }
+  100% {
+    top: 100%;
+  }
+}
+
+.oscilloscope-footer {
+  background: linear-gradient(180deg, #0d1f0d 0%, #1a3a1a 100%);
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid #2a4a2a;
+  color: #2ecc40;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-shadow: 0 0 5px rgba(46, 204, 64, 0.5);
+}
+
+// Capitalize helper
+.capitalize {
+  text-transform: capitalize;
+}

@@ -78,6 +78,155 @@
                 </div>
             </div>
 
+            <!-- Autotune Section -->
+            <div class="autotune-section surface-card border-round p-4 mb-4">
+                <div class="flex justify-content-between align-items-center mb-3">
+                    <div class="flex align-items-center gap-3">
+                        <i class="pi pi-sliders-v text-2xl text-primary"></i>
+                        <div>
+                            <h3 class="m-0">Auto-Tuning</h3>
+                            <span class="text-500 text-sm">Optimize frequency and voltage for efficiency</span>
+                        </div>
+                    </div>
+                    <div class="flex align-items-center gap-2">
+                        <span class="text-500 text-sm mr-2">{{autotuneEnabled ? 'Enabled' : 'Disabled'}}</span>
+                        <p-inputSwitch [(ngModel)]="autotuneEnabled"
+                                       (onChange)="toggleAutotune()"
+                                       [disabled]="autotuneLoading">
+                        </p-inputSwitch>
+                    </div>
+                </div>
+
+                <!-- Autotune Status Display -->
+                <ng-container *ngIf="autotuneStatus">
+                    <div class="grid">
+                        <!-- Oscilloscope Display -->
+                        <div class="col-12 md:col-6">
+                            <div class="oscilloscope-container" [class.active]="autotuneStatus.running">
+                                <div class="oscilloscope-header">
+                                    <span class="oscilloscope-title">SIGNAL ANALYSIS</span>
+                                    <span class="oscilloscope-status" [ngClass]="getAutotuneStateClass(autotuneStatus.stateCode)">
+                                        {{getAutotuneStateLabel(autotuneStatus.stateCode)}}
+                                    </span>
+                                </div>
+                                <div class="oscilloscope-screen">
+                                    <svg viewBox="0 0 200 100" class="oscilloscope-wave">
+                                        <!-- Grid lines -->
+                                        <line x1="0" y1="50" x2="200" y2="50" class="grid-line"/>
+                                        <line x1="100" y1="0" x2="100" y2="100" class="grid-line"/>
+                                        <!-- Wave path -->
+                                        <path [attr.d]="getOscilloscopePath()" class="wave-path" [class.animated]="autotuneStatus.running"/>
+                                    </svg>
+                                    <!-- Scan line effect -->
+                                    <div class="scanline" *ngIf="autotuneStatus.running"></div>
+                                </div>
+                                <div class="oscilloscope-footer">
+                                    <span>FREQ: {{autotuneStatus.currentFrequency}} MHz</span>
+                                    <span>VOLT: {{autotuneStatus.currentVoltage}} mV</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Current Values and Progress -->
+                        <div class="col-12 md:col-6">
+                            <div class="flex flex-column gap-3">
+                                <!-- Progress Bar -->
+                                <div *ngIf="autotuneStatus.running">
+                                    <div class="flex justify-content-between mb-1">
+                                        <span class="text-500">Progress</span>
+                                        <span class="font-medium">{{autotuneStatus.progress}}%</span>
+                                    </div>
+                                    <p-progressBar [value]="autotuneStatus.progress" [showValue]="false" styleClass="h-1rem"></p-progressBar>
+                                    <div class="flex justify-content-between mt-1 text-sm text-500">
+                                        <span>Test {{autotuneStatus.testsCompleted}}/{{autotuneStatus.testsTotal}}</span>
+                                        <span>{{formatDuration(autotuneStatus.totalDuration)}}</span>
+                                    </div>
+                                </div>
+
+                                <!-- Best Found Values -->
+                                <div class="surface-ground border-round p-3" *ngIf="autotuneStatus.bestFrequency > 0">
+                                    <div class="text-500 text-sm mb-2">Best Settings Found</div>
+                                    <div class="grid">
+                                        <div class="col-6">
+                                            <div class="text-sm text-500">Frequency</div>
+                                            <div class="text-xl font-bold text-green-500">{{autotuneStatus.bestFrequency}} MHz</div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="text-sm text-500">Voltage</div>
+                                            <div class="text-xl font-bold text-green-500">{{autotuneStatus.bestVoltage}} mV</div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="text-sm text-500">Efficiency</div>
+                                            <div class="text-lg font-medium">{{autotuneStatus.bestEfficiency | number:'1.2-2'}} J/TH</div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="text-sm text-500">Hashrate</div>
+                                            <div class="text-lg font-medium">{{autotuneStatus.bestHashrate | number:'1.2-2'}} GH/s</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Current Test Values -->
+                                <div class="flex gap-3" *ngIf="autotuneStatus.running">
+                                    <div class="flex-1 surface-ground border-round p-2 text-center">
+                                        <div class="text-xs text-500">Testing</div>
+                                        <div class="font-bold">{{autotuneStatus.currentFrequency}} MHz</div>
+                                    </div>
+                                    <div class="flex-1 surface-ground border-round p-2 text-center">
+                                        <div class="text-xs text-500">At</div>
+                                        <div class="font-bold">{{autotuneStatus.currentVoltage}} mV</div>
+                                    </div>
+                                </div>
+
+                                <!-- Mode Display -->
+                                <div class="flex align-items-center gap-2">
+                                    <span class="text-500">Mode:</span>
+                                    <span class="font-medium capitalize">{{autotuneStatus.mode}}</span>
+                                </div>
+
+                                <!-- Error Display -->
+                                <div class="text-red-500" *ngIf="autotuneStatus.error">
+                                    <i class="pi pi-exclamation-circle mr-2"></i>
+                                    {{autotuneStatus.error}}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex justify-content-end gap-2 mt-3 pt-3 border-top-1 surface-border">
+                        <ng-container *ngIf="!autotuneStatus.running">
+                            <button pButton label="Start Autotune" icon="pi pi-play"
+                                    class="p-button-primary"
+                                    (click)="openAutotuneDialog()"
+                                    [disabled]="!autotuneEnabled || autotuneLoading"
+                                    [loading]="autotuneLoading">
+                            </button>
+                        </ng-container>
+                        <ng-container *ngIf="autotuneStatus.running">
+                            <button pButton label="Stop & Revert" icon="pi pi-times"
+                                    class="p-button-outlined p-button-secondary"
+                                    (click)="stopAutotune(false)"
+                                    [loading]="autotuneLoading">
+                            </button>
+                            <button pButton label="Stop & Apply Best" icon="pi pi-check"
+                                    class="p-button-success"
+                                    (click)="stopAutotune(true)"
+                                    [loading]="autotuneLoading">
+                            </button>
+                        </ng-container>
+                    </div>
+                </ng-container>
+
+                <!-- Initial State (no autotune data yet) -->
+                <ng-container *ngIf="!autotuneStatus">
+                    <div class="text-center py-4">
+                        <i class="pi pi-spin pi-spinner text-2xl text-500 mb-2" *ngIf="autotuneLoading"></i>
+                        <p class="text-500 m-0" *ngIf="!autotuneLoading">Enable autotune to optimize ASIC settings</p>
+                    </div>
+                </ng-container>
+            </div>
+
             <!-- Bulk Actions Toolbar -->
             <div class="flex justify-content-between align-items-center mb-3" *ngIf="status.slaves && status.slaves.length > 0">
                 <h3 class="m-0">Connected Slaves</h3>
@@ -488,6 +637,57 @@
                 [label]="bulkActionType === 'restart' ? 'Restart All' : 'Apply to All'"
                 [class]="bulkActionType === 'restart' ? 'p-button-danger' : 'p-button-primary'"
                 (click)="executeBulkAction()"></button>
+    </ng-template>
+</p-dialog>
+
+<!-- Autotune Mode Selection Dialog -->
+<p-dialog
+    header="Start Auto-Tuning"
+    [(visible)]="showAutotuneDialog"
+    [modal]="true"
+    [style]="{width: '450px'}">
+
+    <div class="flex flex-column gap-4">
+        <p class="text-500 mt-0">
+            Auto-tuning will test different frequency and voltage combinations to find the optimal settings.
+        </p>
+
+        <div class="flex flex-column gap-2">
+            <label class="font-medium">Optimization Mode</label>
+            <p-dropdown [options]="autotuneModeOptions"
+                        [(ngModel)]="selectedAutotuneMode"
+                        optionLabel="label"
+                        optionValue="value"
+                        styleClass="w-full">
+            </p-dropdown>
+        </div>
+
+        <div class="surface-ground border-round p-3">
+            <div class="flex flex-column gap-2 text-sm">
+                <div *ngIf="selectedAutotuneMode === 'efficiency'">
+                    <i class="pi pi-bolt text-green-500 mr-2"></i>
+                    <strong>Efficiency Mode:</strong> Finds the best J/TH ratio. Lower power consumption while maintaining hashrate.
+                </div>
+                <div *ngIf="selectedAutotuneMode === 'hashrate'">
+                    <i class="pi pi-chart-line text-blue-500 mr-2"></i>
+                    <strong>Hashrate Mode:</strong> Maximizes hashrate regardless of power consumption.
+                </div>
+                <div *ngIf="selectedAutotuneMode === 'balanced'">
+                    <i class="pi pi-sliders-h text-orange-500 mr-2"></i>
+                    <strong>Balanced Mode:</strong> Finds a middle ground between efficiency and hashrate.
+                </div>
+            </div>
+        </div>
+
+        <div class="text-orange-500 text-sm">
+            <i class="pi pi-exclamation-triangle mr-2"></i>
+            Auto-tuning may take several minutes to complete. Mining will continue during this process.
+        </div>
+    </div>
+
+    <ng-template pTemplate="footer">
+        <button pButton label="Cancel" class="p-button-text" (click)="showAutotuneDialog = false"></button>
+        <button pButton label="Start" icon="pi pi-play" class="p-button-primary" (click)="startAutotune()"></button>
     </ng-template>
 </p-dialog>
 

@@ -61,6 +61,26 @@ export interface ITransportInfo {
   peerCount?: number;
 }
 
+export interface IAutotuneStatus {
+  state: string;
+  stateCode: number;
+  mode: string;
+  enabled: boolean;
+  running: boolean;
+  currentFrequency: number;
+  currentVoltage: number;
+  bestFrequency: number;
+  bestVoltage: number;
+  bestEfficiency: number;
+  bestHashrate: number;
+  progress: number;
+  testsCompleted: number;
+  testsTotal: number;
+  testDuration: number;
+  totalDuration: number;
+  error?: string;
+}
+
 export interface IClusterStatus {
   enabled: boolean;
   mode: number;
@@ -275,6 +295,57 @@ export class ClusterService {
 
   public identifySlave(uri: string = '', slaveId: number): Observable<any> {
     return this.sendSlaveCommand(uri, slaveId, { command: 'identify' });
+  }
+
+  // ========================================================================
+  // Autotune API
+  // ========================================================================
+
+  public getAutotuneStatus(uri: string = ''): Observable<IAutotuneStatus> {
+    if (environment.production) {
+      return this.httpClient.get<IAutotuneStatus>(`${uri}/api/cluster/autotune/status`).pipe(timeout(5000));
+    }
+    // Mock data for development
+    return of({
+      state: 'testing',
+      stateCode: 2,
+      mode: 'efficiency',
+      enabled: true,
+      running: true,
+      currentFrequency: 525,
+      currentVoltage: 1200,
+      bestFrequency: 500,
+      bestVoltage: 1150,
+      bestEfficiency: 17.5,
+      bestHashrate: 1.2,
+      progress: 45,
+      testsCompleted: 9,
+      testsTotal: 20,
+      testDuration: 30000,
+      totalDuration: 120000
+    }).pipe(delay(500));
+  }
+
+  public enableMasterAutotune(uri: string = '', enable: boolean): Observable<any> {
+    if (environment.production) {
+      const action = enable ? 'enableMaster' : 'disableMaster';
+      return this.httpClient.post(`${uri}/api/cluster/autotune`, { action }).pipe(timeout(5000));
+    }
+    return of({ success: true }).pipe(delay(500));
+  }
+
+  public startAutotune(uri: string = '', mode: string = 'efficiency'): Observable<any> {
+    if (environment.production) {
+      return this.httpClient.post(`${uri}/api/cluster/autotune`, { action: 'start', mode }).pipe(timeout(5000));
+    }
+    return of({ success: true }).pipe(delay(500));
+  }
+
+  public stopAutotune(uri: string = '', applyBest: boolean = true): Observable<any> {
+    if (environment.production) {
+      return this.httpClient.post(`${uri}/api/cluster/autotune`, { action: 'stop', applyBest }).pipe(timeout(5000));
+    }
+    return of({ success: true }).pipe(delay(500));
   }
 
   // RSSI helpers for ESP-NOW

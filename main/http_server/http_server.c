@@ -53,6 +53,7 @@
 #if CLUSTER_ENABLED
 #include "cluster.h"
 #include "cluster_integration.h"
+#include "cluster_autotune.h"
 #if defined(CONFIG_CLUSTER_TRANSPORT_ESPNOW) || defined(CONFIG_CLUSTER_TRANSPORT_BOTH)
 #include "cluster_espnow.h"
 #endif
@@ -1570,6 +1571,156 @@ static esp_err_t POST_cluster_mode(httpd_req_t *req)
     return ret;
 }
 
+/* Handler for autotune status endpoint */
+static esp_err_t GET_autotune_status(httpd_req_t *req)
+{
+    if (is_network_allowed(req) != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Unauthorized");
+    }
+
+    httpd_resp_set_type(req, "application/json");
+
+    autotune_status_t status;
+    cluster_autotune_get_status(&status);
+
+    cJSON *root = cJSON_CreateObject();
+
+    // State info
+    const char *state_str = "idle";
+    switch (status.state) {
+        case AUTOTUNE_STATE_IDLE: state_str = "idle"; break;
+        case AUTOTUNE_STATE_STARTING: state_str = "starting"; break;
+        case AUTOTUNE_STATE_TESTING: state_str = "testing"; break;
+        case AUTOTUNE_STATE_ADJUSTING: state_str = "adjusting"; break;
+        case AUTOTUNE_STATE_STABILIZING: state_str = "stabilizing"; break;
+        case AUTOTUNE_STATE_LOCKED: state_str = "locked"; break;
+        case AUTOTUNE_STATE_ERROR: state_str = "error"; break;
+    }
+    cJSON_AddStringToObject(root, "state", state_str);
+    cJSON_AddNumberToObject(root, "stateCode", status.state);
+
+    // Mode
+    const char *mode_str = "efficiency";
+    switch (status.mode) {
+        case AUTOTUNE_MODE_EFFICIENCY: mode_str = "efficiency"; break;
+        case AUTOTUNE_MODE_HASHRATE: mode_str = "hashrate"; break;
+        case AUTOTUNE_MODE_BALANCED: mode_str = "balanced"; break;
+    }
+    cJSON_AddStringToObject(root, "mode", mode_str);
+
+    // Running status
+    cJSON_AddBoolToObject(root, "enabled", cluster_autotune_is_enabled());
+    cJSON_AddBoolToObject(root, "running", cluster_autotune_is_running());
+
+    // Current values
+    cJSON_AddNumberToObject(root, "currentFrequency", status.current_frequency);
+    cJSON_AddNumberToObject(root, "currentVoltage", status.current_voltage);
+
+    // Best values
+    cJSON_AddNumberToObject(root, "bestFrequency", status.best_frequency);
+    cJSON_AddNumberToObject(root, "bestVoltage", status.best_voltage);
+    cJSON_AddFloatToObject(root, "bestEfficiency", status.best_efficiency);
+    cJSON_AddFloatToObject(root, "bestHashrate", status.best_hashrate);
+
+    // Progress
+    cJSON_AddNumberToObject(root, "progress", status.progress_percent);
+    cJSON_AddNumberToObject(root, "testsCompleted", status.tests_completed);
+    cJSON_AddNumberToObject(root, "testsTotal", status.tests_total);
+    cJSON_AddNumberToObject(root, "testDuration", status.test_duration_ms);
+    cJSON_AddNumberToObject(root, "totalDuration", status.total_duration_ms);
+
+    // Error
+    if (status.error_msg[0] != '\0') {
+        cJSON_AddStringToObject(root, "error", status.error_msg);
+    }
+
+    char *json_str = cJSON_Print(root);
+    httpd_resp_sendstr(req, json_str);
+
+    free(json_str);
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+/* Handler for autotune control endpoint */
+static esp_err_t POST_autotune(httpd_req_t *req)
+{
+    if (is_network_allowed(req) != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Unauthorized");
+    }
+
+    // Read request body
+    int total_len = req->content_len;
+    int cur_len = 0;
+    char buf[256];
+    int received = 0;
+
+    if (total_len >= sizeof(buf)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Request too large");
+        return ESP_FAIL;
+    }
+
+    while (cur_len < total_len) {
+        received = httpd_req_recv(req, buf + cur_len, total_len - cur_len);
+        if (received <= 0) {
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to receive request");
+            return ESP_FAIL;
+        }
+        cur_len += received;
+    }
+    buf[cur_len] = '\0';
+
+    // Parse JSON
+    cJSON *root = cJSON_Parse(buf);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        return ESP_FAIL;
+    }
+
+    esp_err_t ret = ESP_OK;
+    cJSON *action = cJSON_GetObjectItem(root, "action");
+
+    if (action && cJSON_IsString(action)) {
+        const char *action_str = action->valuestring;
+
+        if (strcmp(action_str, "start") == 0 || strcmp(action_str, "enable") == 0) {
+            // Get mode if specified
+            autotune_mode_t mode = AUTOTUNE_MODE_EFFICIENCY;
+            cJSON *mode_item = cJSON_GetObjectItem(root, "mode");
+            if (mode_item && cJSON_IsString(mode_item)) {
+                if (strcmp(mode_item->valuestring, "hashrate") == 0) {
+                    mode = AUTOTUNE_MODE_HASHRATE;
+                } else if (strcmp(mode_item->valuestring, "balanced") == 0) {
+                    mode = AUTOTUNE_MODE_BALANCED;
+                }
+            }
+            ret = cluster_autotune_start(mode);
+        } else if (strcmp(action_str, "stop") == 0 || strcmp(action_str, "disable") == 0) {
+            cJSON *apply_best = cJSON_GetObjectItem(root, "applyBest");
+            bool should_apply = true;
+            if (apply_best && cJSON_IsBool(apply_best)) {
+                should_apply = cJSON_IsTrue(apply_best);
+            }
+            ret = cluster_autotune_stop(should_apply);
+        } else if (strcmp(action_str, "enableMaster") == 0) {
+            ret = cluster_autotune_start(AUTOTUNE_MODE_EFFICIENCY);
+        } else if (strcmp(action_str, "disableMaster") == 0) {
+            ret = cluster_autotune_stop(true);
+        }
+    }
+
+    cJSON_Delete(root);
+
+    if (ret == ESP_OK) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"success\":true}");
+    } else {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Operation failed");
+    }
+
+    return ret;
+}
+
 #endif // CLUSTER_ENABLED
 
 // HTTP Error (404) Handler - Redirects all requests to the root page
@@ -1743,6 +1894,23 @@ esp_err_t start_rest_server(void * pvParameters)
         .user_ctx = rest_context
     };
     httpd_register_uri_handler(server, &cluster_mode_uri);
+
+    // Autotune API endpoints
+    httpd_uri_t autotune_status_uri = {
+        .uri = "/api/cluster/autotune/status",
+        .method = HTTP_GET,
+        .handler = GET_autotune_status,
+        .user_ctx = rest_context
+    };
+    httpd_register_uri_handler(server, &autotune_status_uri);
+
+    httpd_uri_t autotune_control_uri = {
+        .uri = "/api/cluster/autotune",
+        .method = HTTP_POST,
+        .handler = POST_autotune,
+        .user_ctx = rest_context
+    };
+    httpd_register_uri_handler(server, &autotune_control_uri);
 
 #if CLUSTER_IS_MASTER
     // Single slave API endpoint - handles /api/cluster/slave/{id}/{action}
