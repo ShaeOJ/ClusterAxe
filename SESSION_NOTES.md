@@ -723,6 +723,139 @@ idf.py -p COM3 flash
 
 ---
 
+---
+
+## Session Continuation: December 29, 2025 (Part 2)
+
+### Changes Made
+
+1. **Fixed master hashrate display** - Was showing 15.03 GH/s instead of 1503 GH/s
+   - `masterInfo.hashRate` is in GH/s, but `formatHashrate()` expects GH/s * 100
+   - Fixed by multiplying by 100: `formatHashrate((masterInfo.hashRate || 0) * 100)`
+
+2. **Added efficiency to APIs**
+   - `/api/system/info` now returns `efficiency` (J/TH)
+   - `/api/cluster/status` now returns `totalPower` and `totalEfficiency`
+
+3. **Widened cluster page** - Changed from 900px to 1400px max-width
+
+4. **Added autotune status badges** to cluster page
+   - Master shows spinning cog with current frequency when tuning
+   - Master shows green "Locked" badge when complete (stateCode === 5)
+   - Slaves show same badges
+
+### Git Commits This Session
+```
+e799753 Add autotune status badges to cluster page
+761be6d Fix master device hashrate display on cluster page
+e2e1fbc Rewrite autotune algorithm and add API efficiency metrics
+```
+
+---
+
+## AUTOTUNE - NEEDS FINE TUNING
+
+### Current Implementation
+
+**File:** `main/cluster/cluster_autotune.c`
+
+**Frequency Steps:** 450, 500, 525, 550, 600, 625, 650, 700, 725, 750, 800 MHz
+
+**Voltage Steps:** 1100, 1150, 1200, 1225, 1250, 1275, 1300 mV
+
+**Mode Limits:**
+| Mode | Max Freq | Max Voltage | Tests |
+|------|----------|-------------|-------|
+| Efficiency | 625 MHz | 1175 mV | ~15 |
+| Balanced | 700 MHz | 1200 mV | ~28 |
+| Max Hashrate | 800 MHz | 1300 mV | ~77 |
+
+**Timing:**
+- Initial stabilization: 20 seconds
+- Per-test stabilization: 10 seconds (after applying settings)
+- Test duration: 45 seconds (collecting samples)
+- Temp check interval: 5 seconds
+
+**Safety:**
+- Temperature target: 65°C max
+- Input voltage protection: If Vin < 4.9V → drops core voltage to 1100 mV
+
+### Potential Areas to Fine-Tune
+
+1. **Timing values** - May need adjustment based on real-world testing
+   - `AUTOTUNE_STABILIZE_TIME_MS` (20000) - Initial stabilization
+   - `AUTOTUNE_TEST_TIME_MS` (45000) - Test duration per setting
+   - Stabilization after setting change (currently 10 seconds)
+
+2. **Step values** - Current steps may be too coarse or too fine
+   - Frequency steps: 450, 500, 525, 550, 600, 625, 650, 700, 725, 750, 800
+   - Voltage steps: 1100, 1150, 1200, 1225, 1250, 1275, 1300
+
+3. **Mode scoring** - How "best" is determined
+   - Efficiency mode: Lowest J/TH
+   - Hashrate mode: Highest GH/s
+   - Balanced mode: `hashrate / efficiency` score
+
+4. **Temperature handling**
+   - Currently skips any setting that exceeds 65°C
+   - Could be more aggressive (push closer to limit in hashrate mode)
+
+5. **Test order** - Currently tests low freq → high freq, low voltage → high voltage
+   - Could optimize by starting near expected optimal values
+
+### Autotune API Reference
+
+**GET `/api/cluster/autotune/status`**
+```json
+{
+  "state": "testing",
+  "stateCode": 2,
+  "mode": "efficiency",
+  "enabled": true,
+  "running": true,
+  "currentFrequency": 525,
+  "currentVoltage": 1150,
+  "bestFrequency": 500,
+  "bestVoltage": 1100,
+  "bestEfficiency": 21.5,
+  "bestHashrate": 485.2,
+  "progress": 45,
+  "testsCompleted": 7,
+  "testsTotal": 15,
+  "testDuration": 32000,
+  "totalDuration": 180000
+}
+```
+
+**State codes:** 0=idle, 1=starting, 2=testing, 3=adjusting, 4=stabilizing, 5=locked, 6=error
+
+**POST `/api/cluster/autotune`**
+```json
+{"action": "start", "mode": "efficiency"}
+{"action": "stop", "apply": true}
+```
+
+### Key Functions in cluster_autotune.c
+
+- `cluster_autotune_start(mode)` - Starts autotune with specified mode
+- `cluster_autotune_stop(apply_best)` - Stops autotune, optionally applies best settings
+- `cluster_autotune_apply_settings(freq, voltage)` - Applies freq/voltage to ASIC
+- `cluster_autotune_task()` - Main autotune task loop
+- `check_input_voltage_protection()` - Checks Vin and drops voltage if too low
+
+### TODO for Autotune Fine-Tuning
+
+- [ ] Test on actual hardware to verify settings apply correctly
+- [ ] Monitor hashrate stabilization - is 20s/45s enough?
+- [ ] Check if temperature readings are accurate during rapid changes
+- [ ] Verify input voltage protection triggers correctly
+- [ ] Consider adding more granular voltage steps (e.g., 1125, 1175)
+- [ ] Consider smarter test ordering (start near middle, binary search)
+- [ ] Add ability to resume autotune after power loss
+- [ ] Test with wireless monitor to verify API responses
+
+---
+
 ## How to Continue This Work
 
 If this session is lost and you need to continue:
