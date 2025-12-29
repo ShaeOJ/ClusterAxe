@@ -55,11 +55,23 @@
              [ngClass]="{'border-primary border-2': masterExpanded, 'border-1 border-transparent': !masterExpanded}"
              (click)="toggleMasterExpanded()">
             <div class="grid align-items-center">
-                <!-- Left: Icon + Name -->
+                <!-- Left: Icon + Name + Autotune Badge -->
                 <div class="col-12 md:col-3 flex align-items-center gap-2">
                     <i class="pi pi-desktop text-lg text-primary"></i>
                     <div>
-                        <div class="font-bold">Master Device</div>
+                        <div class="font-bold flex align-items-center gap-2">
+                            Master Device
+                            <span *ngIf="autotuneStatus?.running"
+                                  class="text-xs px-2 py-1 border-round bg-cyan-500 text-white"
+                                  style="font-size: 0.65rem;">
+                                <i class="pi pi-spin pi-cog mr-1"></i>{{autotuneStatus?.currentFrequency}} MHz
+                            </span>
+                            <span *ngIf="autotuneStatus?.stateCode === 5"
+                                  class="text-xs px-2 py-1 border-round bg-green-500 text-white"
+                                  style="font-size: 0.65rem;">
+                                <i class="pi pi-lock mr-1"></i>Locked
+                            </span>
+                        </div>
                         <div class="text-xs text-400">This device</div>
                     </div>
                 </div>
@@ -327,12 +339,26 @@
                              [ngClass]="{'border-primary border-2': expandedSlaveId === slave.slot, 'border-1 border-transparent': expandedSlaveId !== slave.slot}"
                              (click)="toggleSlaveConfig(slave)">
                             <div class="grid align-items-center">
-                                <!-- Left: Status + Name -->
+                                <!-- Left: Status + Name + Autotune Badge -->
                                 <div class="col-12 md:col-3 flex align-items-center gap-2">
                                     <i class="pi {{getSlaveStateIcon(slave.state)}} text-lg"
                                        [ngClass]="clusterService.getSlaveStateClass(slave.state)"></i>
                                     <div>
-                                        <div class="font-bold">{{slave.hostname}}</div>
+                                        <div class="font-bold flex align-items-center gap-2">
+                                            {{slave.hostname}}
+                                            <ng-container *ngIf="getSlaveAutotuneStatus(slave.slot) as slaveAutotune">
+                                                <span *ngIf="slaveAutotune.running"
+                                                      class="text-xs px-2 py-1 border-round bg-cyan-500 text-white"
+                                                      style="font-size: 0.65rem;">
+                                                    <i class="pi pi-spin pi-cog mr-1"></i>{{slaveAutotune.currentFrequency}} MHz
+                                                </span>
+                                                <span *ngIf="slaveAutotune.stateCode === 5"
+                                                      class="text-xs px-2 py-1 border-round bg-green-500 text-white"
+                                                      style="font-size: 0.65rem;">
+                                                    <i class="pi pi-lock mr-1"></i>Locked
+                                                </span>
+                                            </ng-container>
+                                        </div>
                                         <div class="text-xs text-400">
                                             <span *ngIf="slave.ipAddr">{{slave.ipAddr}}</span>
                                             <span *ngIf="!slave.ipAddr">ESP-NOW</span>
