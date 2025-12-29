@@ -119,6 +119,14 @@
                                 <div class="font-bold">{{masterInfo.frequency}} MHz</div>
                             </div>
                         </div>
+                        <!-- Voltage -->
+                        <div class="flex align-items-center gap-2">
+                            <i class="pi pi-bolt text-orange-500"></i>
+                            <div>
+                                <div class="text-xs text-500">Voltage</div>
+                                <div class="font-bold">{{masterInfo.coreVoltageActual || masterInfo.coreVoltage}} mV</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -407,6 +415,22 @@
                                             <div>
                                                 <div class="text-xs text-500">Efficiency</div>
                                                 <div class="font-bold">{{calcSlaveEfficiency(slave) | number:'1.1-1'}} J/TH</div>
+                                            </div>
+                                        </div>
+                                        <!-- Freq -->
+                                        <div class="flex align-items-center gap-2">
+                                            <i class="pi pi-sliders-h text-cyan-500"></i>
+                                            <div>
+                                                <div class="text-xs text-500">Freq</div>
+                                                <div class="font-bold">{{slave.frequency}} MHz</div>
+                                            </div>
+                                        </div>
+                                        <!-- Voltage -->
+                                        <div class="flex align-items-center gap-2">
+                                            <i class="pi pi-bolt text-orange-500"></i>
+                                            <div>
+                                                <div class="text-xs text-500">Voltage</div>
+                                                <div class="font-bold">{{slave.coreVoltage}} mV</div>
                                             </div>
                                         </div>
                                         <!-- Shares -->
