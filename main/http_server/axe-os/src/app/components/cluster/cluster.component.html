@@ -103,6 +103,14 @@
                                 <div class="font-bold">{{masterInfo.power | number:'1.1-1'}}W</div>
                             </div>
                         </div>
+                        <!-- Efficiency -->
+                        <div class="flex align-items-center gap-2">
+                            <i class="pi pi-gauge text-purple-500"></i>
+                            <div>
+                                <div class="text-xs text-500">Efficiency</div>
+                                <div class="font-bold">{{masterInfo.efficiency | number:'1.1-1'}} J/TH</div>
+                            </div>
+                        </div>
                         <!-- Freq -->
                         <div class="flex align-items-center gap-2">
                             <i class="pi pi-sliders-h text-cyan-500"></i>
@@ -321,9 +329,9 @@
                     <span class="text-500">({{status.activeSlaves || status.slaves.length}})</span>
                 </div>
                 <div class="flex gap-2">
-                    <button pButton icon="pi pi-bolt" class="p-button-sm p-button-outlined p-button-rounded"
+                    <button pButton icon="pi pi-bolt" class="p-button-sm p-button-secondary p-button-outlined p-button-rounded"
                             (click)="openBulkAction('frequency')" pTooltip="Set frequency on all"></button>
-                    <button pButton icon="pi pi-sliders-h" class="p-button-sm p-button-outlined p-button-rounded"
+                    <button pButton icon="pi pi-sliders-h" class="p-button-sm p-button-secondary p-button-outlined p-button-rounded"
                             (click)="openBulkAction('voltage')" pTooltip="Set voltage on all"></button>
                     <button pButton icon="pi pi-refresh" class="p-button-sm p-button-danger p-button-outlined p-button-rounded"
                             (click)="openBulkAction('restart')" pTooltip="Restart all"></button>
@@ -391,6 +399,14 @@
                                             <div>
                                                 <div class="text-xs text-500">Power</div>
                                                 <div class="font-bold">{{slave.power | number:'1.1-1'}}W</div>
+                                            </div>
+                                        </div>
+                                        <!-- Efficiency -->
+                                        <div class="flex align-items-center gap-2">
+                                            <i class="pi pi-gauge text-purple-500"></i>
+                                            <div>
+                                                <div class="text-xs text-500">Efficiency</div>
+                                                <div class="font-bold">{{calcSlaveEfficiency(slave) | number:'1.1-1'}} J/TH</div>
                                             </div>
                                         </div>
                                         <!-- Shares -->

@@ -277,6 +277,17 @@ export class ClusterComponent implements OnInit, OnDestroy {
     return gh.toFixed(2) + ' GH/s';
   }
 
+  calcSlaveEfficiency(slave: any): number {
+    // hashrate is in GH/s * 100, power is in W
+    // Efficiency = Power (W) / Hashrate (TH/s)
+    // TH/s = (hashrate / 100) / 1000 = hashrate / 100000
+    const hashrateTh = slave.hashrate / 100000;
+    if (hashrateTh <= 0 || !slave.power) {
+      return 0;
+    }
+    return slave.power / hashrateTh;
+  }
+
   formatLastSeen(timestamp: number): string {
     // Use device current time (ms since boot) to calculate difference
     const diff = this.deviceCurrentTime - timestamp;
