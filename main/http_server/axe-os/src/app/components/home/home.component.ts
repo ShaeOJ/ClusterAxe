@@ -466,13 +466,19 @@ export class HomeComponent implements OnInit, OnDestroy {
           this.chartData.datasets[0].hidden = (chartY1DataLabel === eChartLabel.none);
           this.chartData.datasets[1].hidden = (chartY2DataLabel === eChartLabel.none);
 
-          // Auto-scale both axes to fit actual data with small padding
+          // Auto-scale both axes to fit actual data with padding
+          // Ensure minimum range to prevent duplicate tick marks
           // Y1 axis (left)
           if (this.chartY1Data.length > 0) {
             const y1Min = Math.min(...this.chartY1Data.filter(v => v > 0));
             const y1Max = Math.max(...this.chartY1Data);
-            const y1Range = y1Max - y1Min || y1Max * 0.1;
-            const y1Padding = y1Range * 0.1;
+            let y1Range = y1Max - y1Min;
+            // Ensure minimum range of 5% of max value to prevent cramped axis
+            const minRange = y1Max * 0.05 || 1;
+            if (y1Range < minRange) {
+              y1Range = minRange;
+            }
+            const y1Padding = y1Range * 0.2;
             this.chartOptions.scales.y.suggestedMin = Math.max(0, y1Min - y1Padding);
             this.chartOptions.scales.y.suggestedMax = y1Max + y1Padding;
           }
@@ -480,8 +486,13 @@ export class HomeComponent implements OnInit, OnDestroy {
           if (this.chartY2Data.length > 0) {
             const y2Min = Math.min(...this.chartY2Data.filter(v => v > 0));
             const y2Max = Math.max(...this.chartY2Data);
-            const y2Range = y2Max - y2Min || y2Max * 0.1;
-            const y2Padding = y2Range * 0.1;
+            let y2Range = y2Max - y2Min;
+            // Ensure minimum range of 5% of max value to prevent cramped axis
+            const minRange = y2Max * 0.05 || 1;
+            if (y2Range < minRange) {
+              y2Range = minRange;
+            }
+            const y2Padding = y2Range * 0.2;
             this.chartOptions.scales.y2.suggestedMin = Math.max(0, y2Min - y2Padding);
             this.chartOptions.scales.y2.suggestedMax = y2Max + y2Padding;
           }
