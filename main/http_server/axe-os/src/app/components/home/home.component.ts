@@ -310,6 +310,8 @@ export class HomeComponent implements OnInit, OnDestroy {
           display: true,
           position: 'left',
           beginAtZero: false,
+          bounds: 'data',  // Restrict scale to actual data range
+          grace: '5%',     // Small padding around data
           ticks: {
             color: primaryColor,
             maxTicksLimit: 6,
@@ -318,34 +320,22 @@ export class HomeComponent implements OnInit, OnDestroy {
           grid: {
             color: surfaceBorder,
             drawBorder: false
-          },
-          // Tightly fit the data with minimal padding
-          afterDataLimits: (scale: any) => {
-            const range = scale.max - scale.min;
-            if (range > 0) {
-              // Add just 5% padding for tight fit
-              const padding = range * 0.05;
-              scale.min = Math.max(0, scale.min - padding);
-              scale.max = scale.max + padding;
-            } else {
-              // Flat line - create small range around the value
-              const value = scale.max;
-              scale.min = Math.max(0, value * 0.95);
-              scale.max = value * 1.05;
-            }
           }
         },
         y2: {
           type: 'linear',
           display: true,
           position: 'right',
-          suggestedMin: 30,   // Reasonable temp range
-          suggestedMax: 75,   // Reasonable temp range
+          bounds: 'data',  // Restrict scale to actual data range
+          grace: '10%',    // Small padding around data
           ticks: {
             color: textColorSecondary,
             maxTicksLimit: 5,
-            stepSize: 10,  // Nice round intervals
-            callback: (value: number) => HomeComponent.cbFormatValue(value, this.chartData.datasets[1].label, {tickmark: true})
+            callback: (value: number) => {
+              // Round to whole number for cleaner display, then format
+              const roundedValue = Math.round(value);
+              return HomeComponent.cbFormatValue(roundedValue, this.chartData.datasets[1].label, {tickmark: true});
+            }
           },
           grid: {
             drawOnChartArea: false,
@@ -476,15 +466,24 @@ export class HomeComponent implements OnInit, OnDestroy {
           this.chartData.datasets[0].hidden = (chartY1DataLabel === eChartLabel.none);
           this.chartData.datasets[1].hidden = (chartY2DataLabel === eChartLabel.none);
 
-          // Align both axis if they're hashrates. TODO: for others, such as temperatures as well
-          if (this.isHashrateAxis(chartY1DataLabel) && this.isHashrateAxis(chartY2DataLabel)) {
-            this.chartOptions.scales.y.suggestedMin = this.chartOptions.scales.y2.suggestedMin = Math.min(...this.chartY1Data, ...this.chartY2Data);
-            this.chartOptions.scales.y.suggestedMax = this.chartOptions.scales.y2.suggestedMax = Math.max(...this.chartY1Data, ...this.chartY2Data);
-          } else {
-            this.chartOptions.scales.y.suggestedMin = undefined;
-            this.chartOptions.scales.y2.suggestedMin = undefined;
-            this.chartOptions.scales.y.suggestedMax = this.getSuggestedMaxForLabel(chartY1DataLabel, info);
-            this.chartOptions.scales.y2.suggestedMax = this.getSuggestedMaxForLabel(chartY2DataLabel, info);
+          // Auto-scale both axes to fit actual data with small padding
+          // Y1 axis (left)
+          if (this.chartY1Data.length > 0) {
+            const y1Min = Math.min(...this.chartY1Data.filter(v => v > 0));
+            const y1Max = Math.max(...this.chartY1Data);
+            const y1Range = y1Max - y1Min || y1Max * 0.1;
+            const y1Padding = y1Range * 0.1;
+            this.chartOptions.scales.y.suggestedMin = Math.max(0, y1Min - y1Padding);
+            this.chartOptions.scales.y.suggestedMax = y1Max + y1Padding;
+          }
+          // Y2 axis (right)
+          if (this.chartY2Data.length > 0) {
+            const y2Min = Math.min(...this.chartY2Data.filter(v => v > 0));
+            const y2Max = Math.max(...this.chartY2Data);
+            const y2Range = y2Max - y2Min || y2Max * 0.1;
+            const y2Padding = y2Range * 0.1;
+            this.chartOptions.scales.y2.suggestedMin = Math.max(0, y2Min - y2Padding);
+            this.chartOptions.scales.y2.suggestedMax = y2Max + y2Padding;
           }
 
           this.chartOptions.scales.y.display = (chartY1DataLabel != eChartLabel.none);

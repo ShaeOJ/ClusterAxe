@@ -861,6 +861,12 @@ static esp_err_t GET_system_info(httpd_req_t * req)
     cJSON_AddFloatToObject(root, "power", GLOBAL_STATE->POWER_MANAGEMENT_MODULE.power);
     cJSON_AddFloatToObject(root, "voltage", GLOBAL_STATE->POWER_MANAGEMENT_MODULE.voltage);
     cJSON_AddFloatToObject(root, "current", Power_get_current(GLOBAL_STATE));
+
+    // Calculate efficiency (J/TH) = Power (W) / Hashrate (TH/s)
+    // hashRate is in GH/s, so divide by 1000 to get TH/s
+    float hashrate_th = GLOBAL_STATE->SYSTEM_MODULE.current_hashrate / 1000.0f;
+    float efficiency = (hashrate_th > 0) ? (GLOBAL_STATE->POWER_MANAGEMENT_MODULE.power / hashrate_th) : 0;
+    cJSON_AddFloatToObject(root, "efficiency", efficiency);
     cJSON_AddFloatToObject(root, "temp", GLOBAL_STATE->POWER_MANAGEMENT_MODULE.chip_temp_avg);
     cJSON_AddFloatToObject(root, "temp2", GLOBAL_STATE->POWER_MANAGEMENT_MODULE.chip_temp2_avg);
     cJSON_AddFloatToObject(root, "vrTemp", GLOBAL_STATE->POWER_MANAGEMENT_MODULE.vr_temp);
@@ -1323,6 +1329,23 @@ static esp_err_t GET_cluster_status(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "totalShares", stats.total_shares);
     cJSON_AddNumberToObject(root, "totalSharesAccepted", stats.total_shares_accepted);
     cJSON_AddNumberToObject(root, "totalSharesRejected", stats.total_shares_rejected);
+
+    // Calculate total power (master + all slaves)
+    float master_power = GLOBAL_STATE->POWER_MANAGEMENT_MODULE.power;
+    float total_power = master_power;
+    for (int i = 0; i < CONFIG_CLUSTER_MAX_SLAVES; i++) {
+        cluster_slave_t slave_info;
+        if (cluster_master_get_slave_info(i, &slave_info) == ESP_OK && slave_info.state != SLAVE_STATE_DISCONNECTED) {
+            total_power += slave_info.power;
+        }
+    }
+    cJSON_AddFloatToObject(root, "totalPower", total_power);
+
+    // Calculate total efficiency (J/TH) = total power / total hashrate in TH/s
+    // totalHashrate is in GH/s * 100, so divide by 100000 to get TH/s
+    float total_hashrate_th = (float)stats.total_hashrate / 100000.0f;
+    float total_efficiency = (total_hashrate_th > 0) ? (total_power / total_hashrate_th) : 0;
+    cJSON_AddFloatToObject(root, "totalEfficiency", total_efficiency);
 
     // Transport info for ESP-NOW
 #if defined(CONFIG_CLUSTER_TRANSPORT_ESPNOW) || defined(CONFIG_CLUSTER_TRANSPORT_BOTH)

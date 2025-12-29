@@ -459,5 +459,287 @@ cff882d Add auto-tuning feature with oscilloscope UI
 ## Remaining Tasks
 
 1. **Rebuild slave firmware** - Slaves need reflashing to report correct voltage
-2. **Test autotune** - Verify mode limits work correctly
+2. ~~**Test autotune** - Verify mode limits work correctly~~ Fixed - see below
 3. **Chart fine-tuning** - May need further adjustment based on real data
+
+---
+
+## Session Continuation: December 29, 2025
+
+---
+
+## 12. Autotune Not Applying Settings Fix
+
+### Problem
+Autotune showed "Testing - 2%, 400 MHz @ 1075 mV, Test 3/126" but the master device still showed "800 MHz". The autotune was NOT actually applying the frequency/voltage changes during testing.
+
+### Root Cause
+Two issues in `cluster_autotune_apply_settings()`:
+
+1. **Wrong NVS function for frequency**: The code used `nvs_config_set_u16()` to save frequency, but `power_management_task.c` reads it with `nvs_config_get_float()`. This type mismatch meant NVS wasn't saving the frequency correctly.
+
+2. **Missing state update**: The code didn't update `GLOBAL_STATE->POWER_MANAGEMENT_MODULE.frequency_value` directly, so the UI showed stale data until the power management task detected the (broken) NVS change.
+
+### Solution
+
+**`main/cluster/cluster_autotune.c`** (lines 358-368):
+
+```c
+// BEFORE (broken):
+nvs_config_set_u16(NVS_CONFIG_ASIC_FREQUENCY, frequency_mhz);
+nvs_config_set_u16(NVS_CONFIG_ASIC_VOLTAGE, voltage_mv);
+
+// AFTER (fixed):
+// Save to NVS - NOTE: frequency must be saved as float, not u16!
+nvs_config_set_float(NVS_CONFIG_ASIC_FREQUENCY, (float)frequency_mhz);
+nvs_config_set_u16(NVS_CONFIG_ASIC_VOLTAGE, voltage_mv);
+
+// Update POWER_MANAGEMENT_MODULE directly so UI reflects changes immediately
+GLOBAL_STATE->POWER_MANAGEMENT_MODULE.frequency_value = (float)frequency_mhz;
+// Also update expected hashrate calculation
+GLOBAL_STATE->POWER_MANAGEMENT_MODULE.expected_hashrate =
+    (float)frequency_mhz * GLOBAL_STATE->DEVICE_CONFIG.family.asic.small_core_count *
+    GLOBAL_STATE->DEVICE_CONFIG.family.asic_count / 1000.0f;
+```
+
+Also added `#include "device_config.h"` to access ASIC configuration for hashrate calculation.
+
+### Testing
+After rebuilding firmware:
+1. Start autotune in any mode (Efficiency, Balanced, Max Hashrate)
+2. Watch the device frequency change in real-time as tests progress
+3. UI should show current test frequency (e.g., "400 MHz") instead of the old value
+4. Hashrate should stabilize at the tested frequency before moving to next test
+
+---
+
+## Files Changed (December 29, 2025)
+
+| File | Changes |
+|------|---------|
+| `cluster_autotune.c` | Fixed NVS save type (u16 -> float), added direct state updates |
+
+---
+
+## Build Commands
+
+```bash
+# In ESP-IDF environment:
+idf.py build
+idf.py -p COM3 flash
+```
+
+---
+
+## 13. Complete Autotune Algorithm Rewrite
+
+### Requirements
+User specified exact tuning parameters:
+- Base start: 450 MHz, 1100 mV
+- Custom frequency steps: 450, 500, 525, 550, 600, 625, 650, 700, 725, 750, 800 MHz
+- Custom voltage steps: 1100, 1150, 1200, 1225, 1250, 1275, 1300 mV
+- Temperature target: 65°C max
+- Input voltage protection: drop to 1100 mV if Vin < 4.9V
+
+### Mode Limits
+
+| Mode | Max Frequency | Max Voltage | Description |
+|------|--------------|-------------|-------------|
+| Efficiency | 625 MHz | 1175 mV | Best J/TH - lowest power |
+| Balanced | 700 MHz | 1200 mV | Good balance |
+| Max Hashrate | 800 MHz | 1300 mV | Highest hashrate |
+
+### Implementation
+
+**`main/cluster/cluster_autotune.c`** - Complete rewrite:
+
+```c
+// Custom frequency steps (not linear)
+static const uint16_t FREQ_STEPS[] = {450, 500, 525, 550, 600, 625, 650, 700, 725, 750, 800};
+
+// Custom voltage steps
+static const uint16_t VOLTAGE_STEPS[] = {1100, 1150, 1200, 1225, 1250, 1275, 1300};
+
+// Temperature limits
+#define TEMP_TARGET_C         65    // Target max temperature
+
+// Input voltage protection
+#define VIN_MIN_SAFE          4.9f  // Minimum safe input voltage
+#define VOLTAGE_SAFE_MV       1100  // Drop to this if Vin too low
+```
+
+**Key Features:**
+1. **Custom step values** - Not linear steps, specific values for fine-tuning
+2. **Temperature monitoring** - Checks every 5 seconds, rejects settings > 65°C
+3. **Input voltage protection** - If Vin < 4.9V, immediately drops core voltage to 1100 mV
+4. **Mode-specific limits** - Each mode has frequency and voltage caps
+5. **Best-tracking** - Tracks best efficiency/hashrate/balanced score per mode
+
+**Algorithm Flow:**
+1. Start at base (450 MHz, 1100 mV)
+2. Stabilize for 20 seconds
+3. For each freq/voltage combination (within mode limits):
+   - Apply settings
+   - Stabilize 10 seconds
+   - Check temperature - skip if > 65°C
+   - Test for 45 seconds, collecting samples
+   - Check input voltage periodically
+   - Calculate efficiency (J/TH)
+   - Update best if better based on mode
+4. Apply best settings when complete
+
+**Files Changed:**
+- `cluster_autotune.c` - Complete rewrite with new algorithm
+- `cluster_autotune.h` - Updated mode comments
+- `cluster.component.ts` - Updated UI mode labels
+
+### Test Count by Mode
+
+| Mode | Freq Steps | Voltage Steps | Total Tests |
+|------|-----------|---------------|-------------|
+| Efficiency | 5 (450-625) | 3 (1100-1175) | 15 |
+| Balanced | 7 (450-700) | 4 (1100-1200) | 28 |
+| Max Hashrate | 11 (450-800) | 7 (1100-1300) | 77 |
+
+### Input Voltage Protection
+
+```c
+static bool check_input_voltage_protection(void)
+{
+    float vin = get_input_voltage();
+
+    if (vin < VIN_MIN_SAFE) {  // 4.9V
+        // Immediately drop to safe voltage
+        VCORE_set_voltage(GLOBAL_STATE, VOLTAGE_SAFE_MV / 1000.0f);
+        nvs_config_set_u16(NVS_CONFIG_ASIC_VOLTAGE, VOLTAGE_SAFE_MV);
+        return false;
+    }
+    return true;
+}
+```
+
+This prevents the device from crashing due to undervoltage when the power supply can't keep up with high-demand settings.
+
+---
+
+## Current Status (December 29, 2025)
+
+### COMPLETED WORK
+
+#### Frontend (Angular)
+- [x] Slave mode UI improvements (banner, shares to master, cluster connection card)
+- [x] Chart smoothing and Y-axis auto-scaling
+- [x] Temperature axis rounding to whole numbers
+- [x] Cluster page centering (max-width 900px)
+- [x] Master device settings panel on cluster page
+- [x] Autotune mode dropdown with updated limits
+- [x] Autotune inclusion toggles for master/slaves
+- [x] Share rejection explanations (including "105 unknown")
+- [x] **Angular frontend built** - `npm run build` completed successfully
+
+#### Backend (C/ESP-IDF)
+- [x] Slave share tracking (`cluster_slave_get_shares()`)
+- [x] Fixed `cluster_get_core_voltage()` to use VCORE instead of input voltage
+- [x] Fixed autotune NVS save (changed `nvs_config_set_u16` to `nvs_config_set_float` for frequency)
+- [x] Direct POWER_MANAGEMENT_MODULE state updates in autotune
+- [x] **Complete autotune algorithm rewrite** with:
+  - Custom frequency steps: 450, 500, 525, 550, 600, 625, 650, 700, 725, 750, 800 MHz
+  - Custom voltage steps: 1100, 1150, 1200, 1225, 1250, 1275, 1300 mV
+  - Mode limits (Efficiency: 625/1175, Balanced: 700/1200, Max: 800/1300)
+  - Temperature target: 65°C
+  - Input voltage protection: drops to 1100mV if Vin < 4.9V
+
+### PENDING WORK
+
+#### Must Do
+- [ ] **Build ESP-IDF firmware** - Run `idf.py build` in ESP-IDF environment
+- [ ] **Flash firmware to device** - Run `idf.py -p COM3 flash`
+- [ ] **Test autotune** - Verify frequency/voltage changes apply correctly
+
+#### Nice to Have
+- [ ] Rebuild slave firmware for correct voltage reporting
+- [ ] Test input voltage protection (requires PSU that can't supply enough current)
+
+### KEY FILES MODIFIED THIS SESSION
+
+| File | Status | Description |
+|------|--------|-------------|
+| `cluster_autotune.c` | **REWRITTEN** | Complete new autotune algorithm |
+| `cluster_autotune.h` | Modified | Updated mode comments |
+| `cluster.component.ts` | Modified | Updated autotune mode labels |
+| `cluster_integration.c` | Modified | Fixed voltage reading |
+| `home.component.ts` | Modified | Chart improvements |
+| `http_server.c` | Modified | Added efficiency to API endpoints |
+
+### API ADDITIONS
+
+**`/api/system/info`** - Added:
+- `efficiency` - Device efficiency in J/TH
+
+**`/api/cluster/status`** - Added:
+- `totalPower` - Sum of master + all slave power (Watts)
+- `totalEfficiency` - Cluster-wide efficiency (J/TH)
+
+### UI CHANGES
+
+**Cluster Page Width:**
+- Changed from `max-width: 900px` to `max-width: 1400px`
+- Page now fills more of the available screen space while staying centered
+
+### BUILD COMMANDS
+
+```bash
+# 1. Angular frontend (ALREADY DONE)
+cd main/http_server/axe-os
+npm run build
+
+# 2. ESP-IDF firmware (NEEDS TO BE DONE)
+# Open ESP-IDF terminal/PowerShell, then:
+cd C:\Users\ShaeOJ\Documents\GitHub\ClusterAxe
+idf.py build
+idf.py -p COM3 flash
+```
+
+### AUTOTUNE QUICK REFERENCE
+
+**Frequency Steps:** 450 → 500 → 525 → 550 → 600 → 625 → 650 → 700 → 725 → 750 → 800
+
+**Voltage Steps:** 1100 → 1150 → 1200 → 1225 → 1250 → 1275 → 1300
+
+**Mode Limits:**
+- Efficiency: ≤625 MHz, ≤1175 mV
+- Balanced: ≤700 MHz, ≤1200 mV
+- Max Hashrate: ≤800 MHz, ≤1300 mV
+
+**Safety:**
+- Temperature target: 65°C (skips settings that exceed this)
+- Input voltage protection: If Vin < 4.9V → core voltage drops to 1100 mV
+
+**Timing:**
+- Initial stabilization: 20 seconds
+- Per-test stabilization: 10 seconds
+- Test duration: 45 seconds
+- Temp check interval: 5 seconds
+
+---
+
+## How to Continue This Work
+
+If this session is lost and you need to continue:
+
+1. **Read this file** (`SESSION_NOTES.md`) for full context
+2. **Check git status** to see uncommitted changes
+3. **Build firmware** if not already done:
+   ```bash
+   idf.py build
+   idf.py -p COM3 flash
+   ```
+4. **Test autotune** on device to verify it works
+
+The main autotune code is in:
+- `main/cluster/cluster_autotune.c` - Algorithm implementation
+- `main/cluster/cluster_autotune.h` - Types and API declarations
+
+The frontend autotune UI is in:
+- `main/http_server/axe-os/src/app/components/cluster/cluster.component.ts`
+- `main/http_server/axe-os/src/app/components/cluster/cluster.component.html`

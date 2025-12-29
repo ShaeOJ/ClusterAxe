@@ -35,9 +35,9 @@ typedef enum {
 } autotune_state_t;
 
 typedef enum {
-    AUTOTUNE_MODE_EFFICIENCY = 0,  // Best J/TH: max 550 MHz, 1175 mV
-    AUTOTUNE_MODE_HASHRATE,        // Max hashrate: up to 800 MHz, 1300 mV (temp limited)
-    AUTOTUNE_MODE_BALANCED         // Balanced: max 725 MHz, 1200 mV
+    AUTOTUNE_MODE_EFFICIENCY = 0,  // Best J/TH: max 625 MHz, 1175 mV, temp ≤65°C
+    AUTOTUNE_MODE_HASHRATE,        // Max hashrate: up to 800 MHz, 1300 mV, temp ≤65°C
+    AUTOTUNE_MODE_BALANCED         // Balanced: max 700 MHz, 1200 mV, temp ≤65°C
 } autotune_mode_t;
 
 // ============================================================================

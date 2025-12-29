@@ -94,11 +94,11 @@ export class ClusterComponent implements OnInit, OnDestroy {
   public slaveAutotuneTarget: number | null = null;
   public slaveAutotuneMode = 'efficiency';
 
-  // Autotune mode options with limits
+  // Autotune mode options with limits (temp target: 65°C)
   public autotuneModeOptions = [
-    { label: 'Efficiency (550 MHz / 1175 mV)', value: 'efficiency' },
-    { label: 'Max Hashrate (800 MHz / 1300 mV)', value: 'hashrate' },
-    { label: 'Balanced (725 MHz / 1200 mV)', value: 'balanced' }
+    { label: 'Efficiency (max 625 MHz / 1175 mV)', value: 'efficiency', description: 'Best J/TH - lowest power consumption' },
+    { label: 'Max Hashrate (max 800 MHz / 1300 mV)', value: 'hashrate', description: 'Highest hashrate - pushes to temp limit' },
+    { label: 'Balanced (max 700 MHz / 1200 mV)', value: 'balanced', description: 'Good balance of power and performance' }
   ];
 
   // Oscilloscope wave points for animation

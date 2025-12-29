@@ -14,7 +14,9 @@
     "Stale": "While this share was being submitted, the network had already found a new block, making this share invalid.",
     "Ntime out of range": "The provided ntime value was outside the allowed range.",
     "Duplicate": "This share has already been submitted.",
-    "Above target": "The submitted share does not meet the minimum required difficulty."
+    "Above target": "The submitted share does not meet the minimum required difficulty.",
+    "105 unknown": "Pool-specific error code 105. This is typically a temporary rejection - the share was valid but the pool rejected it for internal reasons.",
+    "unknown": "An unrecognized rejection reason from the pool. The share was rejected but the specific reason is not documented."
   },
   {
     "Invalid version mask": "The version mask provided was invalid for this job.",    

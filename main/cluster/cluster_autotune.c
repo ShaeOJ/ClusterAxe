@@ -3,6 +3,7 @@
  * @brief ClusterAxe Auto-Tuning Implementation
  *
  * Implements automatic frequency and voltage optimization for maximum efficiency.
+ * Uses specific step values for precise tuning with temperature and input voltage protection.
  *
  * @author ClusterAxe Project
  * @license GPL-3.0
@@ -20,6 +21,7 @@
 #include "asic.h"
 #include "power/vcore.h"
 #include "global_state.h"
+#include "device_config.h"
 #include <string.h>
 #include <math.h>
 
@@ -29,32 +31,41 @@ static const char *TAG = "autotune";
 // Configuration
 // ============================================================================
 
-#define AUTOTUNE_STABILIZE_TIME_MS    30000   // Wait 30s for hashrate to stabilize
-#define AUTOTUNE_TEST_TIME_MS         60000   // Test each setting for 60s
-#define AUTOTUNE_MIN_HASHRATE_RATIO   0.90f   // Minimum 90% of expected hashrate
+#define AUTOTUNE_STABILIZE_TIME_MS    20000   // Wait 20s for hashrate to stabilize
+#define AUTOTUNE_TEST_TIME_MS         45000   // Test each setting for 45s
 #define AUTOTUNE_TASK_STACK_SIZE      4096
 #define AUTOTUNE_TASK_PRIORITY        5
 
-// Frequency/voltage step sizes
-#define FREQ_STEP_MHZ     25
-#define VOLTAGE_STEP_MV   25           // Smaller steps for finer tuning
+// Temperature limits
+#define TEMP_TARGET_C         65       // Target max temperature - reject settings above this
+#define TEMP_CHECK_INTERVAL   5        // Check temp every N seconds during test
 
-// Limits per mode
-#define FREQ_MIN_MHZ      400
-#define FREQ_MAX_MHZ_EFFICIENCY  550   // Conservative - best J/TH
-#define FREQ_MAX_MHZ_BALANCED    725   // Medium - balance of both
-#define FREQ_MAX_MHZ_HASHRATE    800   // Maximum - push for hashrate
+// Input voltage protection
+#define VIN_MIN_SAFE          4.9f     // Minimum safe input voltage
+#define VIN_OK_MIN            5.0f     // Input voltage OK range start
+#define VIN_OK_MAX            5.4f     // Input voltage OK range end
+#define VOLTAGE_SAFE_MV       1100     // Drop to this voltage if Vin too low
 
-#define VOLTAGE_MIN_MV    1000
-#define VOLTAGE_MAX_MV_EFFICIENCY  1175   // Low voltage for efficiency
-#define VOLTAGE_MAX_MV_BALANCED    1200   // Medium voltage
-#define VOLTAGE_MAX_MV_HASHRATE    1300   // Safety limit for max hashrate
+// Base starting point
+#define FREQ_BASE_MHZ         450
+#define VOLTAGE_BASE_MV       1100
 
-// Temperature safety limits
-#define TEMP_TARGET_C         65       // Target max temperature
-#define TEMP_THROTTLE_C       67       // Start throttling at this temp
-#define TEMP_ABORT_C          72       // Abort test if exceeded
-#define TEMP_CHECK_INTERVAL   5        // Check temp every N seconds
+// Frequency steps to test (specific values, not linear)
+static const uint16_t FREQ_STEPS[] = {450, 500, 525, 550, 600, 625, 650, 700, 725, 750, 800};
+#define NUM_FREQ_STEPS (sizeof(FREQ_STEPS) / sizeof(FREQ_STEPS[0]))
+
+// Voltage steps to test (specific values)
+static const uint16_t VOLTAGE_STEPS[] = {1100, 1150, 1200, 1225, 1250, 1275, 1300};
+#define NUM_VOLTAGE_STEPS (sizeof(VOLTAGE_STEPS) / sizeof(VOLTAGE_STEPS[0]))
+
+// Mode limits
+#define FREQ_MAX_MHZ_EFFICIENCY   625
+#define FREQ_MAX_MHZ_BALANCED     700
+#define FREQ_MAX_MHZ_HASHRATE     800
+
+#define VOLTAGE_MAX_MV_EFFICIENCY 1175
+#define VOLTAGE_MAX_MV_BALANCED   1200
+#define VOLTAGE_MAX_MV_HASHRATE   1300
 
 // ============================================================================
 // State
@@ -71,6 +82,7 @@ static struct {
     // Measurement accumulators
     float hashrate_sum;
     float power_sum;
+    float temp_sum;
     uint32_t sample_count;
     uint32_t test_start_time;
     uint32_t autotune_start_time;
@@ -112,6 +124,11 @@ static float get_current_temp(void)
     return cluster_get_chip_temp();
 }
 
+static float get_input_voltage(void)
+{
+    return cluster_get_voltage_in();
+}
+
 static uint16_t get_max_freq_for_mode(autotune_mode_t mode)
 {
     switch (mode) {
@@ -140,14 +157,42 @@ static uint16_t get_max_voltage_for_mode(autotune_mode_t mode)
     }
 }
 
+/**
+ * @brief Get count of frequency steps for a given mode
+ */
+static int get_freq_step_count(autotune_mode_t mode)
+{
+    uint16_t max_freq = get_max_freq_for_mode(mode);
+    int count = 0;
+    for (int i = 0; i < NUM_FREQ_STEPS; i++) {
+        if (FREQ_STEPS[i] <= max_freq) {
+            count++;
+        }
+    }
+    return count;
+}
+
+/**
+ * @brief Get count of voltage steps for a given mode
+ */
+static int get_voltage_step_count(autotune_mode_t mode)
+{
+    uint16_t max_voltage = get_max_voltage_for_mode(mode);
+    int count = 0;
+    for (int i = 0; i < NUM_VOLTAGE_STEPS; i++) {
+        if (VOLTAGE_STEPS[i] <= max_voltage) {
+            count++;
+        }
+    }
+    return count;
+}
+
 static float calculate_efficiency(float hashrate_gh, float power_w)
 {
     if (hashrate_gh <= 0 || power_w <= 0) {
         return 999999.0f;  // Invalid - return very high (bad) efficiency
     }
     // J/TH = (Watts * 1000) / (GH/s)
-    // Since we have GH/s and want TH/s: hashrate_th = hashrate_gh / 1000
-    // J/TH = Watts / (hashrate_gh / 1000) = (Watts * 1000) / hashrate_gh
     return (power_w * 1000.0f) / hashrate_gh;
 }
 
@@ -155,6 +200,7 @@ static void reset_measurements(void)
 {
     g_autotune.hashrate_sum = 0;
     g_autotune.power_sum = 0;
+    g_autotune.temp_sum = 0;
     g_autotune.sample_count = 0;
     g_autotune.test_start_time = esp_timer_get_time() / 1000;
 }
@@ -163,18 +209,57 @@ static void collect_sample(void)
 {
     g_autotune.hashrate_sum += get_current_hashrate();
     g_autotune.power_sum += get_current_power();
+    g_autotune.temp_sum += get_current_temp();
     g_autotune.sample_count++;
 }
 
-static void get_average_measurements(float *avg_hashrate, float *avg_power)
+static void get_average_measurements(float *avg_hashrate, float *avg_power, float *avg_temp)
 {
     if (g_autotune.sample_count > 0) {
         *avg_hashrate = g_autotune.hashrate_sum / g_autotune.sample_count;
         *avg_power = g_autotune.power_sum / g_autotune.sample_count;
+        *avg_temp = g_autotune.temp_sum / g_autotune.sample_count;
     } else {
         *avg_hashrate = 0;
         *avg_power = 0;
+        *avg_temp = 0;
     }
+}
+
+/**
+ * @brief Check input voltage and apply protection if needed
+ * @return true if voltage is OK, false if protection was applied
+ */
+static bool check_input_voltage_protection(void)
+{
+    float vin = get_input_voltage();
+
+    if (vin < VIN_MIN_SAFE) {
+        ESP_LOGW(TAG, "INPUT VOLTAGE LOW: %.2fV < %.2fV - Dropping core voltage to %d mV for protection!",
+                 vin, VIN_MIN_SAFE, VOLTAGE_SAFE_MV);
+
+        // Apply safe voltage immediately
+        GlobalState *GLOBAL_STATE = cluster_get_global_state();
+        if (GLOBAL_STATE) {
+            VCORE_set_voltage(GLOBAL_STATE, VOLTAGE_SAFE_MV / 1000.0f);
+            nvs_config_set_u16(NVS_CONFIG_ASIC_VOLTAGE, VOLTAGE_SAFE_MV);
+
+            // Update status
+            lock();
+            g_autotune.status.current_voltage = VOLTAGE_SAFE_MV;
+            strncpy(g_autotune.status.error_msg, "Low input voltage - reduced core voltage",
+                    sizeof(g_autotune.status.error_msg));
+            unlock();
+        }
+        return false;
+    }
+
+    if (vin < VIN_OK_MIN || vin > VIN_OK_MAX) {
+        ESP_LOGW(TAG, "Input voltage %.2fV outside optimal range (%.1f-%.1fV)",
+                 vin, VIN_OK_MIN, VIN_OK_MAX);
+    }
+
+    return true;
 }
 
 // ============================================================================
@@ -226,11 +311,15 @@ esp_err_t cluster_autotune_start(autotune_mode_t mode)
     g_autotune.status.mode = mode;
     g_autotune.status.progress_percent = 0;
     g_autotune.status.tests_completed = 0;
-    g_autotune.status.tests_total = 0;
     g_autotune.status.error_msg[0] = '\0';
     g_autotune.autotune_start_time = esp_timer_get_time() / 1000;
 
-    // Get current settings as starting point
+    // Calculate total tests based on mode limits
+    int freq_count = get_freq_step_count(mode);
+    int voltage_count = get_voltage_step_count(mode);
+    g_autotune.status.tests_total = freq_count * voltage_count;
+
+    // Get current settings
     g_autotune.status.current_frequency = cluster_get_asic_frequency();
     g_autotune.status.current_voltage = cluster_get_core_voltage();
 
@@ -254,7 +343,8 @@ esp_err_t cluster_autotune_start(autotune_mode_t mode)
     g_autotune.task_running = true;
     unlock();
 
-    ESP_LOGI(TAG, "Autotune started in mode %d", mode);
+    ESP_LOGI(TAG, "Autotune started in mode %d (%d freq x %d voltage = %d tests)",
+             mode, freq_count, voltage_count, g_autotune.status.tests_total);
     return ESP_OK;
 }
 
@@ -272,7 +362,6 @@ esp_err_t cluster_autotune_stop(bool apply_best)
 
     // Wait for task to finish
     if (g_autotune.task_handle) {
-        // Give task time to clean up
         unlock();
         vTaskDelay(pdMS_TO_TICKS(100));
         lock();
@@ -345,6 +434,14 @@ esp_err_t cluster_autotune_apply_settings(uint16_t frequency_mhz, uint16_t volta
 
     ESP_LOGI(TAG, "Applying settings: %d MHz, %d mV", frequency_mhz, voltage_mv);
 
+    // Check input voltage before applying - protect against undervoltage
+    float vin = get_input_voltage();
+    if (vin < VIN_MIN_SAFE) {
+        ESP_LOGW(TAG, "Input voltage %.2fV too low - limiting core voltage to %d mV",
+                 vin, VOLTAGE_SAFE_MV);
+        voltage_mv = VOLTAGE_SAFE_MV;
+    }
+
     // Set voltage first (safer to have higher voltage when increasing frequency)
     float voltage_v = voltage_mv / 1000.0f;
     VCORE_set_voltage(GLOBAL_STATE, voltage_v);
@@ -352,14 +449,21 @@ esp_err_t cluster_autotune_apply_settings(uint16_t frequency_mhz, uint16_t volta
     // Small delay for voltage to stabilize
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    // Set frequency
+    // Set frequency on ASIC hardware
     ASIC_set_frequency(GLOBAL_STATE, (float)frequency_mhz);
 
-    // Save to NVS
-    nvs_config_set_u16(NVS_CONFIG_ASIC_FREQUENCY, frequency_mhz);
+    // Save to NVS - NOTE: frequency must be saved as float, not u16!
+    nvs_config_set_float(NVS_CONFIG_ASIC_FREQUENCY, (float)frequency_mhz);
     nvs_config_set_u16(NVS_CONFIG_ASIC_VOLTAGE, voltage_mv);
 
-    // Update best values
+    // Update POWER_MANAGEMENT_MODULE directly so UI reflects changes immediately
+    GLOBAL_STATE->POWER_MANAGEMENT_MODULE.frequency_value = (float)frequency_mhz;
+    // Also update expected hashrate calculation
+    GLOBAL_STATE->POWER_MANAGEMENT_MODULE.expected_hashrate =
+        (float)frequency_mhz * GLOBAL_STATE->DEVICE_CONFIG.family.asic.small_core_count *
+        GLOBAL_STATE->DEVICE_CONFIG.family.asic_count / 1000.0f;
+
+    // Update autotune status
     lock();
     g_autotune.status.current_frequency = frequency_mhz;
     g_autotune.status.current_voltage = voltage_mv;
@@ -380,43 +484,79 @@ void cluster_autotune_task(void *pvParameters)
 
     g_autotune.global_state = cluster_get_global_state();
 
-    // Starting frequency/voltage - begin with current settings
-    uint16_t test_freq = g_autotune.status.current_frequency;
-    uint16_t test_voltage = g_autotune.status.current_voltage;
-
-    // Best found values
-    float best_efficiency = 999999.0f;
-    uint16_t best_freq = test_freq;
-    uint16_t best_voltage = test_voltage;
-    float best_hashrate = 0;
-
-    // Get max frequency and voltage based on mode
+    // Get mode limits
     uint16_t freq_max = get_max_freq_for_mode(g_autotune.status.mode);
     uint16_t voltage_max = get_max_voltage_for_mode(g_autotune.status.mode);
-    ESP_LOGI(TAG, "Mode %d: testing up to %d MHz, %d mV",
-             g_autotune.status.mode, freq_max, voltage_max);
 
-    // Calculate total tests (simplified grid search)
-    int freq_steps = (freq_max - FREQ_MIN_MHZ) / FREQ_STEP_MHZ + 1;
-    int voltage_steps = (voltage_max - VOLTAGE_MIN_MV) / VOLTAGE_STEP_MV + 1;
-    g_autotune.status.tests_total = freq_steps * voltage_steps;
+    ESP_LOGI(TAG, "Mode %d: max %d MHz, %d mV | Temp target: %d°C",
+             g_autotune.status.mode, freq_max, voltage_max, TEMP_TARGET_C);
 
+    // Best found values - start with base settings
+    float best_efficiency = 999999.0f;
+    uint16_t best_freq = FREQ_BASE_MHZ;
+    uint16_t best_voltage = VOLTAGE_BASE_MV;
+    float best_hashrate = 0;
+    float best_temp = 0;
+
+    // First, apply base settings and stabilize
     lock();
     g_autotune.status.state = AUTOTUNE_STATE_STABILIZING;
     unlock();
 
+    ESP_LOGI(TAG, "Applying base settings: %d MHz, %d mV", FREQ_BASE_MHZ, VOLTAGE_BASE_MV);
+    cluster_autotune_apply_settings(FREQ_BASE_MHZ, VOLTAGE_BASE_MV);
+
     // Initial stabilization period
-    ESP_LOGI(TAG, "Waiting for initial stabilization...");
+    ESP_LOGI(TAG, "Waiting for initial stabilization (%d seconds)...", AUTOTUNE_STABILIZE_TIME_MS / 1000);
     reset_measurements();
 
     for (int i = 0; i < AUTOTUNE_STABILIZE_TIME_MS / 1000 && g_autotune.task_running; i++) {
         vTaskDelay(pdMS_TO_TICKS(1000));
         collect_sample();
+
+        // Check input voltage periodically during stabilization
+        if (i % TEMP_CHECK_INTERVAL == 0) {
+            if (!check_input_voltage_protection()) {
+                ESP_LOGW(TAG, "Input voltage protection triggered during stabilization");
+            }
+        }
     }
 
-    // Main autotune loop - test different frequency/voltage combinations
-    for (test_freq = FREQ_MIN_MHZ; test_freq <= freq_max && g_autotune.task_running; test_freq += FREQ_STEP_MHZ) {
-        for (test_voltage = VOLTAGE_MIN_MV; test_voltage <= voltage_max && g_autotune.task_running; test_voltage += VOLTAGE_STEP_MV) {
+    if (!g_autotune.task_running) {
+        ESP_LOGI(TAG, "Autotune stopped during stabilization");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Main autotune loop - test frequency/voltage combinations
+    // Iterate through frequency steps
+    for (int fi = 0; fi < NUM_FREQ_STEPS && g_autotune.task_running; fi++) {
+        uint16_t test_freq = FREQ_STEPS[fi];
+
+        // Skip frequencies above mode limit
+        if (test_freq > freq_max) {
+            continue;
+        }
+
+        // Iterate through voltage steps
+        for (int vi = 0; vi < NUM_VOLTAGE_STEPS && g_autotune.task_running; vi++) {
+            uint16_t test_voltage = VOLTAGE_STEPS[vi];
+
+            // Skip voltages above mode limit
+            if (test_voltage > voltage_max) {
+                continue;
+            }
+
+            // Check input voltage before each test
+            if (!check_input_voltage_protection()) {
+                ESP_LOGW(TAG, "Skipping test due to low input voltage");
+                lock();
+                g_autotune.status.tests_completed++;
+                g_autotune.status.progress_percent =
+                    (g_autotune.status.tests_completed * 100) / g_autotune.status.tests_total;
+                unlock();
+                continue;
+            }
 
             lock();
             g_autotune.status.state = AUTOTUNE_STATE_ADJUSTING;
@@ -424,7 +564,10 @@ void cluster_autotune_task(void *pvParameters)
             g_autotune.status.current_voltage = test_voltage;
             unlock();
 
-            ESP_LOGI(TAG, "Testing: %d MHz, %d mV", test_freq, test_voltage);
+            ESP_LOGI(TAG, "Testing: %d MHz, %d mV (test %d/%d)",
+                     test_freq, test_voltage,
+                     g_autotune.status.tests_completed + 1,
+                     g_autotune.status.tests_total);
 
             // Apply settings
             cluster_autotune_apply_settings(test_freq, test_voltage);
@@ -438,14 +581,15 @@ void cluster_autotune_task(void *pvParameters)
 
             // Check temperature after stabilization - skip if already too hot
             float temp = get_current_temp();
-            if (temp >= TEMP_ABORT_C) {
-                ESP_LOGW(TAG, "Temperature %.1f°C exceeds abort limit, skipping this setting", temp);
+            if (temp > TEMP_TARGET_C) {
+                ESP_LOGW(TAG, "Temperature %.1f°C exceeds target %d°C after stabilization - skipping",
+                         temp, TEMP_TARGET_C);
                 lock();
                 g_autotune.status.tests_completed++;
                 g_autotune.status.progress_percent =
                     (g_autotune.status.tests_completed * 100) / g_autotune.status.tests_total;
                 unlock();
-                continue;  // Skip to next voltage/frequency combo
+                continue;
             }
 
             // Test phase - collect measurements with temperature monitoring
@@ -466,16 +610,19 @@ void cluster_autotune_task(void *pvParameters)
                     temp = get_current_temp();
                     if (temp > max_temp_seen) max_temp_seen = temp;
 
-                    // Abort this test if temperature exceeds critical limit
-                    if (temp >= TEMP_ABORT_C) {
-                        ESP_LOGW(TAG, "Temperature %.1f°C exceeded abort limit during test!", temp);
+                    // Check if temperature exceeds target
+                    if (temp > TEMP_TARGET_C) {
+                        ESP_LOGW(TAG, "Temperature %.1f°C exceeded target %d°C during test",
+                                 temp, TEMP_TARGET_C);
                         temp_exceeded = true;
                         break;
                     }
 
-                    // Log warning if approaching throttle limit
-                    if (temp >= TEMP_THROTTLE_C) {
-                        ESP_LOGW(TAG, "Temperature %.1f°C approaching throttle limit", temp);
+                    // Also check input voltage during test
+                    if (!check_input_voltage_protection()) {
+                        ESP_LOGW(TAG, "Input voltage protection triggered during test");
+                        temp_exceeded = true;  // Use this flag to skip result
+                        break;
                     }
                 }
 
@@ -487,9 +634,9 @@ void cluster_autotune_task(void *pvParameters)
 
             if (!g_autotune.task_running) break;
 
-            // Skip this result if temperature exceeded limits
+            // Skip this result if temperature exceeded or voltage protection triggered
             if (temp_exceeded) {
-                ESP_LOGW(TAG, "Skipping result due to thermal limit (max temp: %.1f°C)", max_temp_seen);
+                ESP_LOGW(TAG, "Skipping result (max temp: %.1f°C)", max_temp_seen);
                 lock();
                 g_autotune.status.tests_completed++;
                 g_autotune.status.progress_percent =
@@ -499,54 +646,31 @@ void cluster_autotune_task(void *pvParameters)
             }
 
             // Calculate results
-            float avg_hashrate, avg_power;
-            get_average_measurements(&avg_hashrate, &avg_power);
+            float avg_hashrate, avg_power, avg_temp;
+            get_average_measurements(&avg_hashrate, &avg_power, &avg_temp);
             float efficiency = calculate_efficiency(avg_hashrate, avg_power);
 
-            ESP_LOGI(TAG, "Results: %.2f GH/s, %.2f W, %.2f J/TH, max temp %.1f°C",
-                     avg_hashrate, avg_power, efficiency, max_temp_seen);
+            ESP_LOGI(TAG, "Results: %.2f GH/s, %.2f W, %.2f J/TH, avg temp %.1f°C (max %.1f°C)",
+                     avg_hashrate, avg_power, efficiency, avg_temp, max_temp_seen);
 
-            // Only consider this result if temperature stayed within target
-            bool temp_acceptable = (max_temp_seen <= TEMP_TARGET_C);
-            if (!temp_acceptable && g_autotune.status.mode != AUTOTUNE_MODE_HASHRATE) {
-                // In efficiency/balanced mode, reject settings that exceed target temp
-                ESP_LOGI(TAG, "Rejecting: temperature %.1f°C exceeded target %d°C",
-                         max_temp_seen, TEMP_TARGET_C);
-                lock();
-                g_autotune.status.tests_completed++;
-                g_autotune.status.progress_percent =
-                    (g_autotune.status.tests_completed * 100) / g_autotune.status.tests_total;
-                unlock();
-                continue;
-            }
-
-            // In hashrate mode, allow temps up to throttle limit but penalize efficiency
-            if (!temp_acceptable && g_autotune.status.mode == AUTOTUNE_MODE_HASHRATE) {
-                if (max_temp_seen > TEMP_THROTTLE_C) {
-                    // Still reject if exceeds throttle limit
-                    ESP_LOGI(TAG, "Rejecting: temperature %.1f°C exceeded throttle limit %d°C",
-                             max_temp_seen, TEMP_THROTTLE_C);
-                    lock();
-                    g_autotune.status.tests_completed++;
-                    g_autotune.status.progress_percent =
-                        (g_autotune.status.tests_completed * 100) / g_autotune.status.tests_total;
-                    unlock();
-                    continue;
-                }
-                ESP_LOGI(TAG, "Hashrate mode: accepting temp %.1f°C (within throttle limit)", max_temp_seen);
-            }
-
-            // Check if this is better (lower efficiency = better for J/TH)
+            // Check if this is better based on mode
             bool is_better = false;
+
             if (g_autotune.status.mode == AUTOTUNE_MODE_EFFICIENCY) {
-                is_better = (efficiency < best_efficiency) && (avg_hashrate > 0);
-            } else if (g_autotune.status.mode == AUTOTUNE_MODE_HASHRATE) {
-                is_better = (avg_hashrate > best_hashrate);
-            } else {
-                // Balanced: weighted score
-                float score = avg_hashrate / efficiency;
-                float best_score = best_hashrate / best_efficiency;
-                is_better = (score > best_score);
+                // Best efficiency (lowest J/TH) while temp <= 65°C
+                is_better = (efficiency < best_efficiency) && (avg_hashrate > 0) && (avg_temp <= TEMP_TARGET_C);
+            }
+            else if (g_autotune.status.mode == AUTOTUNE_MODE_HASHRATE) {
+                // Highest hashrate while temp <= 65°C
+                // For hashrate mode, we push closer to temp limit
+                is_better = (avg_hashrate > best_hashrate) && (avg_temp <= TEMP_TARGET_C);
+            }
+            else {
+                // Balanced: best hashrate/efficiency score while temp <= 65°C
+                float score = (best_efficiency > 0) ? (avg_hashrate / efficiency) : 0;
+                float best_score = (best_efficiency > 0 && best_efficiency < 999999.0f) ?
+                                   (best_hashrate / best_efficiency) : 0;
+                is_better = (score > best_score) && (avg_temp <= TEMP_TARGET_C);
             }
 
             if (is_better) {
@@ -554,6 +678,7 @@ void cluster_autotune_task(void *pvParameters)
                 best_freq = test_freq;
                 best_voltage = test_voltage;
                 best_hashrate = avg_hashrate;
+                best_temp = avg_temp;
 
                 lock();
                 g_autotune.status.best_frequency = best_freq;
@@ -562,8 +687,8 @@ void cluster_autotune_task(void *pvParameters)
                 g_autotune.status.best_hashrate = best_hashrate;
                 unlock();
 
-                ESP_LOGI(TAG, "New best: %d MHz, %d mV, %.2f J/TH, %.2f GH/s",
-                         best_freq, best_voltage, best_efficiency, best_hashrate);
+                ESP_LOGI(TAG, "*** NEW BEST: %d MHz, %d mV, %.2f J/TH, %.2f GH/s @ %.1f°C ***",
+                         best_freq, best_voltage, best_efficiency, best_hashrate, best_temp);
             }
 
             // Update progress
@@ -575,10 +700,14 @@ void cluster_autotune_task(void *pvParameters)
         }
     }
 
-    // Apply best settings
+    // Apply best settings found
     if (g_autotune.task_running && best_freq > 0 && best_voltage > 0) {
-        ESP_LOGI(TAG, "Autotune complete. Applying best: %d MHz, %d mV, %.2f J/TH",
-                 best_freq, best_voltage, best_efficiency);
+        ESP_LOGI(TAG, "========================================");
+        ESP_LOGI(TAG, "AUTOTUNE COMPLETE!");
+        ESP_LOGI(TAG, "Best settings: %d MHz, %d mV", best_freq, best_voltage);
+        ESP_LOGI(TAG, "Performance: %.2f GH/s, %.2f J/TH @ %.1f°C",
+                 best_hashrate, best_efficiency, best_temp);
+        ESP_LOGI(TAG, "========================================");
 
         cluster_autotune_apply_settings(best_freq, best_voltage);
 
@@ -586,6 +715,7 @@ void cluster_autotune_task(void *pvParameters)
         g_autotune.status.state = AUTOTUNE_STATE_LOCKED;
         unlock();
     } else {
+        ESP_LOGW(TAG, "Autotune did not find valid settings");
         lock();
         g_autotune.status.state = AUTOTUNE_STATE_IDLE;
         unlock();
