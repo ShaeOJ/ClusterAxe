@@ -185,10 +185,14 @@ export class ClusterComponent implements OnInit, OnDestroy {
         }
 
         // Start autotune polling if in master mode
-        if (status.mode === 1 && !this.autotuneSubscription) {
-          this.startAutotunePolling();
-          this.loadProfiles();
+        if (status.mode === 1) {
+          // Refresh master info on every poll to keep stats updated
           this.loadMasterInfo();
+
+          if (!this.autotuneSubscription) {
+            this.startAutotunePolling();
+            this.loadProfiles();
+          }
         } else if (status.mode !== 1 && this.autotuneSubscription) {
           this.stopAutotunePolling();
         }
