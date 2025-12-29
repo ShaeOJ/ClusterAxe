@@ -104,6 +104,8 @@ export interface IClusterStatus {
   // Master fields
   activeSlaves?: number;
   totalHashrate?: number;
+  totalPower?: number;
+  totalEfficiency?: number;
   totalShares?: number;
   totalSharesAccepted?: number;
   totalSharesRejected?: number;
@@ -150,6 +152,8 @@ export class ClusterService {
       modeString: 'master',
       activeSlaves: 2,
       totalHashrate: 120000,
+      totalPower: 36.8,
+      totalEfficiency: 24.5,
       totalShares: 256,
       totalSharesAccepted: 250,
       totalSharesRejected: 6,

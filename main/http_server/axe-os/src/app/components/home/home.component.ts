@@ -60,6 +60,8 @@ export class HomeComponent implements OnInit, OnDestroy {
   public isMasterMode: boolean = false;
   public isSlaveMode: boolean = false;
   public clusterHashrateData: number[] = [];
+  public clusterPowerData: number[] = [];
+  public clusterEfficiencyData: number[] = [];
 
   public chartOptions: any;
   public dataLabel: number[] = [];
@@ -132,11 +134,25 @@ export class HomeComponent implements OnInit, OnDestroy {
         if (status) {
           this.isMasterMode = status.mode === 1;
           this.isSlaveMode = status.mode === 2;
-          // Track cluster hashrate for graph
-          if (this.isMasterMode && status.totalHashrate !== undefined) {
-            this.clusterHashrateData.push(status.totalHashrate);
-            if (this.clusterHashrateData.length > 720) {
-              this.clusterHashrateData.shift();
+          // Track cluster data for graph
+          if (this.isMasterMode) {
+            if (status.totalHashrate !== undefined) {
+              this.clusterHashrateData.push(status.totalHashrate);
+              if (this.clusterHashrateData.length > 720) {
+                this.clusterHashrateData.shift();
+              }
+            }
+            if (status.totalPower !== undefined) {
+              this.clusterPowerData.push(status.totalPower);
+              if (this.clusterPowerData.length > 720) {
+                this.clusterPowerData.shift();
+              }
+            }
+            if (status.totalEfficiency !== undefined) {
+              this.clusterEfficiencyData.push(status.totalEfficiency);
+              if (this.clusterEfficiencyData.length > 720) {
+                this.clusterEfficiencyData.shift();
+              }
             }
           }
         }
@@ -451,12 +467,14 @@ export class HomeComponent implements OnInit, OnDestroy {
           this.dataLabel.push(new Date().getTime());
           this.hashrateData.push(info.hashRate);
           this.powerData.push(info.power);
-          // Get latest cluster hashrate for chart if available
-          const latestClusterHashrate = this.clusterHashrateData.length > 0
-            ? this.clusterHashrateData[this.clusterHashrateData.length - 1]
-            : undefined;
-          this.chartY1Data.push(HomeComponent.getDataForLabel(chartY1DataLabel, info, latestClusterHashrate));
-          this.chartY2Data.push(HomeComponent.getDataForLabel(chartY2DataLabel, info, latestClusterHashrate));
+          // Get latest cluster data for chart if available
+          const clusterData = {
+            hashrate: this.clusterHashrateData.length > 0 ? this.clusterHashrateData[this.clusterHashrateData.length - 1] : undefined,
+            power: this.clusterPowerData.length > 0 ? this.clusterPowerData[this.clusterPowerData.length - 1] : undefined,
+            efficiency: this.clusterEfficiencyData.length > 0 ? this.clusterEfficiencyData[this.clusterEfficiencyData.length - 1] : undefined
+          };
+          this.chartY1Data.push(HomeComponent.getDataForLabel(chartY1DataLabel, info, clusterData));
+          this.chartY2Data.push(HomeComponent.getDataForLabel(chartY2DataLabel, info, clusterData));
 
           this.limitDataPoints();
 
@@ -787,6 +805,8 @@ export class HomeComponent implements OnInit, OnDestroy {
       case eChartLabel.hashrate_10m:
       case eChartLabel.hashrate_1h:      return info.expectedHashrate;
       case eChartLabel.clusterHashrate:  return info.expectedHashrate * 10; // Cluster can have many devices
+      case eChartLabel.clusterPower:     return this.maxPower * 10; // Cluster can have many devices
+      case eChartLabel.clusterEfficiency: return 50; // J/TH - reasonable max for efficiency
       case eChartLabel.errorPercentage:  return 1;
       case eChartLabel.asicTemp:         return this.maxTemp;
       case eChartLabel.vrTemp:           return this.maxTemp + 25;
@@ -801,13 +821,15 @@ export class HomeComponent implements OnInit, OnDestroy {
     }
   }
 
-  static getDataForLabel(label: eChartLabel | undefined, info: ISystemInfo, clusterHashrate?: number): number {
+  static getDataForLabel(label: eChartLabel | undefined, info: ISystemInfo, clusterData?: {hashrate?: number, power?: number, efficiency?: number}): number {
     switch (label) {
       case eChartLabel.hashrate:           return info.hashRate;
       case eChartLabel.hashrate_1m:        return info.hashRate_1m;
       case eChartLabel.hashrate_10m:       return info.hashRate_10m;
       case eChartLabel.hashrate_1h:        return info.hashRate_1h;
-      case eChartLabel.clusterHashrate:    return clusterHashrate !== undefined ? clusterHashrate / 100 : info.hashRate;
+      case eChartLabel.clusterHashrate:    return clusterData?.hashrate !== undefined ? clusterData.hashrate / 100 : info.hashRate;
+      case eChartLabel.clusterPower:       return clusterData?.power ?? info.power;
+      case eChartLabel.clusterEfficiency:  return clusterData?.efficiency ?? 0;
       case eChartLabel.errorPercentage:    return info.errorPercentage;
       case eChartLabel.asicTemp:           return info.temp;
       case eChartLabel.vrTemp:             return info.vrTemp;
@@ -831,7 +853,9 @@ export class HomeComponent implements OnInit, OnDestroy {
       case eChartLabel.vrTemp:           return {suffix: ' °C', precision: 1};
       case eChartLabel.asicVoltage:
       case eChartLabel.voltage:          return {suffix: ' V', precision: 1};
-      case eChartLabel.power:            return {suffix: ' W', precision: 1};
+      case eChartLabel.power:
+      case eChartLabel.clusterPower:     return {suffix: ' W', precision: 1};
+      case eChartLabel.clusterEfficiency: return {suffix: ' J/TH', precision: 1};
       case eChartLabel.current:          return {suffix: ' A', precision: 1};
       case eChartLabel.fanSpeed:         return {suffix: ' %', precision: 1};
       case eChartLabel.fanRpm:
@@ -874,6 +898,22 @@ export class HomeComponent implements OnInit, OnDestroy {
       return value.toFixed(args?.tickmark ? 0 : 1) + ' GH/s';
     }
 
+    // Check for cluster power
+    const isClusterPower = label === eChartLabel.clusterPower ||
+                           label === 'clusterPower' ||
+                           label === 'Cluster Power';
+    if (isClusterPower) {
+      return value.toFixed(args?.tickmark ? 0 : 1) + ' W';
+    }
+
+    // Check for cluster efficiency
+    const isClusterEfficiency = label === eChartLabel.clusterEfficiency ||
+                                label === 'clusterEfficiency' ||
+                                label === 'Cluster Efficiency';
+    if (isClusterEfficiency) {
+      return value.toFixed(args?.tickmark ? 0 : 1) + ' J/TH';
+    }
+
     // Check for free heap
     const isFreeHeap = label === eChartLabel.freeHeap || label === 'freeHeap' || label === 'Free Heap';
     if (isFreeHeap) {
@@ -889,6 +929,8 @@ export class HomeComponent implements OnInit, OnDestroy {
     return Object.entries(eChartLabel)
       .filter(([key, ]) => key !== 'vrTemp' || info.vrTemp)
       .filter(([key, ]) => key !== 'clusterHashrate' || this.isMasterMode)
+      .filter(([key, ]) => key !== 'clusterPower' || this.isMasterMode)
+      .filter(([key, ]) => key !== 'clusterEfficiency' || this.isMasterMode)
       .map(([key, value]) => ({name: value, value: key}));
   }
 
