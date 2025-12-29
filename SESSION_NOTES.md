@@ -876,3 +876,235 @@ The main autotune code is in:
 The frontend autotune UI is in:
 - `main/http_server/axe-os/src/app/components/cluster/cluster.component.ts`
 - `main/http_server/axe-os/src/app/components/cluster/cluster.component.html`
+
+---
+
+## Session Continuation: December 29, 2025 (Part 3)
+
+---
+
+### 14. Added Efficiency Stats to Cluster Page
+
+Added efficiency display (J/TH) with purple gauge icon to both master and slave device cards on the cluster page.
+
+**Changes:**
+- Master device shows efficiency after power stat
+- Slave devices show efficiency calculated from power/hashrate
+
+---
+
+### 15. Added Frequency and Voltage Stats to Slave Devices
+
+Slave device cards now display:
+- Frequency (MHz) with microchip icon
+- Core Voltage (mV) with bolt icon
+- Efficiency (J/TH) with gauge icon
+
+---
+
+### 16. Fixed Button Icon Colors
+
+Fixed gray/red button icon issue by adding `p-button-secondary` class to action buttons on cluster page.
+
+---
+
+### 17. Fixed Master Device Stats Not Updating
+
+**Problem:** Master hashrate was staying constant while slaves updated in real-time.
+
+**Root Cause:** `loadMasterInfo()` was only called once on init.
+
+**Solution:** Now call `loadMasterInfo()` on every cluster status poll:
+```typescript
+if (status.mode === 1) {
+  this.loadMasterInfo(); // Called on every poll, not just init
+  // ...
+}
+```
+
+---
+
+### 18. Fixed Chart Axis Showing Duplicate Values
+
+**Problem:** Power axis showed "22W 22W" when data had small fluctuations.
+
+**Root Cause:** Auto-scaling with minimal range caused duplicate tick marks.
+
+**Solution:** Added minimum 5% range and increased padding to 20%:
+```typescript
+// Ensure minimum range of 5% of max value
+const minRange = y1Max * 0.05 || 1;
+if (y1Range < minRange) {
+  y1Range = minRange;
+}
+const y1Padding = y1Range * 0.2; // Increased from 0.1
+```
+
+---
+
+### 19. Added Cluster Power and Efficiency to Chart Dropdown
+
+**Problem:** User wanted to track cluster-wide power and efficiency over time on the home page chart.
+
+**Solution:** Added new chart options that only appear when device is in master mode.
+
+**Files Changed:**
+
+**`eChartLabel.ts`** - Added enum values:
+```typescript
+clusterPower = 'Cluster Power',
+clusterEfficiency = 'Cluster Efficiency',
+```
+
+**`home.component.ts`**:
+- Added `clusterPowerData: number[]` and `clusterEfficiencyData: number[]` arrays
+- Updated `initClusterStatus()` to track cluster power and efficiency from API
+- Updated `getDataForLabel()` to return cluster power/efficiency values
+- Updated `getSuggestedMaxForLabel()` with reasonable max values
+- Updated `getSettingsForLabel()` with suffix (W, J/TH) and precision
+- Updated `cbFormatValue()` to format cluster power and efficiency
+- Updated `dataSourceLabels()` to filter cluster options (only show in master mode)
+
+**`cluster.service.ts`**:
+- Added `totalPower` and `totalEfficiency` to `IClusterStatus` interface
+- Updated mock data for development
+
+---
+
+### 20. Wireless Pip-Boy Display - Autotune 404 Issue
+
+**Problem:** User's wireless ESP32 display (Pip-Boy edition) was getting 404 errors when fetching `/api/cluster/autotune/status` and `/api/cluster/profiles`.
+
+**Root Cause:** The firmware running on the ClusterAxe master (10.0.0.112) is **v1.0.0** - built before the autotune API endpoints were added.
+
+**Solution:** User needs to rebuild and flash the firmware:
+```bash
+cd C:\Users\ShaeOJ\Documents\GitHub\ClusterAxe
+idf.py build
+idf.py -p COM<X> flash
+```
+
+The autotune endpoints are wrapped in `#if CLUSTER_ENABLED` and only available when built as cluster master (`CONFIG_CLUSTER_MODE_MASTER` in menuconfig).
+
+---
+
+### Git Commits This Session (Part 3)
+
+```
+a08a2bd Add cluster power and efficiency to chart dropdown options
+f770b97 Fix chart axis showing duplicate values when data has small fluctuations
+82e62e4 Fix master device stats not updating in real-time on cluster page
+21e1431 Add frequency and voltage stats to slave devices on cluster page
+98e0a46 Add efficiency stats and fix button icon colors on cluster page
+```
+
+---
+
+### Current Device Status (10.0.0.112)
+
+```
+Firmware: ClusterAxe-v1.0.0 (needs rebuild)
+Frequency: 700 MHz @ 1150 mV
+Hashrate: ~1.6 TH/s (this device)
+Cluster: 3 workers, ~5.7 TH/s total
+Pool: firepool.ca:5333
+Efficiency: 13.2 J/TH
+Temperature: 52°C (VR: 49°C)
+Power: 21.6W
+```
+
+---
+
+### Autotune API Endpoints Reference
+
+**GET `/api/cluster/autotune/status`**
+```json
+{
+  "state": "testing",
+  "stateCode": 2,
+  "mode": "efficiency",
+  "enabled": true,
+  "running": true,
+  "currentFrequency": 525,
+  "currentVoltage": 1200,
+  "bestFrequency": 500,
+  "bestVoltage": 1150,
+  "bestEfficiency": 17.5,
+  "bestHashrate": 1.2,
+  "progress": 45,
+  "testsCompleted": 9,
+  "testsTotal": 20,
+  "testDuration": 30000,
+  "totalDuration": 120000,
+  "error": null
+}
+```
+
+**State Codes:**
+| Code | State | Description |
+|------|-------|-------------|
+| 0 | idle | Not running |
+| 1 | starting | Initializing |
+| 2 | testing | Testing current freq/voltage |
+| 3 | adjusting | Moving to next step |
+| 4 | stabilizing | Waiting for stable readings |
+| 5 | locked | Tuning complete, best settings applied |
+| 6 | error | Error occurred |
+
+**POST `/api/cluster/autotune`**
+```bash
+# Start autotune
+curl -X POST http://<ip>/api/cluster/autotune \
+  -H "Content-Type: application/json" \
+  -d '{"action": "start", "mode": "efficiency"}'
+
+# Stop autotune (apply best settings)
+curl -X POST http://<ip>/api/cluster/autotune \
+  -H "Content-Type: application/json" \
+  -d '{"action": "stop", "applyBest": true}'
+```
+
+**GET `/api/cluster/profiles`** - Get saved tuning profiles
+
+---
+
+### PENDING WORK
+
+| Task | Priority | Notes |
+|------|----------|-------|
+| **Build & flash firmware** | HIGH | Required for autotune API to work |
+| Test autotune on device | HIGH | Verify settings apply correctly |
+| Update Pip-Boy display | MEDIUM | Will work after firmware flash |
+| Rebuild slave firmware | LOW | For correct voltage reporting |
+
+---
+
+### Files Changed Summary (December 29, 2025 - Part 3)
+
+| File | Changes |
+|------|---------|
+| `home.component.ts` | Chart axis fix, cluster power/efficiency tracking |
+| `cluster.component.ts` | Master stats refresh fix |
+| `cluster.component.html` | Efficiency, freq, voltage stats for slaves |
+| `cluster.service.ts` | Added totalPower/totalEfficiency to interface |
+| `eChartLabel.ts` | Added clusterPower, clusterEfficiency enums |
+
+---
+
+### How to Continue
+
+1. **Flash firmware to master device:**
+   ```bash
+   cd C:\Users\ShaeOJ\Documents\GitHub\ClusterAxe
+   idf.py build
+   idf.py -p COM<X> flash
+   ```
+
+2. **After flashing, verify autotune works:**
+   ```bash
+   curl http://10.0.0.112/api/cluster/autotune/status
+   ```
+
+3. **Pip-Boy display should then work** - no code changes needed on display, just needs the API to exist
+
+4. **If context is lost**, read this SESSION_NOTES.md file for full history
