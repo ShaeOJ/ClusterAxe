@@ -1286,7 +1286,7 @@ static void cluster_watchdog_task(void *pvParameters)
                     // Get slave's current voltage from cluster info and reduce it
                     cluster_slave_t slave_info;
                     if (cluster_master_get_slave_info(i, &slave_info) == ESP_OK) {
-                        uint16_t slave_voltage = slave_info.voltage;
+                        uint16_t slave_voltage = slave_info.core_voltage;
                         uint16_t new_slave_voltage = get_lower_voltage_step(slave_voltage);
                         if (new_slave_voltage != slave_voltage) {
                             apply_settings_to_slave(ip, slave_info.frequency, new_slave_voltage);

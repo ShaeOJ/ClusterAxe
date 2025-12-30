@@ -7,7 +7,7 @@ try {
     version = require('child_process').execSync('git describe --tags --abbrev=0').toString().trim();
 } catch (e) {
     // Fallback if not in a git repository or no tags
-    version = 'ClusterAxe-v1.0.1';
+    version = 'ClusterAxe-v1.0.2';
 }
 
 const outputPath = path.join(__dirname, 'dist', 'axe-os', 'version.txt');

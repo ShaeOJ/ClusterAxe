@@ -50,6 +50,171 @@
             </div>
         </div>
 
+        <!-- ================================================================ -->
+        <!-- CLUSTER AUTO-TUNE SECTION -->
+        <!-- ================================================================ -->
+        <div class="surface-card border-round p-3 mb-3"
+             [ngClass]="{'border-2 border-cyan-500': autotuneStatus?.running, 'border-2 border-green-500': autotuneStatus?.stateCode === 5}">
+
+            <!-- Header Row -->
+            <div class="flex justify-content-between align-items-center mb-3">
+                <div class="flex align-items-center gap-2">
+                    <i class="pi pi-cog text-xl" [ngClass]="{'pi-spin text-cyan-500': autotuneStatus?.running, 'text-primary': !autotuneStatus?.running}"></i>
+                    <div>
+                        <span class="font-bold text-lg">Cluster Auto-Tune</span>
+                        <span class="text-500 text-sm ml-2">Optimize all devices</span>
+                    </div>
+                </div>
+
+                <!-- Watchdog Toggle (top right) -->
+                <div class="flex align-items-center gap-2 surface-ground border-round px-3 py-2">
+                    <p-inputSwitch [(ngModel)]="watchdogEnabled"
+                                   (onChange)="toggleWatchdog()"
+                                   [disabled]="watchdogLoading">
+                    </p-inputSwitch>
+                    <div class="flex flex-column">
+                        <span class="font-medium text-sm flex align-items-center gap-1">
+                            <i class="pi pi-shield" [ngClass]="{'text-green-500': watchdogEnabled, 'text-500': !watchdogEnabled}"></i>
+                            Safety Watchdog
+                        </span>
+                        <span class="text-500 text-xs">Temp &gt;65°C / Vin &lt;4.9V protection</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content Grid -->
+            <div class="grid">
+                <!-- Left: Oscilloscope -->
+                <div class="col-12 md:col-3 flex justify-content-center">
+                    <div class="oscilloscope-container" [class.active]="autotuneStatus?.running"
+                         style="width: 100%; max-width: 220px; border-radius: 8px; overflow: hidden;">
+                        <div class="oscilloscope-screen" style="height: 100px;">
+                            <svg viewBox="0 0 200 100" class="oscilloscope-wave" preserveAspectRatio="none">
+                                <line x1="0" y1="50" x2="200" y2="50" class="grid-line"/>
+                                <line x1="100" y1="0" x2="100" y2="100" class="grid-line"/>
+                                <path [attr.d]="getOscilloscopePath()" class="wave-path" [class.animated]="autotuneStatus?.running"/>
+                            </svg>
+                            <div class="scanline" *ngIf="autotuneStatus?.running"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Center: Controls & Status -->
+                <div class="col-12 md:col-6">
+                    <!-- Mode Selection -->
+                    <div class="flex flex-column gap-3">
+                        <div class="flex flex-column md:flex-row gap-2 align-items-stretch md:align-items-center">
+                            <p-dropdown [options]="autotuneModeOptions"
+                                        [(ngModel)]="selectedAutotuneMode"
+                                        optionLabel="label"
+                                        optionValue="value"
+                                        placeholder="Select Optimization Mode"
+                                        styleClass="w-full md:w-20rem">
+                            </p-dropdown>
+
+                            <div class="flex gap-2">
+                                <ng-container *ngIf="!autotuneStatus?.running">
+                                    <button pButton label="Start All" icon="pi pi-play"
+                                            class="p-button-success flex-grow-1 md:flex-grow-0"
+                                            (click)="startAutotune()"
+                                            [disabled]="autotuneLoading"
+                                            [loading]="autotuneLoading">
+                                    </button>
+                                </ng-container>
+                                <ng-container *ngIf="autotuneStatus?.running">
+                                    <button pButton label="Stop" icon="pi pi-stop"
+                                            class="p-button-danger"
+                                            (click)="stopAutotune(false)"
+                                            [loading]="autotuneLoading">
+                                    </button>
+                                    <button pButton label="Apply Best" icon="pi pi-check"
+                                            class="p-button-success"
+                                            (click)="stopAutotune(true)"
+                                            [loading]="autotuneLoading">
+                                    </button>
+                                </ng-container>
+                            </div>
+                        </div>
+
+                        <!-- Running Status Panel -->
+                        <div *ngIf="autotuneStatus?.running" class="surface-ground border-round p-3">
+                            <div class="flex justify-content-between align-items-center mb-2">
+                                <span class="font-bold text-cyan-500">
+                                    <i class="pi pi-spin pi-cog mr-2"></i>
+                                    Tuning: {{autotuneStatus?.currentDevice === -1 ? 'Master' : 'Slave ' + autotuneStatus?.currentDevice}}
+                                </span>
+                                <span class="text-xl font-bold">{{autotuneStatus?.progress || 0}}%</span>
+                            </div>
+                            <p-progressBar [value]="autotuneStatus?.progress || 0"
+                                           [showValue]="false"
+                                           styleClass="h-0.5rem mb-2">
+                            </p-progressBar>
+                            <div class="flex justify-content-between text-sm">
+                                <span>
+                                    <i class="pi pi-sliders-h mr-1 text-cyan-500"></i>
+                                    {{autotuneStatus?.currentFrequency || 0}} MHz
+                                </span>
+                                <span>
+                                    <i class="pi pi-bolt mr-1 text-orange-500"></i>
+                                    {{autotuneStatus?.currentVoltage || 0}} mV
+                                </span>
+                                <span class="text-500">
+                                    Test {{autotuneStatus?.testsCompleted || 0}}/{{autotuneStatus?.testsTotal || 0}}
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Idle/Locked Status -->
+                        <div *ngIf="!autotuneStatus?.running && autotuneStatus?.stateCode !== 5" class="text-500 text-sm">
+                            <i class="pi pi-info-circle mr-1"></i>
+                            Select a mode and click Start to optimize all cluster devices
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Results -->
+                <div class="col-12 md:col-3">
+                    <!-- Best Results Card -->
+                    <div class="surface-ground border-round p-3 h-full"
+                         *ngIf="(autotuneStatus?.bestFrequency || 0) > 0 || autotuneStatus?.stateCode === 5">
+                        <div class="text-sm text-500 mb-2 flex align-items-center gap-1">
+                            <i class="pi pi-star-fill text-yellow-500"></i>
+                            Best Found
+                        </div>
+                        <div class="flex flex-column gap-2">
+                            <div class="flex justify-content-between">
+                                <span class="text-500">Frequency</span>
+                                <span class="font-bold text-green-500">{{autotuneStatus?.bestFrequency || 0}} MHz</span>
+                            </div>
+                            <div class="flex justify-content-between">
+                                <span class="text-500">Voltage</span>
+                                <span class="font-bold text-green-500">{{autotuneStatus?.bestVoltage || 0}} mV</span>
+                            </div>
+                            <div class="flex justify-content-between">
+                                <span class="text-500">Efficiency</span>
+                                <span class="font-bold text-green-500">{{autotuneStatus?.bestEfficiency | number:'1.1-1'}} J/TH</span>
+                            </div>
+                        </div>
+                        <div *ngIf="autotuneStatus?.stateCode === 5" class="mt-2 pt-2 border-top-1 surface-border">
+                            <span class="text-green-500 font-medium text-sm">
+                                <i class="pi pi-lock mr-1"></i>Settings Locked
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- No Results Yet -->
+                    <div class="surface-ground border-round p-3 h-full flex align-items-center justify-content-center"
+                         *ngIf="!((autotuneStatus?.bestFrequency || 0) > 0) && autotuneStatus?.stateCode !== 5">
+                        <div class="text-center text-500">
+                            <i class="pi pi-chart-line text-3xl mb-2" style="opacity: 0.3;"></i>
+                            <div class="text-sm">No results yet</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- END CLUSTER AUTO-TUNE SECTION -->
+
         <!-- Master Device Card -->
         <div class="surface-card border-round p-3 mb-3 cursor-pointer hover:surface-hover transition-colors transition-duration-150"
              [ngClass]="{'border-primary border-2': masterExpanded, 'border-1 border-transparent': !masterExpanded}"
@@ -250,100 +415,6 @@
             </div>
         </div>
 
-        <!-- Auto-Tune (Compact) -->
-        <div class="surface-card border-round p-3 mb-3">
-                <div class="flex flex-column md:flex-row align-items-center gap-3">
-                    <!-- Oscilloscope (compact) -->
-                    <div class="oscilloscope-container flex-shrink-0" [class.active]="autotuneStatus?.running"
-                         style="width: 200px; border-radius: 8px; overflow: hidden;">
-                        <div class="oscilloscope-screen" style="height: 80px;">
-                            <svg viewBox="0 0 200 100" class="oscilloscope-wave">
-                                <line x1="0" y1="50" x2="200" y2="50" class="grid-line"/>
-                                <line x1="100" y1="0" x2="100" y2="100" class="grid-line"/>
-                                <path [attr.d]="getOscilloscopePath()" class="wave-path" [class.animated]="autotuneStatus?.running"/>
-                            </svg>
-                            <div class="scanline" *ngIf="autotuneStatus?.running"></div>
-                        </div>
-                    </div>
-
-                    <!-- Controls -->
-                    <div class="flex-grow-1 w-full">
-                        <div class="flex flex-column md:flex-row align-items-start md:align-items-center gap-2 mb-2">
-                            <span class="font-bold">Auto-Tune</span>
-                            <span class="text-500 text-sm" *ngIf="autotuneStatus">
-                                {{getAutotuneStateLabel(autotuneStatus.stateCode)}}
-                                <span *ngIf="autotuneStatus.running"> - {{autotuneStatus?.progress || 0}}%</span>
-                            </span>
-                        </div>
-
-                        <!-- Profile Dropdown + Start Button -->
-                        <div class="flex flex-column md:flex-row gap-2">
-                            <p-dropdown [options]="autotuneModeOptions"
-                                        [(ngModel)]="selectedAutotuneMode"
-                                        optionLabel="label"
-                                        optionValue="value"
-                                        placeholder="Select Mode"
-                                        styleClass="w-full md:w-12rem">
-                            </p-dropdown>
-
-                            <ng-container *ngIf="!autotuneStatus?.running">
-                                <button pButton label="Start" icon="pi pi-play"
-                                        class="p-button-success p-button-sm"
-                                        (click)="startAutotune()"
-                                        [disabled]="autotuneLoading"
-                                        [loading]="autotuneLoading">
-                                </button>
-                            </ng-container>
-                            <ng-container *ngIf="autotuneStatus?.running">
-                                <button pButton label="Stop" icon="pi pi-stop"
-                                        class="p-button-danger p-button-sm"
-                                        (click)="stopAutotune(false)"
-                                        [loading]="autotuneLoading">
-                                </button>
-                                <button pButton label="Apply Best" icon="pi pi-check"
-                                        class="p-button-success p-button-sm"
-                                        (click)="stopAutotune(true)"
-                                        [loading]="autotuneLoading">
-                                </button>
-                            </ng-container>
-                        </div>
-
-                        <!-- Progress bar when running -->
-                        <div *ngIf="autotuneStatus?.running" class="mt-2">
-                            <p-progressBar [value]="autotuneStatus?.progress || 0" [showValue]="false" styleClass="h-0.5rem"></p-progressBar>
-                            <div class="flex justify-content-between text-xs text-500 mt-1">
-                                <span>{{autotuneStatus?.currentFrequency || 0}} MHz &#64; {{autotuneStatus?.currentVoltage || 0}} mV</span>
-                                <span>Test {{autotuneStatus?.testsCompleted || 0}}/{{autotuneStatus?.testsTotal || 0}}</span>
-                            </div>
-                        </div>
-
-                        <!-- Best result when found -->
-                        <div *ngIf="(autotuneStatus?.bestFrequency || 0) > 0 && !autotuneStatus?.running" class="mt-2 text-sm">
-                            <span class="text-500">Best: </span>
-                            <span class="text-green-500 font-medium">
-                                {{autotuneStatus?.bestFrequency}} MHz &#64; {{autotuneStatus?.bestVoltage}} mV
-                                ({{autotuneStatus?.bestEfficiency | number:'1.1-1'}} J/TH)
-                            </span>
-                        </div>
-                    </div>
-
-                    <!-- Safety Watchdog Toggle -->
-                    <div class="flex align-items-center gap-2 ml-0 md:ml-3 mt-3 md:mt-0 border-left-1 surface-border pl-3">
-                        <p-inputSwitch [(ngModel)]="watchdogEnabled"
-                                       (onChange)="toggleWatchdog()"
-                                       [disabled]="watchdogLoading">
-                        </p-inputSwitch>
-                        <div class="flex flex-column">
-                            <span class="font-medium text-sm">
-                                <i class="pi pi-shield mr-1" [ngClass]="{'text-green-500': watchdogEnabled, 'text-500': !watchdogEnabled}"></i>
-                                Safety Watchdog
-                            </span>
-                            <span class="text-500 text-xs">Auto-reduce if temp &gt;65°C or Vin &lt;4.9V</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <!-- Connected Slaves Header -->
             <div class="flex justify-content-between align-items-center mb-3" *ngIf="status.slaves && status.slaves.length > 0">
                 <div class="flex align-items-center gap-2">
@@ -356,7 +427,7 @@
                             (click)="openBulkAction('frequency')" pTooltip="Set frequency on all"></button>
                     <button pButton icon="pi pi-sliders-h" class="p-button-sm p-button-secondary p-button-outlined p-button-rounded"
                             (click)="openBulkAction('voltage')" pTooltip="Set voltage on all"></button>
-                    <button pButton icon="pi pi-refresh" class="p-button-sm p-button-danger p-button-outlined p-button-rounded"
+                    <button pButton icon="pi pi-refresh" class="p-button-sm p-button-danger p-button-rounded"
                             (click)="openBulkAction('restart')" pTooltip="Restart all"></button>
                 </div>
             </div>
@@ -600,7 +671,7 @@
                                             <i class="pi pi-sliders-v text-primary"></i>
                                             <h4 class="m-0">Auto-Tune</h4>
                                         </div>
-                                        <button pButton icon="pi pi-refresh" class="p-button-text p-button-sm"
+                                        <button pButton icon="pi pi-refresh" class="p-button-secondary p-button-sm"
                                                 (click)="refreshSlaveAutotune(slave.slot); $event.stopPropagation()"
                                                 [loading]="slaveAutotuneLoading === slave.slot"
                                                 pTooltip="Refresh autotune status"></button>
@@ -667,14 +738,14 @@
                                         <div class="flex gap-2 mt-3">
                                             <ng-container *ngIf="!slaveAutotune.running">
                                                 <button pButton label="Start Auto-Tune" icon="pi pi-play"
-                                                        class="p-button-sm p-button-outlined"
+                                                        class="p-button-sm p-button-success"
                                                         (click)="openSlaveAutotuneDialog(slave.slot); $event.stopPropagation()"
                                                         [loading]="slaveAutotuneLoading === slave.slot">
                                                 </button>
                                             </ng-container>
                                             <ng-container *ngIf="slaveAutotune.running">
                                                 <button pButton label="Stop & Revert" icon="pi pi-times"
-                                                        class="p-button-sm p-button-outlined p-button-secondary"
+                                                        class="p-button-sm p-button-secondary"
                                                         (click)="stopSlaveAutotune(slave.slot, false); $event.stopPropagation()"
                                                         [loading]="slaveAutotuneLoading === slave.slot">
                                                 </button>
@@ -699,7 +770,7 @@
                                             </div>
                                             <div class="flex gap-2" *ngIf="slave.ipAddr">
                                                 <button pButton label="Start Auto-Tune" icon="pi pi-play"
-                                                        class="p-button-sm p-button-outlined"
+                                                        class="p-button-sm p-button-success"
                                                         (click)="openSlaveAutotuneDialog(slave.slot); $event.stopPropagation()"
                                                         [loading]="slaveAutotuneLoading === slave.slot">
                                                 </button>
@@ -732,10 +803,10 @@
 
                                 <!-- Action Buttons -->
                                 <div class="flex justify-content-end gap-2 mt-3 pt-3 border-top-1 surface-border">
-                                    <button pButton label="Identify" icon="pi pi-lightbulb" class="p-button-sm p-button-outlined"
+                                    <button pButton label="Identify" icon="pi pi-lightbulb" class="p-button-sm p-button-warning"
                                             (click)="identifySlave(slave.slot); $event.stopPropagation()"
                                             pTooltip="Flash LED to identify device"></button>
-                                    <button pButton label="Restart" icon="pi pi-refresh" class="p-button-sm p-button-danger p-button-outlined"
+                                    <button pButton label="Restart" icon="pi pi-refresh" class="p-button-sm p-button-danger"
                                             (click)="restartSlave(slave.slot); $event.stopPropagation()"
                                             pTooltip="Restart this slave"></button>
                                 </div>

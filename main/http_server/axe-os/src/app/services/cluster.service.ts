@@ -82,6 +82,8 @@ export interface IAutotuneStatus {
   // Safety watchdog
   watchdogEnabled?: boolean;
   watchdogRunning?: boolean;
+  // Current device being tuned (-1 = master, 0-7 = slave)
+  currentDevice?: number;
 }
 
 export interface IAutotuneProfile {

@@ -849,11 +849,11 @@ export class ClusterComponent implements OnInit, OnDestroy {
 
   toggleWatchdog(): void {
     this.watchdogLoading = true;
-    const newState = !this.watchdogEnabled;
+    // watchdogEnabled is already changed by ngModel binding, so use current value
+    const newState = this.watchdogEnabled;
 
     this.clusterService.setWatchdog('', newState).subscribe({
       next: () => {
-        this.watchdogEnabled = newState;
         this.watchdogLoading = false;
         this.messageService.add({
           severity: 'success',
@@ -862,6 +862,8 @@ export class ClusterComponent implements OnInit, OnDestroy {
         });
       },
       error: () => {
+        // Revert on error
+        this.watchdogEnabled = !newState;
         this.watchdogLoading = false;
         this.messageService.add({
           severity: 'error',

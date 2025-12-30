@@ -1554,23 +1554,91 @@ static esp_err_t cluster_slave_api_handler(httpd_req_t *req)
             return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Slave not found");
         }
 
+        // Try to fetch real device info from slave's /api/system if it has an IP
+        char *slave_response = NULL;
+        cJSON *slave_system = NULL;
+        if (strlen(slave_info.ip_addr) > 0) {
+            esp_err_t err = http_proxy_to_slave(slave_info.ip_addr, "/api/system", HTTP_METHOD_GET, NULL, &slave_response);
+            if (err == ESP_OK && slave_response) {
+                slave_system = cJSON_Parse(slave_response);
+                free(slave_response);
+            }
+        }
+
         cJSON *root = cJSON_CreateObject();
-        cJSON_AddStringToObject(root, "hostname", slave_info.hostname);
-        cJSON_AddStringToObject(root, "deviceModel", "Bitaxe");
-        cJSON_AddStringToObject(root, "fwVersion", "2.x");
-        cJSON_AddNumberToObject(root, "uptime", 0);
-        cJSON_AddNumberToObject(root, "freeHeap", 0);
-        cJSON_AddNumberToObject(root, "frequency", slave_info.frequency);
-        cJSON_AddNumberToObject(root, "coreVoltage", slave_info.core_voltage);
-        cJSON_AddNumberToObject(root, "fanSpeed", 0);
-        cJSON_AddNumberToObject(root, "fanMode", 0);
-        cJSON_AddNumberToObject(root, "targetTemp", 60);
-        cJSON_AddNumberToObject(root, "hashrate", slave_info.hashrate);
-        cJSON_AddFloatToObject(root, "power", slave_info.power);
-        float hashrate_th = (float)slave_info.hashrate / 100000.0f;
-        float efficiency = hashrate_th > 0 ? slave_info.power / hashrate_th : 0;
-        cJSON_AddFloatToObject(root, "efficiency", efficiency);
-        cJSON_AddFloatToObject(root, "chipTemp", slave_info.temperature);
+
+        // Use real data from slave if available, otherwise use cluster status data
+        if (slave_system) {
+            // Extract real device info from slave's /api/system response
+            cJSON *item;
+            item = cJSON_GetObjectItem(slave_system, "hostname");
+            cJSON_AddStringToObject(root, "hostname", item ? item->valuestring : slave_info.hostname);
+
+            item = cJSON_GetObjectItem(slave_system, "deviceModel");
+            cJSON_AddStringToObject(root, "deviceModel", item ? item->valuestring : "Bitaxe");
+
+            item = cJSON_GetObjectItem(slave_system, "version");
+            cJSON_AddStringToObject(root, "fwVersion", item ? item->valuestring : "Unknown");
+
+            item = cJSON_GetObjectItem(slave_system, "uptimeSeconds");
+            cJSON_AddNumberToObject(root, "uptime", item ? item->valueint : 0);
+
+            item = cJSON_GetObjectItem(slave_system, "freeHeap");
+            cJSON_AddNumberToObject(root, "freeHeap", item ? item->valueint : 0);
+
+            item = cJSON_GetObjectItem(slave_system, "frequency");
+            cJSON_AddNumberToObject(root, "frequency", item ? item->valueint : slave_info.frequency);
+
+            item = cJSON_GetObjectItem(slave_system, "coreVoltageActual");
+            if (!item) item = cJSON_GetObjectItem(slave_system, "coreVoltage");
+            cJSON_AddNumberToObject(root, "coreVoltage", item ? item->valueint : slave_info.core_voltage);
+
+            item = cJSON_GetObjectItem(slave_system, "fanspeed");
+            cJSON_AddNumberToObject(root, "fanSpeed", item ? item->valueint : 0);
+
+            item = cJSON_GetObjectItem(slave_system, "autofanspeed");
+            cJSON_AddNumberToObject(root, "fanMode", (item && item->valueint) ? 0 : 1);
+
+            item = cJSON_GetObjectItem(slave_system, "targetTemp");
+            if (!item) item = cJSON_GetObjectItem(slave_system, "autofantemp");
+            cJSON_AddNumberToObject(root, "targetTemp", item ? item->valueint : 60);
+
+            item = cJSON_GetObjectItem(slave_system, "hashRate");
+            float hr = item ? (float)item->valuedouble : (float)slave_info.hashrate / 100.0f;
+            cJSON_AddNumberToObject(root, "hashrate", (int)(hr * 100));
+
+            item = cJSON_GetObjectItem(slave_system, "power");
+            float power = item ? (float)item->valuedouble : slave_info.power;
+            cJSON_AddFloatToObject(root, "power", power);
+
+            // Calculate efficiency
+            float hashrate_th = hr / 1000.0f;  // hashRate is in GH/s, convert to TH/s
+            float efficiency = hashrate_th > 0 ? power / hashrate_th : 0;
+            cJSON_AddFloatToObject(root, "efficiency", efficiency);
+
+            item = cJSON_GetObjectItem(slave_system, "temp");
+            cJSON_AddFloatToObject(root, "chipTemp", item ? (float)item->valuedouble : slave_info.temperature);
+
+            cJSON_Delete(slave_system);
+        } else {
+            // Fallback to cluster status data with placeholders for unknown fields
+            cJSON_AddStringToObject(root, "hostname", slave_info.hostname);
+            cJSON_AddStringToObject(root, "deviceModel", "Bitaxe (ESP-NOW)");
+            cJSON_AddStringToObject(root, "fwVersion", "Unknown");
+            cJSON_AddNumberToObject(root, "uptime", 0);
+            cJSON_AddNumberToObject(root, "freeHeap", 0);
+            cJSON_AddNumberToObject(root, "frequency", slave_info.frequency);
+            cJSON_AddNumberToObject(root, "coreVoltage", slave_info.core_voltage);
+            cJSON_AddNumberToObject(root, "fanSpeed", 0);
+            cJSON_AddNumberToObject(root, "fanMode", 0);
+            cJSON_AddNumberToObject(root, "targetTemp", 60);
+            cJSON_AddNumberToObject(root, "hashrate", slave_info.hashrate);
+            cJSON_AddFloatToObject(root, "power", slave_info.power);
+            float hashrate_th = (float)slave_info.hashrate / 100000.0f;
+            float efficiency = hashrate_th > 0 ? slave_info.power / hashrate_th : 0;
+            cJSON_AddFloatToObject(root, "efficiency", efficiency);
+            cJSON_AddFloatToObject(root, "chipTemp", slave_info.temperature);
+        }
 
         esp_err_t res = HTTP_send_json(req, root, &cluster_prebuffer_len);
         cJSON_Delete(root);

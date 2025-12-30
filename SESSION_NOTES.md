@@ -1519,6 +1519,186 @@ curl http://10.0.0.112/api/cluster/autotune/status | jq '.watchdogEnabled, .watc
 
 ---
 
+### 23. Autotune UI Redesign
+
+**Problem:** The autotune section was cramped, dropdown too narrow to read, and located below the Master device card making it unclear it was a global function.
+
+**Solution:** Complete redesign of the Cluster Auto-Tune section.
+
+**Changes:**
+
+1. **Moved above Master device** - Now clearly positioned as a global cluster control
+
+2. **3-Column Grid Layout:**
+   - **Left (col-3):** Oscilloscope visualization (responsive width, taller)
+   - **Center (col-6):** Mode dropdown + action buttons + live status panel
+   - **Right (col-3):** Best results card
+
+3. **Wider Dropdown:** Changed from `w-12rem` (192px) to `w-20rem` (320px)
+
+4. **Visual Indicators When Running:**
+   - Cyan border around entire section (`border-2 border-cyan-500`)
+   - Spinning cog icon in header
+   - "Tuning: Master" or "Tuning: Slave X" label
+   - Large progress percentage display
+   - Frequency/voltage/test count with colored icons
+
+5. **Visual Indicators When Locked:**
+   - Green border around section (`border-2 border-green-500`)
+   - "Settings Locked" badge in results panel
+
+6. **Watchdog Toggle:** Moved to top-right corner in highlighted pill container
+
+7. **Results Panel:** Shows best freq/voltage/efficiency or "No results yet" placeholder
+
+**New HTML Structure:**
+```html
+<div class="surface-card border-round p-3 mb-3"
+     [ngClass]="{'border-2 border-cyan-500': autotuneStatus?.running,
+                 'border-2 border-green-500': autotuneStatus?.stateCode === 5}">
+    <!-- Header with title + watchdog toggle -->
+    <!-- 3-column grid: oscilloscope | controls | results -->
+</div>
+```
+
+---
+
+### 24. Watchdog Toggle Bug Fix
+
+**Problem:** Clicking the watchdog toggle always showed "Watchdog disabled" message regardless of toggle direction.
+
+**Root Cause:** The `[(ngModel)]` two-way binding updates `watchdogEnabled` BEFORE the `(onChange)` handler runs. So when `toggleWatchdog()` calculated `newState = !this.watchdogEnabled`, it was negating the already-updated value, effectively reversing the user's action.
+
+**Fix:**
+```typescript
+// BEFORE (broken):
+toggleWatchdog(): void {
+    const newState = !this.watchdogEnabled;  // Wrong! Already flipped by ngModel
+    ...
+}
+
+// AFTER (fixed):
+toggleWatchdog(): void {
+    const newState = this.watchdogEnabled;  // Correct! Use current value
+    ...
+    error: () => {
+        this.watchdogEnabled = !newState;  // Revert on error
+    }
+}
+```
+
+---
+
+### 25. Compilation Fix: cluster_slave_t Field Name
+
+**Error:** `'cluster_slave_t' has no member named 'voltage'; did you mean 'voltage_in'?`
+
+**Fix:** Changed `slave_info.voltage` to `slave_info.core_voltage` in watchdog task (line 1289).
+
+---
+
+### Files Changed (UI Redesign Session)
+
+| File | Changes |
+|------|---------|
+| `cluster.component.html` | Complete autotune section redesign, moved above Master |
+| `cluster.component.ts` | Fixed watchdog toggle logic |
+| `cluster.service.ts` | Added `currentDevice` to IAutotuneStatus interface |
+| `cluster_autotune.c` | Fixed `core_voltage` field name |
+
+---
+
+### 26. Button Styling Fix - White Text on Red Buttons
+
+**Problem:** Danger buttons (Restart All, Restart Slave) had red theme but text/icons weren't white - hard to read.
+
+**Root Cause:** Buttons used `p-button-danger p-button-outlined` which creates transparent background with red text/border.
+
+**Fix:** Removed `p-button-outlined` from danger buttons to make them solid red with white text:
+
+```html
+<!-- BEFORE -->
+<button pButton icon="pi pi-refresh" class="p-button-sm p-button-danger p-button-outlined p-button-rounded">
+
+<!-- AFTER -->
+<button pButton icon="pi pi-refresh" class="p-button-sm p-button-danger p-button-rounded">
+```
+
+**Buttons fixed:**
+- Restart All (bulk action header)
+- Restart Slave (slave expanded panel)
+
+---
+
+### 27. Slave Device Info Now Fetches Real Data
+
+**Problem:** Slave Device Info panel showed placeholder values:
+- Model: "Bitaxe"
+- Firmware: "2.x"
+- Uptime: 0s
+- Free Heap: 0 bytes
+
+**Root Cause:** The `/api/cluster/slave/{id}/config` endpoint returned hardcoded values because `cluster_slave_t` struct only contains runtime stats, not device info.
+
+**Solution:** Now proxies to slave's `/api/system` endpoint to fetch real device info.
+
+**Implementation in `http_server.c`:**
+
+```c
+// Try to fetch real device info from slave's /api/system if it has an IP
+char *slave_response = NULL;
+cJSON *slave_system = NULL;
+if (strlen(slave_info.ip_addr) > 0) {
+    esp_err_t err = http_proxy_to_slave(slave_info.ip_addr, "/api/system",
+                                         HTTP_METHOD_GET, NULL, &slave_response);
+    if (err == ESP_OK && slave_response) {
+        slave_system = cJSON_Parse(slave_response);
+        free(slave_response);
+    }
+}
+
+if (slave_system) {
+    // Extract real values: hostname, deviceModel, version, uptimeSeconds,
+    // freeHeap, frequency, coreVoltageActual, fanspeed, autofanspeed,
+    // targetTemp, hashRate, power, temp
+} else {
+    // Fallback for ESP-NOW only slaves (no IP)
+    // Uses cluster status data with "Bitaxe (ESP-NOW)" as model
+}
+```
+
+**Field Mappings (slave /api/system → frontend):**
+| Slave API Field | Frontend Field |
+|-----------------|----------------|
+| hostname | hostname |
+| deviceModel | deviceModel |
+| version | fwVersion |
+| uptimeSeconds | uptime |
+| freeHeap | freeHeap |
+| frequency | frequency |
+| coreVoltageActual / coreVoltage | coreVoltage |
+| fanspeed | fanSpeed |
+| autofanspeed | fanMode (inverted) |
+| targetTemp / autofantemp | targetTemp |
+| hashRate | hashrate |
+| power | power |
+| temp | chipTemp |
+
+**Behavior:**
+- Slaves with IP address: Full device info fetched from slave
+- ESP-NOW only slaves: Shows "Bitaxe (ESP-NOW)" with limited data from cluster status
+
+---
+
+### Files Changed (Button & Device Info Session)
+
+| File | Changes |
+|------|---------|
+| `cluster.component.html` | Removed `p-button-outlined` from danger buttons |
+| `http_server.c` | Slave config now proxies to `/api/system` for real device info |
+
+---
+
 ### PENDING
 
 - [ ] Build firmware (`idf.py build`)
@@ -1528,3 +1708,5 @@ curl http://10.0.0.112/api/cluster/autotune/status | jq '.watchdogEnabled, .watc
 - [ ] Test device selection (master only, slaves only, specific slaves)
 - [ ] Test watchdog triggers on high temp
 - [ ] Test watchdog triggers on low Vin
+- [ ] Test new autotune UI layout
+- [ ] Test slave device info loading with real data
