@@ -1108,3 +1108,423 @@ curl -X POST http://<ip>/api/cluster/autotune \
 3. **Pip-Boy display should then work** - no code changes needed on display, just needs the API to exist
 
 4. **If context is lost**, read this SESSION_NOTES.md file for full history
+
+---
+
+## Session Continuation: December 30, 2025
+
+---
+
+### 21. Master-Controlled Slave Autotune via HTTP
+
+**Problem:** Autotune was only tuning the master device, not slaves. The previous setup had the master coordinate slave tuning via HTTP API calls.
+
+**Solution:** Implemented full slave autotune control from master using HTTP PATCH requests.
+
+---
+
+### Implementation Details
+
+**`main/cluster/cluster_autotune.c`** - Major additions:
+
+1. **HTTP Client for Slave Control:**
+```c
+#if CLUSTER_IS_MASTER
+#include "esp_http_client.h"
+#include "cluster.h"
+#endif
+```
+
+2. **Slave Tracking in State:**
+```c
+// Slave autotune tracking (master only)
+bool include_master;
+uint8_t slave_include_mask;  // Bitmask of slaves to include
+int8_t current_device;       // -1 = master, 0-7 = slave index
+```
+
+3. **Per-Slave Results:**
+```c
+typedef struct {
+    uint16_t best_frequency;
+    uint16_t best_voltage;
+    float best_efficiency;
+    float best_hashrate;
+    bool valid;
+} slave_autotune_result_t;
+
+static slave_autotune_result_t g_slave_results[CONFIG_CLUSTER_MAX_SLAVES] = {0};
+```
+
+4. **HTTP Helper to Apply Settings to Slave:**
+```c
+static esp_err_t apply_settings_to_slave(const char *ip_addr, uint16_t freq_mhz, uint16_t voltage_mv)
+{
+    char url[64];
+    snprintf(url, sizeof(url), "http://%s/api/system", ip_addr);
+
+    char post_data[128];
+    snprintf(post_data, sizeof(post_data),
+             "{\"frequency\":%d,\"coreVoltage\":%d}", freq_mhz, voltage_mv);
+
+    esp_http_client_config_t config = {
+        .url = url,
+        .method = HTTP_METHOD_PATCH,
+        .timeout_ms = 5000,
+    };
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_post_field(client, post_data, strlen(post_data));
+
+    esp_err_t err = esp_http_client_perform(client);
+    int status = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+
+    return (err == ESP_OK && status == 200) ? ESP_OK : ESP_FAIL;
+}
+```
+
+5. **Get Slave Stats from Cluster Status:**
+```c
+static bool get_slave_stats(uint8_t slave_id, float *hashrate, float *power, float *temp)
+{
+    cluster_status_t status;
+    if (cluster_get_status(&status) != ESP_OK) return false;
+
+    if (slave_id >= status.slave_count) return false;
+
+    *hashrate = status.slaves[slave_id].hash_rate;
+    *power = status.slaves[slave_id].power;
+    *temp = status.slaves[slave_id].temperature;
+    return true;
+}
+```
+
+6. **Full Slave Autotune Algorithm:**
+```c
+static void autotune_slave_device(uint8_t slave_id, autotune_mode_t mode)
+{
+    g_autotune.current_device = slave_id;
+    const char *ip = get_slave_ip(slave_id);
+
+    // Same algorithm as master:
+    // - Iterate through freq/voltage combinations
+    // - Apply settings via HTTP PATCH to slave's /api/system
+    // - Read stats from cluster status (hashrate, power, temp)
+    // - Track best settings per slave
+    // - Apply best settings when complete
+}
+```
+
+7. **Main Task Iteration Through Slaves:**
+```c
+#if CLUSTER_IS_MASTER
+if (g_autotune.task_running && g_autotune.slave_include_mask != 0) {
+    for (int i = 0; i < CONFIG_CLUSTER_MAX_SLAVES && g_autotune.task_running; i++) {
+        if (!(g_autotune.slave_include_mask & (1 << i))) continue;
+
+        const char *ip = get_slave_ip(i);
+        if (!ip) continue;
+
+        autotune_slave_device(i, g_autotune.status.mode);
+    }
+}
+#endif
+```
+
+---
+
+### Device Selection API
+
+**New Functions in `cluster_autotune.h`:**
+```c
+void cluster_autotune_set_include_master(bool include);
+void cluster_autotune_set_slave_mask(uint8_t mask);
+void cluster_autotune_set_slave_include(uint8_t slave_id, bool include);
+int8_t cluster_autotune_get_current_device(void);
+```
+
+---
+
+### HTTP API Updates
+
+**`main/http_server/http_server.c`:**
+
+**POST `/api/cluster/autotune`** - New parameters:
+```json
+{
+  "action": "start",
+  "mode": "efficiency",
+  "includeMaster": true,
+  "slaveMask": 255,
+  "includeSlaves": [0, 1, 2]
+}
+```
+
+- `includeMaster` (bool) - Whether to autotune master device
+- `slaveMask` (number) - Bitmask of slaves to include (bit 0 = slave 0, etc.)
+- `includeSlaves` (array) - Alternative: array of slave IDs to include
+
+**GET `/api/cluster/autotune/status`** - New field:
+```json
+{
+  "currentDevice": -1
+}
+```
+
+- `currentDevice`: -1 = master, 0-7 = slave index being tuned
+
+---
+
+### Slave IP Clickable Link
+
+**`main/http_server/axe-os/src/app/components/cluster/cluster.component.html`:**
+
+Changed slave IP from plain text to clickable link:
+```html
+<a *ngIf="slave.ipAddr"
+   [href]="'http://' + slave.ipAddr"
+   target="_blank"
+   class="text-primary no-underline hover:underline"
+   (click)="$event.stopPropagation()">{{slave.ipAddr}}</a>
+```
+
+---
+
+### Version Bump
+
+Bumped version to **v1.0.1** in:
+- `main/http_server/axe-os/generate-version.js` (fallback version)
+
+---
+
+### Testing Commands
+
+```bash
+# Start autotune on master + all slaves
+curl -X POST http://10.0.0.112/api/cluster/autotune \
+  -H "Content-Type: application/json" \
+  -d '{"action":"start","mode":"efficiency","includeMaster":true,"slaveMask":255}'
+
+# Check status (see currentDevice field)
+curl http://10.0.0.112/api/cluster/autotune/status
+
+# Start autotune on specific slaves only (slaves 0 and 2)
+curl -X POST http://10.0.0.112/api/cluster/autotune \
+  -H "Content-Type: application/json" \
+  -d '{"action":"start","mode":"balanced","includeMaster":false,"includeSlaves":[0,2]}'
+```
+
+---
+
+### Autotune Flow (Cluster-Wide)
+
+1. User starts autotune via POST with device selection
+2. If `includeMaster` is true:
+   - Autotune master device first (same algorithm as before)
+   - `currentDevice` = -1 during this phase
+3. For each slave in `slaveMask`:
+   - Set `currentDevice` = slave_id
+   - Apply freq/voltage via HTTP PATCH to `http://<slave_ip>/api/system`
+   - Read stats from `cluster_get_status()` (hashrate, power, temp)
+   - Track best settings per slave
+   - Apply best settings when complete
+4. When all devices done, state → LOCKED
+
+---
+
+### Files Changed (December 30, 2025)
+
+| File | Changes |
+|------|---------|
+| `cluster_autotune.c` | HTTP slave control, per-slave tracking, device iteration |
+| `cluster_autotune.h` | Device selection function declarations |
+| `http_server.c` | Device selection params in POST, currentDevice in GET |
+| `cluster.component.html` | Slave IP clickable link |
+| `generate-version.js` | Bumped fallback to v1.0.1 |
+
+---
+
+### 22. Safety Watchdog Feature
+
+**Purpose:** Continuous background monitoring to protect devices from overheating and undervoltage.
+
+**Behavior:**
+- Runs as independent FreeRTOS task (higher priority than autotune)
+- Checks every 5 seconds
+- **Temperature > 65°C**: Drops core voltage one step (e.g., 1200 → 1150 mV)
+- **Input Voltage < 4.9V**: Drops BOTH frequency AND voltage one step
+- Continues stepping down until conditions are safe
+- On master: also monitors all connected slaves via cluster status and sends HTTP PATCH to reduce their settings
+
+**Frequency Steps:** 450 → 500 → 525 → 550 → 600 → 625 → 650 → 700 → 725 → 750 → 800 MHz
+
+**Voltage Steps:** 1100 → 1150 → 1200 → 1225 → 1250 → 1275 → 1300 mV
+
+---
+
+### Implementation Details
+
+**`main/cluster/cluster_autotune.c`** - Added:
+
+1. **Watchdog Configuration:**
+```c
+#define WATCHDOG_CHECK_INTERVAL_MS    5000    // Check every 5 seconds
+#define WATCHDOG_TASK_STACK_SIZE      3072
+#define WATCHDOG_TASK_PRIORITY        6       // Higher priority than autotune
+```
+
+2. **Watchdog State:**
+```c
+// In g_autotune struct
+bool watchdog_enabled;
+bool watchdog_running;
+TaskHandle_t watchdog_task_handle;
+uint16_t watchdog_last_freq;     // Track for gradual reduction
+uint16_t watchdog_last_voltage;  // Track for gradual reduction
+```
+
+3. **Helper Functions:**
+```c
+static uint16_t get_lower_freq_step(uint16_t current_freq);
+static uint16_t get_lower_voltage_step(uint16_t current_voltage);
+```
+
+4. **Watchdog Task:**
+```c
+static void cluster_watchdog_task(void *pvParameters)
+{
+    while (g_autotune.watchdog_running) {
+        vTaskDelay(pdMS_TO_TICKS(WATCHDOG_CHECK_INTERVAL_MS));
+
+        // Check master device
+        if (current_temp > TEMP_TARGET_C) {
+            // Drop voltage one step
+        }
+        if (current_vin < VIN_MIN_SAFE) {
+            // Drop freq AND voltage one step
+        }
+
+        // Check slaves (master only)
+        #if CLUSTER_IS_MASTER
+        for (int i = 0; i < CONFIG_CLUSTER_MAX_SLAVES; i++) {
+            // Monitor slave temp, send HTTP PATCH if needed
+        }
+        #endif
+    }
+}
+```
+
+**`main/cluster/cluster_autotune.h`** - Added:
+```c
+esp_err_t cluster_autotune_watchdog_enable(bool enable);
+bool cluster_autotune_watchdog_is_enabled(void);
+bool cluster_autotune_watchdog_is_running(void);
+```
+
+**`main/http_server/http_server.c`** - Added:
+
+GET `/api/cluster/autotune/status` returns:
+```json
+{
+  "watchdogEnabled": true,
+  "watchdogRunning": true
+}
+```
+
+POST `/api/cluster/autotune` accepts:
+```json
+{"action": "enableWatchdog"}
+{"action": "disableWatchdog"}
+```
+
+---
+
+### Frontend UI Changes
+
+**`cluster.component.ts`** - Added:
+```typescript
+public watchdogEnabled = false;
+public watchdogLoading = false;
+
+toggleWatchdog(): void {
+    this.watchdogLoading = true;
+    const newState = !this.watchdogEnabled;
+    this.clusterService.setWatchdog('', newState).subscribe({...});
+}
+```
+
+**`cluster.component.html`** - Added toggle in Auto-Tune section:
+```html
+<!-- Safety Watchdog Toggle -->
+<div class="flex align-items-center gap-2 ml-0 md:ml-3 mt-3 md:mt-0 border-left-1 surface-border pl-3">
+    <p-inputSwitch [(ngModel)]="watchdogEnabled"
+                   (onChange)="toggleWatchdog()"
+                   [disabled]="watchdogLoading">
+    </p-inputSwitch>
+    <div class="flex flex-column">
+        <span class="font-medium text-sm">
+            <i class="pi pi-shield mr-1" [ngClass]="{'text-green-500': watchdogEnabled, 'text-500': !watchdogEnabled}"></i>
+            Safety Watchdog
+        </span>
+        <span class="text-500 text-xs">Auto-reduce if temp >65°C or Vin <4.9V</span>
+    </div>
+</div>
+```
+
+**`cluster.service.ts`** - Added:
+```typescript
+// Interface additions
+watchdogEnabled?: boolean;
+watchdogRunning?: boolean;
+
+// Method
+public setWatchdog(uri: string = '', enabled: boolean): Observable<any> {
+    const action = enabled ? 'enableWatchdog' : 'disableWatchdog';
+    return this.httpClient.post(`${uri}/api/cluster/autotune`, { action });
+}
+```
+
+---
+
+### Testing Commands
+
+```bash
+# Enable watchdog
+curl -X POST http://10.0.0.112/api/cluster/autotune \
+  -H "Content-Type: application/json" \
+  -d '{"action":"enableWatchdog"}'
+
+# Disable watchdog
+curl -X POST http://10.0.0.112/api/cluster/autotune \
+  -d '{"action":"disableWatchdog"}'
+
+# Check status
+curl http://10.0.0.112/api/cluster/autotune/status | jq '.watchdogEnabled, .watchdogRunning'
+```
+
+---
+
+### Files Changed (Watchdog Feature)
+
+| File | Changes |
+|------|---------|
+| `cluster_autotune.c` | Watchdog task, step-down helpers, state tracking |
+| `cluster_autotune.h` | Watchdog API function declarations |
+| `http_server.c` | Watchdog status in GET, enable/disable actions in POST |
+| `cluster.component.ts` | Watchdog state, toggle method |
+| `cluster.component.html` | InputSwitch toggle with shield icon |
+| `cluster.service.ts` | Interface additions, setWatchdog method |
+
+---
+
+### PENDING
+
+- [ ] Build firmware (`idf.py build`)
+- [ ] Flash to master device
+- [ ] Test slave autotune end-to-end
+- [ ] Verify HTTP PATCH reaches slaves correctly
+- [ ] Test device selection (master only, slaves only, specific slaves)
+- [ ] Test watchdog triggers on high temp
+- [ ] Test watchdog triggers on low Vin

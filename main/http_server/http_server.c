@@ -1787,6 +1787,9 @@ static esp_err_t GET_autotune_status(httpd_req_t *req)
     cJSON_AddBoolToObject(root, "enabled", cluster_autotune_is_enabled());
     cJSON_AddBoolToObject(root, "running", cluster_autotune_is_running());
 
+    // Current device being tuned (-1 = master, 0-7 = slave)
+    cJSON_AddNumberToObject(root, "currentDevice", cluster_autotune_get_current_device());
+
     // Current values
     cJSON_AddNumberToObject(root, "currentFrequency", status.current_frequency);
     cJSON_AddNumberToObject(root, "currentVoltage", status.current_voltage);
@@ -1808,6 +1811,10 @@ static esp_err_t GET_autotune_status(httpd_req_t *req)
     if (status.error_msg[0] != '\0') {
         cJSON_AddStringToObject(root, "error", status.error_msg);
     }
+
+    // Safety watchdog status
+    cJSON_AddBoolToObject(root, "watchdogEnabled", cluster_autotune_watchdog_is_enabled());
+    cJSON_AddBoolToObject(root, "watchdogRunning", cluster_autotune_watchdog_is_running());
 
     char *json_str = cJSON_Print(root);
     httpd_resp_sendstr(req, json_str);
@@ -1869,6 +1876,31 @@ static esp_err_t POST_autotune(httpd_req_t *req)
                     mode = AUTOTUNE_MODE_BALANCED;
                 }
             }
+
+            // Check for device inclusion options
+            cJSON *include_master = cJSON_GetObjectItem(root, "includeMaster");
+            if (include_master && cJSON_IsBool(include_master)) {
+                cluster_autotune_set_include_master(cJSON_IsTrue(include_master));
+            }
+
+            cJSON *slave_mask = cJSON_GetObjectItem(root, "slaveMask");
+            if (slave_mask && cJSON_IsNumber(slave_mask)) {
+                cluster_autotune_set_slave_mask((uint8_t)slave_mask->valueint);
+            }
+
+            // Alternative: includeSlaves array [0, 1, 2, ...]
+            cJSON *include_slaves = cJSON_GetObjectItem(root, "includeSlaves");
+            if (include_slaves && cJSON_IsArray(include_slaves)) {
+                uint8_t mask = 0;
+                cJSON *item;
+                cJSON_ArrayForEach(item, include_slaves) {
+                    if (cJSON_IsNumber(item) && item->valueint >= 0 && item->valueint < 8) {
+                        mask |= (1 << item->valueint);
+                    }
+                }
+                cluster_autotune_set_slave_mask(mask);
+            }
+
             ret = cluster_autotune_start(mode);
         } else if (strcmp(action_str, "stop") == 0 || strcmp(action_str, "disable") == 0) {
             cJSON *apply_best = cJSON_GetObjectItem(root, "applyBest");
@@ -1881,7 +1913,17 @@ static esp_err_t POST_autotune(httpd_req_t *req)
             ret = cluster_autotune_start(AUTOTUNE_MODE_EFFICIENCY);
         } else if (strcmp(action_str, "disableMaster") == 0) {
             ret = cluster_autotune_stop(true);
+        } else if (strcmp(action_str, "enableWatchdog") == 0) {
+            ret = cluster_autotune_watchdog_enable(true);
+        } else if (strcmp(action_str, "disableWatchdog") == 0) {
+            ret = cluster_autotune_watchdog_enable(false);
         }
+    }
+
+    // Also check for direct watchdog flag (alternative syntax)
+    cJSON *watchdog = cJSON_GetObjectItem(root, "watchdog");
+    if (watchdog && cJSON_IsBool(watchdog)) {
+        ret = cluster_autotune_watchdog_enable(cJSON_IsTrue(watchdog));
     }
 
     cJSON_Delete(root);

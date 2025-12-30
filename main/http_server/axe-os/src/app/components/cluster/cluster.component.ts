@@ -83,6 +83,10 @@ export class ClusterComponent implements OnInit, OnDestroy {
   public autotuneStatus: IAutotuneStatus | null = null;
   public autotuneEnabled = false;
   public autotuneLoading = false;
+
+  // Safety watchdog state
+  public watchdogEnabled = false;
+  public watchdogLoading = false;
   public showAutotuneDialog = false;
   public selectedAutotuneMode = 'efficiency';
   public autotuneSubscription: Subscription | null = null;
@@ -222,6 +226,8 @@ export class ClusterComponent implements OnInit, OnDestroy {
       if (status) {
         this.autotuneStatus = status;
         this.autotuneEnabled = status.enabled;
+        // Track watchdog status
+        this.watchdogEnabled = status.watchdogEnabled || false;
         // Regenerate oscilloscope points when status changes
         if (status.running) {
           this.generateOscilloscopePoints();
@@ -836,6 +842,31 @@ export class ClusterComponent implements OnInit, OnDestroy {
           severity: 'error',
           summary: 'Error',
           detail: 'Failed to stop autotune'
+        });
+      }
+    });
+  }
+
+  toggleWatchdog(): void {
+    this.watchdogLoading = true;
+    const newState = !this.watchdogEnabled;
+
+    this.clusterService.setWatchdog('', newState).subscribe({
+      next: () => {
+        this.watchdogEnabled = newState;
+        this.watchdogLoading = false;
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Safety Watchdog',
+          detail: newState ? 'Watchdog enabled - monitoring temp & voltage' : 'Watchdog disabled'
+        });
+      },
+      error: () => {
+        this.watchdogLoading = false;
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to toggle watchdog'
         });
       }
     });

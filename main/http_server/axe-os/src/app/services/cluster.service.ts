@@ -79,6 +79,9 @@ export interface IAutotuneStatus {
   testDuration: number;
   totalDuration: number;
   error?: string;
+  // Safety watchdog
+  watchdogEnabled?: boolean;
+  watchdogRunning?: boolean;
 }
 
 export interface IAutotuneProfile {
@@ -365,6 +368,14 @@ export class ClusterService {
   public stopAutotune(uri: string = '', applyBest: boolean = true): Observable<any> {
     if (environment.production) {
       return this.httpClient.post(`${uri}/api/cluster/autotune`, { action: 'stop', applyBest }).pipe(timeout(5000));
+    }
+    return of({ success: true }).pipe(delay(500));
+  }
+
+  public setWatchdog(uri: string = '', enabled: boolean): Observable<any> {
+    if (environment.production) {
+      const action = enabled ? 'enableWatchdog' : 'disableWatchdog';
+      return this.httpClient.post(`${uri}/api/cluster/autotune`, { action }).pipe(timeout(5000));
     }
     return of({ success: true }).pipe(delay(500));
   }

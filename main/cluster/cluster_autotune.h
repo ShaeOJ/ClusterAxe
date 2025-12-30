@@ -130,6 +130,35 @@ bool cluster_autotune_is_enabled(void);
 esp_err_t cluster_autotune_apply_settings(uint16_t frequency_mhz, uint16_t voltage_mv);
 
 // ============================================================================
+// Device Selection (for cluster-wide autotune)
+// ============================================================================
+
+/**
+ * @brief Set whether to include master device in cluster autotune
+ * @param include true to include master
+ */
+void cluster_autotune_set_include_master(bool include);
+
+/**
+ * @brief Set slave inclusion bitmask for cluster autotune
+ * @param mask Bitmask (bit 0 = slave 0, bit 1 = slave 1, etc.)
+ */
+void cluster_autotune_set_slave_mask(uint8_t mask);
+
+/**
+ * @brief Include/exclude a specific slave from cluster autotune
+ * @param slave_id Slave ID (0-7)
+ * @param include true to include
+ */
+void cluster_autotune_set_slave_include(uint8_t slave_id, bool include);
+
+/**
+ * @brief Get current device being autotuned
+ * @return -1 for master, 0-7 for slaves, -1 if not running
+ */
+int8_t cluster_autotune_get_current_device(void);
+
+// ============================================================================
 // Master Remote Autotune (for controlling slaves)
 // ============================================================================
 
@@ -159,6 +188,36 @@ esp_err_t cluster_autotune_all_slaves_enable(bool enable);
 esp_err_t cluster_autotune_slave_get_status(uint8_t slave_id, autotune_status_t *status);
 
 #endif // CLUSTER_IS_MASTER
+
+// ============================================================================
+// Safety Watchdog
+// ============================================================================
+
+/**
+ * @brief Enable/disable the safety watchdog
+ *
+ * The watchdog monitors temperature and input voltage:
+ * - If temp > 65°C: reduces core voltage one step
+ * - If Vin < 4.9V: reduces both frequency and voltage until Vin >= 5.0V
+ *
+ * Works on master device and controls slaves via HTTP (master only).
+ *
+ * @param enable true to enable watchdog, false to disable
+ * @return ESP_OK on success
+ */
+esp_err_t cluster_autotune_watchdog_enable(bool enable);
+
+/**
+ * @brief Check if safety watchdog is enabled
+ * @return true if watchdog is enabled
+ */
+bool cluster_autotune_watchdog_is_enabled(void);
+
+/**
+ * @brief Check if safety watchdog task is running
+ * @return true if watchdog task is active
+ */
+bool cluster_autotune_watchdog_is_running(void);
 
 // ============================================================================
 // Internal Task

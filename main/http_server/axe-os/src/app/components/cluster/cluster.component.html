@@ -326,6 +326,21 @@
                             </span>
                         </div>
                     </div>
+
+                    <!-- Safety Watchdog Toggle -->
+                    <div class="flex align-items-center gap-2 ml-0 md:ml-3 mt-3 md:mt-0 border-left-1 surface-border pl-3">
+                        <p-inputSwitch [(ngModel)]="watchdogEnabled"
+                                       (onChange)="toggleWatchdog()"
+                                       [disabled]="watchdogLoading">
+                        </p-inputSwitch>
+                        <div class="flex flex-column">
+                            <span class="font-medium text-sm">
+                                <i class="pi pi-shield mr-1" [ngClass]="{'text-green-500': watchdogEnabled, 'text-500': !watchdogEnabled}"></i>
+                                Safety Watchdog
+                            </span>
+                            <span class="text-500 text-xs">Auto-reduce if temp &gt;65°C or Vin &lt;4.9V</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -376,8 +391,12 @@
                                             </ng-container>
                                         </div>
                                         <div class="text-xs text-400">
-                                            <span *ngIf="slave.ipAddr">{{slave.ipAddr}}</span>
-                                            <span *ngIf="!slave.ipAddr">ESP-NOW</span>
+                                            <a *ngIf="slave.ipAddr"
+                                               [href]="'http://' + slave.ipAddr"
+                                               target="_blank"
+                                               class="text-primary no-underline hover:underline"
+                                               (click)="$event.stopPropagation()">{{slave.ipAddr}}</a>
+                                            <span *ngIf="!slave.ipAddr" class="text-500">ESP-NOW</span>
                                         </div>
                                     </div>
                                 </div>
