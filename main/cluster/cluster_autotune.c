@@ -238,6 +238,28 @@ static bool get_slave_stats(int slave_id, float *hashrate, float *power, float *
 }
 
 /**
+ * @brief Get slave stats including Vin for watchdog
+ */
+static bool get_slave_stats_extended(int slave_id, float *hashrate, float *power, float *temp, float *vin)
+{
+    cluster_slave_t slave_info;
+    if (cluster_master_get_slave_info(slave_id, &slave_info) != ESP_OK) {
+        return false;
+    }
+
+    if (slave_info.state != SLAVE_STATE_ACTIVE) {
+        return false;
+    }
+
+    *hashrate = (float)slave_info.hashrate / 100.0f;  // Convert from GH/s * 100
+    *power = slave_info.power;
+    *temp = slave_info.temperature;
+    *vin = slave_info.voltage_in;
+
+    return true;
+}
+
+/**
  * @brief Check if IP address is valid for HTTP communication
  */
 static bool is_valid_ip(const char *ip)
@@ -1317,28 +1339,48 @@ static void cluster_watchdog_task(void *pvParameters)
 #if CLUSTER_IS_MASTER
         // Also check slaves
         for (int i = 0; i < CONFIG_CLUSTER_MAX_SLAVES; i++) {
-            float slave_hashrate, slave_power, slave_temp;
-            if (!get_slave_stats(i, &slave_hashrate, &slave_power, &slave_temp)) {
+            float slave_hashrate, slave_power, slave_temp, slave_vin;
+            if (!get_slave_stats_extended(i, &slave_hashrate, &slave_power, &slave_temp, &slave_vin)) {
                 continue;  // Slave not active
             }
 
-            // Check slave temperature
-            if (slave_temp > TEMP_TARGET_C) {
-                const char *ip = get_slave_ip(i);
-                if (ip) {
-                    ESP_LOGW(TAG, "WATCHDOG: Slave %d temp %.1f°C > %d°C - reducing voltage",
-                             i, slave_temp, TEMP_TARGET_C);
+            const char *ip = get_slave_ip(i);
+            if (!ip) {
+                continue;  // No valid IP for HTTP commands
+            }
 
-                    // Get slave's current voltage from cluster info and reduce it
-                    cluster_slave_t slave_info;
-                    if (cluster_master_get_slave_info(i, &slave_info) == ESP_OK) {
-                        uint16_t slave_voltage = slave_info.core_voltage;
-                        uint16_t new_slave_voltage = get_lower_voltage_step(slave_voltage);
-                        if (new_slave_voltage != slave_voltage) {
-                            apply_settings_to_slave(ip, slave_info.frequency, new_slave_voltage);
-                        }
-                    }
-                }
+            cluster_slave_t slave_info;
+            if (cluster_master_get_slave_info(i, &slave_info) != ESP_OK) {
+                continue;
+            }
+
+            bool slave_need_action = false;
+            uint16_t new_slave_freq = slave_info.frequency;
+            uint16_t new_slave_voltage = slave_info.core_voltage;
+
+            // Check slave temperature - if over 65°C, drop voltage
+            if (slave_temp > TEMP_TARGET_C) {
+                ESP_LOGW(TAG, "WATCHDOG: Slave %d temp %.1f°C > %d°C - reducing voltage",
+                         i, slave_temp, TEMP_TARGET_C);
+                new_slave_voltage = get_lower_voltage_step(slave_info.core_voltage);
+                slave_need_action = true;
+            }
+
+            // Check slave input voltage - if below 4.9V, drop both freq and voltage
+            if (slave_vin > 0 && slave_vin < VIN_MIN_SAFE) {
+                ESP_LOGW(TAG, "WATCHDOG: Slave %d Vin %.2fV < %.2fV - reducing freq & voltage",
+                         i, slave_vin, VIN_MIN_SAFE);
+                new_slave_freq = get_lower_freq_step(slave_info.frequency);
+                new_slave_voltage = get_lower_voltage_step(new_slave_voltage);  // May already be reduced from temp check
+                slave_need_action = true;
+            }
+
+            // Apply changes if needed
+            if (slave_need_action &&
+                (new_slave_freq != slave_info.frequency || new_slave_voltage != slave_info.core_voltage)) {
+                ESP_LOGW(TAG, "WATCHDOG: Slave %d applying protective settings: %d MHz, %d mV (was %d MHz, %d mV)",
+                         i, new_slave_freq, new_slave_voltage, slave_info.frequency, slave_info.core_voltage);
+                apply_settings_to_slave(ip, new_slave_freq, new_slave_voltage);
             }
         }
 #endif // CLUSTER_IS_MASTER
