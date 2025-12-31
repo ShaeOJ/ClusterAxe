@@ -631,10 +631,6 @@ static esp_err_t autotune_slave_device(int slave_id, autotune_mode_t mode)
             lock();
             g_autotune.status.tests_completed = test_num;
             g_autotune.status.progress_percent = (test_num * 100) / total_tests;
-            g_autotune.status.current_hashrate = avg_hashrate;
-            g_autotune.status.current_power = avg_power;
-            g_autotune.status.current_temp = avg_temp;
-            g_autotune.status.current_efficiency = efficiency;
             unlock();
         }
     }
@@ -1322,13 +1318,19 @@ static uint16_t get_lower_voltage_step(uint16_t current_voltage)
     return VOLTAGE_STEPS[0];  // Return minimum
 }
 
+// Watchdog cooldown - don't take action more than once per 60 seconds per device
+#define WATCHDOG_COOLDOWN_MS    60000
+static uint32_t watchdog_last_action_time = 0;
+static uint32_t watchdog_slave_last_action[CONFIG_CLUSTER_MAX_SLAVES] = {0};
+
 /**
  * @brief Watchdog task - monitors temp and voltage, takes protective action
  */
 static void cluster_watchdog_task(void *pvParameters)
 {
     (void)pvParameters;
-    ESP_LOGI(TAG, "Safety watchdog started");
+    ESP_LOGI(TAG, "Safety watchdog started (checks every %ds, cooldown %ds)",
+             WATCHDOG_CHECK_INTERVAL_MS / 1000, WATCHDOG_COOLDOWN_MS / 1000);
 
     while (g_autotune.watchdog_running) {
         vTaskDelay(pdMS_TO_TICKS(WATCHDOG_CHECK_INTERVAL_MS));
@@ -1367,10 +1369,35 @@ static void cluster_watchdog_task(void *pvParameters)
             need_action = true;
         }
 
-        // Apply changes if needed
+        // Apply changes if needed (with cooldown to prevent rapid-fire adjustments)
+        uint32_t now = esp_timer_get_time() / 1000;  // Current time in ms
         if (need_action && (new_freq != current_freq || new_voltage != current_voltage)) {
+            // Check cooldown
+            if ((now - watchdog_last_action_time) < WATCHDOG_COOLDOWN_MS) {
+                ESP_LOGD(TAG, "WATCHDOG: Cooldown active, skipping master adjustment");
+                continue;
+            }
+
+            // Don't reduce below minimum
+            if (new_freq <= FREQ_STEPS[0] && new_voltage <= VOLTAGE_STEPS[0]) {
+                ESP_LOGW(TAG, "WATCHDOG: Master already at minimum settings (%d MHz, %d mV)",
+                         new_freq, new_voltage);
+                continue;
+            }
+
             ESP_LOGW(TAG, "WATCHDOG: Applying protective settings: %d MHz, %d mV (was %d MHz, %d mV)",
                      new_freq, new_voltage, current_freq, current_voltage);
+
+            // If autotune is running, stop it - watchdog takes priority for safety
+            if (g_autotune.task_running) {
+                ESP_LOGW(TAG, "WATCHDOG: Stopping autotune due to safety trigger");
+                g_autotune.task_running = false;
+                lock();
+                g_autotune.status.state = AUTOTUNE_STATE_ERROR;
+                strncpy(g_autotune.status.error_msg, "Stopped by watchdog - safety limit exceeded",
+                        sizeof(g_autotune.status.error_msg));
+                unlock();
+            }
 
             // Apply voltage first (safer)
             VCORE_set_voltage(GLOBAL_STATE, new_voltage / 1000.0f);
@@ -1385,9 +1412,10 @@ static void cluster_watchdog_task(void *pvParameters)
                 GLOBAL_STATE->POWER_MANAGEMENT_MODULE.frequency_value = (float)new_freq;
             }
 
-            // Track what we set
+            // Track what we set and update cooldown
             g_autotune.watchdog_last_freq = new_freq;
             g_autotune.watchdog_last_voltage = new_voltage;
+            watchdog_last_action_time = now;
         }
 
         // If Vin is recovering (>= 5.0V) and we previously reduced settings, log it
@@ -1436,12 +1464,40 @@ static void cluster_watchdog_task(void *pvParameters)
                 slave_need_action = true;
             }
 
-            // Apply changes if needed
+            // Apply changes if needed (with cooldown to prevent rapid-fire adjustments)
             if (slave_need_action &&
                 (new_slave_freq != slave_info.frequency || new_slave_voltage != slave_info.core_voltage)) {
+                // Check cooldown for this slave
+                if ((now - watchdog_slave_last_action[i]) < WATCHDOG_COOLDOWN_MS) {
+                    ESP_LOGD(TAG, "WATCHDOG: Slave %d cooldown active, skipping adjustment", i);
+                    continue;
+                }
+
+                // Don't reduce below minimum
+                if (new_slave_freq <= FREQ_STEPS[0] && new_slave_voltage <= VOLTAGE_STEPS[0]) {
+                    ESP_LOGW(TAG, "WATCHDOG: Slave %d already at minimum settings (%d MHz, %d mV)",
+                             i, new_slave_freq, new_slave_voltage);
+                    continue;
+                }
+
                 ESP_LOGW(TAG, "WATCHDOG: Slave %d applying protective settings: %d MHz, %d mV (was %d MHz, %d mV)",
                          i, new_slave_freq, new_slave_voltage, slave_info.frequency, slave_info.core_voltage);
+
+                // If autotune is running, stop it - watchdog takes priority for safety
+                if (g_autotune.task_running) {
+                    ESP_LOGW(TAG, "WATCHDOG: Stopping autotune due to slave %d safety trigger", i);
+                    g_autotune.task_running = false;
+                    lock();
+                    g_autotune.status.state = AUTOTUNE_STATE_ERROR;
+                    snprintf(g_autotune.status.error_msg, sizeof(g_autotune.status.error_msg),
+                             "Stopped by watchdog - slave %d safety limit exceeded", i);
+                    unlock();
+                }
+
                 apply_settings_to_slave(ip, new_slave_freq, new_slave_voltage);
+
+                // Update cooldown timestamp for this slave
+                watchdog_slave_last_action[i] = now;
             }
         }
 #endif // CLUSTER_IS_MASTER

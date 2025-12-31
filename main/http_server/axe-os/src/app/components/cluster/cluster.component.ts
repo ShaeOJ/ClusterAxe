@@ -62,6 +62,7 @@ export class ClusterComponent implements OnInit, OnDestroy {
   public masterExpanded: boolean = false;
   public savingMasterConfig: boolean = false;
   public masterIncludeInAutotune: boolean = true;
+  private masterEditValuesInitialized: boolean = false;
 
   // Slave autotune inclusion
   public slaveAutotuneIncluded: Set<number> = new Set();
@@ -1119,11 +1120,16 @@ export class ClusterComponent implements OnInit, OnDestroy {
     this.systemService.getInfo('').subscribe({
       next: (info) => {
         this.masterInfo = info;
-        this.masterFrequency = info.frequency || 500;
-        this.masterVoltage = info.coreVoltage || 1200;
-        this.masterFanSpeed = info.fanspeed || 50;
-        this.masterFanMode = info.autofanspeed === 1 ? 0 : 1; // 0 = auto, 1 = manual
-        this.masterTargetTemp = info.autofanspeed === 1 ? 55 : this.masterTargetTemp;
+        // Only initialize editable values once (when panel is first expanded)
+        // This prevents overwriting user input during polling
+        if (!this.masterEditValuesInitialized) {
+          this.masterFrequency = info.frequency || 500;
+          this.masterVoltage = info.coreVoltage || 1200;
+          this.masterFanSpeed = info.fanspeed || 50;
+          this.masterFanMode = info.autofanspeed === 1 ? 0 : 1; // 0 = auto, 1 = manual
+          this.masterTargetTemp = info.autofanspeed === 1 ? 55 : this.masterTargetTemp;
+          this.masterEditValuesInitialized = true;
+        }
       },
       error: () => {
         this.messageService.add({
@@ -1137,7 +1143,9 @@ export class ClusterComponent implements OnInit, OnDestroy {
 
   toggleMasterExpanded(): void {
     this.masterExpanded = !this.masterExpanded;
-    if (this.masterExpanded && !this.masterInfo) {
+    if (this.masterExpanded) {
+      // Reset flag so values are refreshed when panel opens
+      this.masterEditValuesInitialized = false;
       this.loadMasterInfo();
     }
   }

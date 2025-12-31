@@ -40,6 +40,7 @@ export interface ISlaveConfig {
   power: number;
   efficiency: number;
   chipTemp: number;
+  proxyDebug?: string;  // Debug info if HTTP proxy failed
 }
 
 export interface ISlaveSettingRequest {

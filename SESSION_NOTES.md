@@ -1710,3 +1710,132 @@ if (slave_system) {
 - [ ] Test watchdog triggers on low Vin
 - [ ] Test new autotune UI layout
 - [ ] Test slave device info loading with real data
+
+---
+
+## Session Continuation: December 31, 2025
+
+---
+
+### 28. Fixed Watchdog Monitoring - Always Active
+
+**Problem:** User wanted the watchdog to always monitor temp and vin, not skip during autotune.
+
+**Solution:** Updated watchdog to always monitor and stop autotune if safety limits are exceeded.
+
+**Changes to `cluster_autotune.c`:**
+- Removed "skip during autotune" check from watchdog task
+- Added logic to call `cluster_autotune_stop(false)` if watchdog triggers during autotune
+- Added 60-second cooldown for both master and slaves after watchdog activation
+- Thresholds: temp > 65°C, vin < 4.9V
+
+---
+
+### 29. Fixed Slave Settings Not Applying
+
+**Problem:** When manually applying frequency/voltage to slaves via UI, the settings didn't actually apply - the endpoint just logged and returned success.
+
+**Solution:** Implemented actual HTTP PATCH proxy to slave's `/api/system`.
+
+**Changes to `http_server.c`:**
+```c
+// POST /api/cluster/slave/{id}/setting
+case 0x20:  // FREQUENCY
+    snprintf(patch_data, sizeof(patch_data), "{\"frequency\":%d}", val);
+    break;
+case 0x21:  // CORE_VOLTAGE
+    snprintf(patch_data, sizeof(patch_data), "{\"coreVoltage\":%d}", val);
+    break;
+// ... other settings
+
+esp_err_t err = http_proxy_to_slave(slave_info.ip_addr, "/api/system",
+                                     HTTP_METHOD_PATCH, patch_data, &response);
+```
+
+---
+
+### 30. Fixed Slave Device Info Not Loading
+
+**Problem:** Slave dropdown showed "Unknown" for firmware, 0s uptime, etc.
+
+**Root Causes & Fixes:**
+
+1. **HTTP event handler only captured non-chunked responses** - Fixed to handle both chunked and non-chunked by using realloc to accumulate data:
+```c
+case HTTP_EVENT_ON_DATA:
+    if (evt->data_len > 0) {
+        char *new_buf = realloc(http_proxy_response,
+                                http_proxy_response_len + evt->data_len + 1);
+        memcpy(http_proxy_response + http_proxy_response_len, evt->data, evt->data_len);
+        http_proxy_response_len += evt->data_len;
+    }
+```
+
+2. **Wrong endpoint** - Was using `/api/system` instead of `/api/system/info`. Fixed:
+```c
+esp_err_t err = http_proxy_to_slave(slave_info.ip_addr, "/api/system/info",
+                                     HTTP_METHOD_GET, NULL, &slave_response);
+```
+
+---
+
+### 31. Fixed Master Settings Dropdown Refreshing
+
+**Problem:** Master settings dropdown kept refreshing every 3 seconds, resetting input values before user could apply them.
+
+**Root Cause:** `loadMasterInfo()` was called every 3 seconds on the polling interval and overwrote the input values.
+
+**Solution:** Only initialize edit values once when panel is expanded:
+
+```typescript
+// Added flag to track initialization
+private masterEditValuesInitialized: boolean = false;
+
+loadMasterInfo(): void {
+    this.systemService.getInfo('').subscribe({
+        next: (info) => {
+            this.masterInfo = info;
+            // Only initialize editable values once
+            if (!this.masterEditValuesInitialized) {
+                this.masterFrequency = info.frequency || 500;
+                this.masterVoltage = info.coreVoltage || 1200;
+                // ... other values
+                this.masterEditValuesInitialized = true;
+            }
+        }
+    });
+}
+
+toggleMasterExpanded(): void {
+    this.masterExpanded = !this.masterExpanded;
+    if (this.masterExpanded) {
+        // Reset flag so values are refreshed when panel opens
+        this.masterEditValuesInitialized = false;
+        this.loadMasterInfo();
+    }
+}
+```
+
+---
+
+### Files Changed (December 31, 2025)
+
+| File | Changes |
+|------|---------|
+| `cluster_autotune.c` | Watchdog always monitors, stops autotune on trigger, 60s cooldown |
+| `cluster.component.ts` | Master edit values only init once, flag resets on panel toggle |
+| `cluster.service.ts` | Added proxyDebug to ISlaveConfig interface |
+| `http_server.c` | Slave settings actually apply via HTTP PATCH, chunked response fix, correct endpoint |
+
+---
+
+### Git Commit (December 31, 2025)
+
+```
+Fix slave settings, device info, and master dropdown refresh
+
+- Watchdog now always monitors temp/vin, stops autotune if triggered
+- Slave settings now actually apply via HTTP PATCH to /api/system
+- Fixed slave device info not loading (chunked responses, wrong endpoint)
+- Master settings inputs no longer reset during polling
+```

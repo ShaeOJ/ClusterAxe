@@ -1430,12 +1430,19 @@ static esp_err_t http_proxy_event_handler(esp_http_client_event_t *evt)
 {
     switch (evt->event_id) {
         case HTTP_EVENT_ON_DATA:
-            if (!esp_http_client_is_chunked_response(evt->client)) {
+            // Handle both chunked and non-chunked responses
+            if (evt->data_len > 0) {
                 if (http_proxy_response == NULL) {
                     http_proxy_response = malloc(evt->data_len + 1);
                     http_proxy_response_len = 0;
                 } else {
-                    http_proxy_response = realloc(http_proxy_response, http_proxy_response_len + evt->data_len + 1);
+                    char *new_buf = realloc(http_proxy_response, http_proxy_response_len + evt->data_len + 1);
+                    if (new_buf) {
+                        http_proxy_response = new_buf;
+                    } else {
+                        ESP_LOGE(TAG, "Failed to realloc response buffer");
+                        return ESP_FAIL;
+                    }
                 }
                 if (http_proxy_response) {
                     memcpy(http_proxy_response + http_proxy_response_len, evt->data, evt->data_len);
@@ -1480,6 +1487,8 @@ static esp_err_t http_proxy_to_slave(const char *slave_ip, const char *path,
         .method = method,
         .timeout_ms = 5000,
         .event_handler = http_proxy_event_handler,
+        .buffer_size = 2048,
+        .buffer_size_tx = 1024,
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -1488,7 +1497,7 @@ static esp_err_t http_proxy_to_slave(const char *slave_ip, const char *path,
         return ESP_FAIL;
     }
 
-    if (method == HTTP_METHOD_POST && post_data) {
+    if ((method == HTTP_METHOD_POST || method == HTTP_METHOD_PATCH) && post_data) {
         esp_http_client_set_header(client, "Content-Type", "application/json");
         esp_http_client_set_post_field(client, post_data, strlen(post_data));
     }
@@ -1554,14 +1563,28 @@ static esp_err_t cluster_slave_api_handler(httpd_req_t *req)
             return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Slave not found");
         }
 
-        // Try to fetch real device info from slave's /api/system if it has an IP
+        // Try to fetch real device info from slave's /api/system if it has a valid IP
         char *slave_response = NULL;
         cJSON *slave_system = NULL;
-        if (strlen(slave_info.ip_addr) > 0) {
-            esp_err_t err = http_proxy_to_slave(slave_info.ip_addr, "/api/system", HTTP_METHOD_GET, NULL, &slave_response);
+        // Check for valid IP (not empty, not "N/A", not "0.0.0.0")
+        bool has_valid_ip = strlen(slave_info.ip_addr) > 0 &&
+                            strcmp(slave_info.ip_addr, "N/A") != 0 &&
+                            strcmp(slave_info.ip_addr, "0.0.0.0") != 0 &&
+                            slave_info.ip_addr[0] >= '0' && slave_info.ip_addr[0] <= '9';
+
+        ESP_LOGI(TAG, "Slave %d config request: IP='%s', valid=%d", slave_id, slave_info.ip_addr, has_valid_ip);
+
+        if (has_valid_ip) {
+            esp_err_t err = http_proxy_to_slave(slave_info.ip_addr, "/api/system/info", HTTP_METHOD_GET, NULL, &slave_response);
             if (err == ESP_OK && slave_response) {
                 slave_system = cJSON_Parse(slave_response);
+                if (!slave_system) {
+                    ESP_LOGW(TAG, "Slave %d: JSON parse failed", slave_id);
+                }
                 free(slave_response);
+            } else {
+                ESP_LOGW(TAG, "Slave %d: HTTP proxy failed (err=%d)", slave_id, err);
+                if (slave_response) free(slave_response);
             }
         }
 
@@ -1645,7 +1668,7 @@ static esp_err_t cluster_slave_api_handler(httpd_req_t *req)
         return res;
 
     } else if (strcmp(action, "setting") == 0 && req->method == HTTP_POST) {
-        // POST setting
+        // POST setting - apply to slave via HTTP PATCH to /api/system
         char buf[256];
         int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
         if (received <= 0) {
@@ -1654,8 +1677,78 @@ static esp_err_t cluster_slave_api_handler(httpd_req_t *req)
         buf[received] = '\0';
 
         ESP_LOGI(TAG, "Setting slave %d: %s", slave_id, buf);
-        httpd_resp_sendstr(req, "{\"success\":true}");
-        return ESP_OK;
+
+        // Parse the setting request
+        cJSON *setting_req = cJSON_Parse(buf);
+        if (!setting_req) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        }
+
+        cJSON *setting_id = cJSON_GetObjectItem(setting_req, "settingId");
+        cJSON *value = cJSON_GetObjectItem(setting_req, "value");
+
+        if (!setting_id || !cJSON_IsNumber(setting_id) || !value || !cJSON_IsNumber(value)) {
+            cJSON_Delete(setting_req);
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing settingId or value");
+        }
+
+        // Get slave info to get IP address
+        cluster_slave_t slave_info;
+        if (cluster_master_get_slave_info(slave_id, &slave_info) != ESP_OK) {
+            cJSON_Delete(setting_req);
+            return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Slave not found");
+        }
+
+        if (strlen(slave_info.ip_addr) == 0 || strcmp(slave_info.ip_addr, "N/A") == 0) {
+            cJSON_Delete(setting_req);
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Slave has no IP address for HTTP");
+        }
+
+        // Map settingId to /api/system field name
+        // 0x20 = frequency, 0x21 = coreVoltage, 0x22 = fanspeed, 0x23 = autofanspeed, 0x24 = autofantemp
+        char patch_data[128];
+        int sid = setting_id->valueint;
+        int val = value->valueint;
+
+        switch (sid) {
+            case 0x20:  // FREQUENCY
+                snprintf(patch_data, sizeof(patch_data), "{\"frequency\":%d}", val);
+                break;
+            case 0x21:  // CORE_VOLTAGE
+                snprintf(patch_data, sizeof(patch_data), "{\"coreVoltage\":%d}", val);
+                break;
+            case 0x22:  // FAN_SPEED
+                snprintf(patch_data, sizeof(patch_data), "{\"fanspeed\":%d}", val);
+                break;
+            case 0x23:  // FAN_MODE (0 = auto, 1 = manual)
+                snprintf(patch_data, sizeof(patch_data), "{\"autofanspeed\":%d}", val == 0 ? 1 : 0);
+                break;
+            case 0x24:  // TARGET_TEMP
+                snprintf(patch_data, sizeof(patch_data), "{\"autofantemp\":%d}", val);
+                break;
+            default:
+                cJSON_Delete(setting_req);
+                return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown settingId");
+        }
+
+        cJSON_Delete(setting_req);
+
+        // Proxy to slave via HTTP PATCH
+        ESP_LOGI(TAG, "Applying to slave %s: %s", slave_info.ip_addr, patch_data);
+        char *response = NULL;
+        esp_err_t err = http_proxy_to_slave(slave_info.ip_addr, "/api/system", HTTP_METHOD_PATCH, patch_data, &response);
+
+        if (response) {
+            free(response);
+        }
+
+        if (err == ESP_OK) {
+            httpd_resp_sendstr(req, "{\"success\":true}");
+        } else {
+            ESP_LOGE(TAG, "Failed to apply setting to slave %s", slave_info.ip_addr);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to apply setting to slave");
+        }
+        return err == ESP_OK ? ESP_OK : ESP_FAIL;
 
     } else if (strcmp(action, "command") == 0 && req->method == HTTP_POST) {
         // POST command
