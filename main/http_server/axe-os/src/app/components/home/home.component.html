@@ -87,21 +87,21 @@
                         <div class="col-6 md:col-3">
                             <div class="text-center p-2 surface-ground border-round">
                                 <div class="flex align-items-center justify-content-center gap-1 mb-1">
-                                    <i class="pi pi-chart-line text-xs text-green-500"></i>
+                                    <i class="pi pi-chart-line text-xs text-theme"></i>
                                     <span class="text-500 text-xs">Total Hashrate</span>
                                 </div>
-                                <div class="text-xl font-bold text-green-500">{{formatClusterHashrate(getClusterTotalHashrate(clusterStatus, info.hashRate))}}</div>
+                                <div class="text-xl font-bold text-theme">{{formatClusterHashrate(getClusterTotalHashrate(clusterStatus, info.hashRate))}}</div>
                             </div>
                         </div>
                         <!-- Cluster Shares -->
                         <div class="col-6 md:col-3">
                             <div class="text-center p-2 surface-ground border-round">
                                 <div class="flex align-items-center justify-content-center gap-1 mb-1">
-                                    <i class="pi pi-check-circle text-xs text-green-500"></i>
+                                    <i class="pi pi-check-circle text-xs text-theme"></i>
                                     <span class="text-500 text-xs">Total Shares</span>
                                 </div>
                                 <div class="text-xl font-bold">
-                                    <span class="text-green-500">{{getClusterTotalShares(clusterStatus, info.sharesAccepted) | number:'1.0-0'}}</span>
+                                    <span class="text-theme">{{getClusterTotalShares(clusterStatus, info.sharesAccepted) | number:'1.0-0'}}</span>
                                     <span class="text-red-500 text-sm" *ngIf="getClusterTotalRejected(clusterStatus, info.sharesRejected) > 0">/{{getClusterTotalRejected(clusterStatus, info.sharesRejected)}}</span>
                                 </div>
                             </div>
@@ -165,7 +165,7 @@
                             <div class="mb-2 text-sm">
                                 <div class="flex justify-content-between mb-1">
                                     <span class="text-500">Primary ({{getDualPoolPrimaryPercentage(info)}}%):</span>
-                                    <span class="text-green-500 font-medium">{{getPrimaryHashrate(info) | hashSuffix}}</span>
+                                    <span class="text-theme font-medium">{{getPrimaryHashrate(info) | hashSuffix}}</span>
                                 </div>
                                 <div class="flex justify-content-between">
                                     <span class="text-500">Secondary ({{getDualPoolSecondaryPercentage(info)}}%):</span>
@@ -189,7 +189,7 @@
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td *ngFor="let i of hashrateAverages" class="p-0 text-center text-green-500 font-medium">
+                                    <td *ngFor="let i of hashrateAverages" class="p-0 text-center text-theme font-medium">
                                         {{ info[i.key] | hashSuffix }}
                                     </td>
                                 </tr>
@@ -228,7 +228,7 @@
                         </div>
 
                         <div>
-                            <span class="text-green-500 font-medium white-space-nowrap">
+                            <span class="text-theme font-medium white-space-nowrap">
                                 {{getEfficiencyAverage() | number: '1.2-2'}} J/Th
                             </span>
                             <span class="text-500">
@@ -276,7 +276,7 @@
                         <div class="flex justify-content-between">
                             <span class="text-500">Primary ({{getDualPoolPrimaryPercentage(info)}}%):</span>
                             <span>
-                                <span class="text-green-500 font-medium">{{info.dualPoolStats.primaryAccepted | number: '1.0-0'}}</span>
+                                <span class="text-theme font-medium">{{info.dualPoolStats.primaryAccepted | number: '1.0-0'}}</span>
                                 <span class="text-500"> / </span>
                                 <span class="text-red-500">{{info.dualPoolStats.primaryRejected | number: '1.0-0'}}</span>
                             </span>
@@ -284,7 +284,7 @@
                         <div class="flex justify-content-between">
                             <span class="text-500">Secondary ({{getDualPoolSecondaryPercentage(info)}}%):</span>
                             <span>
-                                <span class="text-green-500 font-medium">{{info.dualPoolStats.secondaryAccepted | number: '1.0-0'}}</span>
+                                <span class="text-theme font-medium">{{info.dualPoolStats.secondaryAccepted | number: '1.0-0'}}</span>
                                 <span class="text-500"> / </span>
                                 <span class="text-red-500">{{info.dualPoolStats.secondaryRejected | number: '1.0-0'}}</span>
                             </span>
@@ -731,7 +731,7 @@
                     <ng-container *ngIf="clusterStatus$ | async as clusterStatus">
                         <div class="flex flex-nowrap mb-2">
                             <div class="col-fixed-width text-500">Hashrate</div>
-                            <div class="text-green-500 font-medium">{{info.hashRate | hashSuffix}}</div>
+                            <div class="text-theme font-medium">{{info.hashRate | hashSuffix}}</div>
                         </div>
                         <div class="flex flex-nowrap mb-2">
                             <div class="col-fixed-width text-500">Temperature</div>
@@ -905,7 +905,7 @@
                                 </div>
                             </td>
                             <td class="text-center p-2">
-                                <span class="text-green-500 font-medium">{{formatClusterHashrate(slave.hashrate)}}</span>
+                                <span class="text-theme font-medium">{{formatClusterHashrate(slave.hashrate)}}</span>
                             </td>
                             <td class="text-center p-2">
                                 <span [ngClass]="{'text-red-500': slave.temperature >= 70}">
@@ -916,7 +916,7 @@
                                 {{slave.power | number:'1.1-1'}} W
                             </td>
                             <td class="text-center p-2">
-                                <span class="text-green-500">{{slave.sharesAccepted}}</span>
+                                <span class="text-theme">{{slave.sharesAccepted}}</span>
                                 <span class="text-400">/</span>
                                 <span class="text-red-500">{{slave.sharesSubmitted - slave.sharesAccepted}}</span>
                             </td>

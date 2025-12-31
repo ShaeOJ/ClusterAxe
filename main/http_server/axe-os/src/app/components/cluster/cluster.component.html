@@ -33,12 +33,12 @@
             </div>
             <div class="surface-card border-round p-2 px-3 text-center flex-grow-1" style="min-width: 140px;">
                 <div class="text-400 text-xs mb-1">Hashrate</div>
-                <div class="text-xl font-bold text-green-500">{{formatHashrate(status.totalHashrate || 0)}}</div>
+                <div class="text-xl font-bold text-theme">{{formatHashrate(status.totalHashrate || 0)}}</div>
             </div>
             <div class="surface-card border-round p-2 px-3 text-center flex-grow-1" style="min-width: 100px;">
                 <div class="text-400 text-xs mb-1">Shares</div>
                 <div class="text-xl font-bold">
-                    <span class="text-green-500">{{status.totalSharesAccepted || 0}}</span>
+                    <span class="text-theme">{{status.totalSharesAccepted || 0}}</span>
                     <span class="text-red-500 text-sm" *ngIf="(status.totalSharesRejected || 0) > 0">/{{status.totalSharesRejected}}</span>
                 </div>
             </div>
@@ -184,15 +184,15 @@
                         <div class="flex flex-column gap-2">
                             <div class="flex justify-content-between">
                                 <span class="text-500">Frequency</span>
-                                <span class="font-bold text-green-500">{{autotuneStatus?.bestFrequency || 0}} MHz</span>
+                                <span class="font-bold text-theme">{{autotuneStatus?.bestFrequency || 0}} MHz</span>
                             </div>
                             <div class="flex justify-content-between">
                                 <span class="text-500">Voltage</span>
-                                <span class="font-bold text-green-500">{{autotuneStatus?.bestVoltage || 0}} mV</span>
+                                <span class="font-bold text-theme">{{autotuneStatus?.bestVoltage || 0}} mV</span>
                             </div>
                             <div class="flex justify-content-between">
                                 <span class="text-500">Efficiency</span>
-                                <span class="font-bold text-green-500">{{autotuneStatus?.bestEfficiency | number:'1.1-1'}} J/TH</span>
+                                <span class="font-bold text-theme">{{autotuneStatus?.bestEfficiency | number:'1.1-1'}} J/TH</span>
                             </div>
                         </div>
                         <div *ngIf="autotuneStatus?.stateCode === 5" class="mt-2 pt-2 border-top-1 surface-border">
@@ -246,10 +246,10 @@
                     <div class="flex justify-content-center gap-3 md:gap-5 flex-wrap" *ngIf="masterInfo">
                         <!-- Hashrate -->
                         <div class="flex align-items-center gap-2">
-                            <i class="pi pi-chart-line text-green-500"></i>
+                            <i class="pi pi-chart-line text-theme"></i>
                             <div>
                                 <div class="text-xs text-500">Hashrate</div>
-                                <div class="font-bold text-green-500">{{formatHashrate((masterInfo.hashRate || 0) * 100)}}</div>
+                                <div class="font-bold text-theme">{{formatHashrate((masterInfo.hashRate || 0) * 100)}}</div>
                             </div>
                         </div>
                         <!-- Temp -->
@@ -477,10 +477,10 @@
                                     <div class="flex justify-content-center gap-3 md:gap-5 flex-wrap">
                                         <!-- Hashrate -->
                                         <div class="flex align-items-center gap-2">
-                                            <i class="pi pi-chart-line text-green-500"></i>
+                                            <i class="pi pi-chart-line text-theme"></i>
                                             <div>
                                                 <div class="text-xs text-500">Hashrate</div>
-                                                <div class="font-bold text-green-500">{{formatHashrate(slave.hashrate)}}</div>
+                                                <div class="font-bold text-theme">{{formatHashrate(slave.hashrate)}}</div>
                                             </div>
                                         </div>
                                         <!-- Temp -->
@@ -525,11 +525,11 @@
                                         </div>
                                         <!-- Shares -->
                                         <div class="flex align-items-center gap-2">
-                                            <i class="pi pi-check-circle text-green-500"></i>
+                                            <i class="pi pi-check-circle text-theme"></i>
                                             <div>
                                                 <div class="text-xs text-500">Shares</div>
                                                 <div>
-                                                    <span class="font-bold text-green-500">{{slave.sharesAccepted}}</span>
+                                                    <span class="font-bold text-theme">{{slave.sharesAccepted}}</span>
                                                     <span class="text-red-500 text-sm" *ngIf="(slave.sharesSubmitted - slave.sharesAccepted) > 0">/{{slave.sharesSubmitted - slave.sharesAccepted}}</span>
                                                 </div>
                                             </div>
@@ -715,11 +715,11 @@
                                                     <div class="grid">
                                                         <div class="col-6">
                                                             <div class="text-xs text-500">Frequency</div>
-                                                            <div class="font-bold text-green-500">{{slaveAutotune.bestFrequency}} MHz</div>
+                                                            <div class="font-bold text-theme">{{slaveAutotune.bestFrequency}} MHz</div>
                                                         </div>
                                                         <div class="col-6">
                                                             <div class="text-xs text-500">Voltage</div>
-                                                            <div class="font-bold text-green-500">{{slaveAutotune.bestVoltage}} mV</div>
+                                                            <div class="font-bold text-theme">{{slaveAutotune.bestVoltage}} mV</div>
                                                         </div>
                                                         <div class="col-6">
                                                             <div class="text-xs text-500">Efficiency</div>
@@ -886,7 +886,7 @@
                         <div class="flex flex-column gap-2">
                             <div class="flex justify-content-between">
                                 <span class="text-500">Hashrate:</span>
-                                <span class="text-green-500 font-medium">{{formatHashrate(status.localHashrate || 0)}}</span>
+                                <span class="text-theme font-medium">{{formatHashrate(status.localHashrate || 0)}}</span>
                             </div>
                             <div class="flex justify-content-between">
                                 <span class="text-500">Temperature:</span>
@@ -1041,7 +1041,7 @@
         <div class="surface-ground border-round p-3">
             <div class="flex flex-column gap-2 text-sm">
                 <div *ngIf="selectedAutotuneMode === 'efficiency'">
-                    <i class="pi pi-bolt text-green-500 mr-2"></i>
+                    <i class="pi pi-bolt text-theme mr-2"></i>
                     <strong>Efficiency Mode:</strong> Best J/TH ratio with low voltage. Tests up to 550 MHz and 1175 mV max.
                 </div>
                 <div *ngIf="selectedAutotuneMode === 'hashrate'">
@@ -1105,7 +1105,7 @@
         <div class="surface-ground border-round p-3">
             <div class="flex flex-column gap-2 text-sm">
                 <div *ngIf="slaveAutotuneMode === 'efficiency'">
-                    <i class="pi pi-bolt text-green-500 mr-2"></i>
+                    <i class="pi pi-bolt text-theme mr-2"></i>
                     <strong>Efficiency Mode:</strong> Best J/TH ratio with low voltage. Tests up to 550 MHz and 1175 mV max.
                 </div>
                 <div *ngIf="slaveAutotuneMode === 'hashrate'">

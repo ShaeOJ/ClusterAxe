@@ -646,3 +646,18 @@ button.color-dot {
 .line-break-anywhere {
     line-break: anywhere;
 }
+
+/* Theme-aware text color - uses primary color from selected theme */
+.text-theme {
+    color: var(--primary-color) !important;
+}
+
+.text-theme-glow {
+    color: var(--primary-color) !important;
+    text-shadow: 0 0 8px var(--primary-color);
+}
+
+/* For elements that should dim slightly on light mode */
+body.layout-theme-light .text-theme {
+    filter: brightness(0.85);
+}
