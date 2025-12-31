@@ -254,7 +254,8 @@ export class HomeComponent implements OnInit, OnDestroy {
           fill: true,
           backgroundColor: primaryColor + '30',
           borderColor: primaryColor,
-          tension: 0.4,  // Smooth the line
+          tension: 0.5,  // Smoother curves (increased from 0.4)
+          cubicInterpolationMode: 'monotone',  // Smooth interpolation that respects data trends
           pointRadius: 0,
           pointHoverRadius: 4,
           borderWidth: 2,
@@ -270,7 +271,8 @@ export class HomeComponent implements OnInit, OnDestroy {
           fill: false,
           backgroundColor: textColorSecondary,
           borderColor: textColorSecondary,
-          tension: 0.4,  // Smooth the line
+          tension: 0.5,  // Smoother curves (increased from 0.4)
+          cubicInterpolationMode: 'monotone',  // Smooth interpolation
           pointRadius: 0,
           pointHoverRadius: 4,
           borderWidth: 1,  // Thinner line for temp
@@ -301,6 +303,12 @@ export class HomeComponent implements OnInit, OnDestroy {
             }
           }
         },
+        decimation: {
+          enabled: true,
+          algorithm: 'lttb',  // Largest Triangle Three Buckets - preserves visual shape
+          samples: 150,       // Target number of points to display
+          threshold: 200      // Only decimate when more than this many points
+        }
       },
       interaction: {
         intersect: false,
