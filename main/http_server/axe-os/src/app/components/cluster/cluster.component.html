@@ -793,11 +793,19 @@
                                                     (ngModelChange)="toggleSlaveAutotuneIncluded(slave.slot)"
                                                     [binary]="true"
                                                     [inputId]="'slaveAutotune' + slave.slot"
+                                                    [disabled]="!hasValidIpForAutotune(slave)"
                                                     (click)="$event.stopPropagation()">
                                         </p-checkbox>
-                                        <label [for]="'slaveAutotune' + slave.slot" class="cursor-pointer" (click)="$event.stopPropagation()">
+                                        <label [for]="'slaveAutotune' + slave.slot" class="cursor-pointer" (click)="$event.stopPropagation()"
+                                               [class.text-500]="!hasValidIpForAutotune(slave)">
                                             Include in cluster auto-tune
                                         </label>
+                                        <!-- Warning if no valid IP -->
+                                        <span *ngIf="!hasValidIpForAutotune(slave)"
+                                              class="text-orange-500 text-xs ml-2"
+                                              [pTooltip]="getSlaveAutotuneTooltip(slave)">
+                                            <i class="pi pi-exclamation-triangle mr-1"></i>No WiFi IP
+                                        </span>
                                     </div>
                                 </div>
 
@@ -1047,9 +1055,22 @@
             </div>
         </div>
 
-        <div class="text-orange-500 text-sm">
-            <i class="pi pi-exclamation-triangle mr-2"></i>
-            Auto-tuning may take several minutes to complete. Mining will continue during this process.
+        <div class="surface-100 border-round p-3 text-sm">
+            <div class="flex align-items-start gap-2 mb-2">
+                <i class="pi pi-clock text-primary mt-1"></i>
+                <div>
+                    <strong>Estimated Time Per Device:</strong>
+                    <ul class="mt-1 mb-0 pl-3">
+                        <li>Efficiency: ~30 minutes</li>
+                        <li>Balanced: ~45 minutes</li>
+                        <li>Max Hashrate: ~80 minutes</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="flex align-items-center gap-2 text-500">
+                <i class="pi pi-info-circle"></i>
+                <span>Devices are tuned one at a time. Mining continues during this process.</span>
+            </div>
         </div>
     </div>
 
@@ -1098,9 +1119,22 @@
             </div>
         </div>
 
-        <div class="text-orange-500 text-sm">
-            <i class="pi pi-exclamation-triangle mr-2"></i>
-            Auto-tuning is performed via HTTP proxy to the slave. This may take several minutes.
+        <div class="surface-100 border-round p-3 text-sm">
+            <div class="flex align-items-start gap-2 mb-2">
+                <i class="pi pi-clock text-primary mt-1"></i>
+                <div>
+                    <strong>Estimated Time:</strong>
+                    <ul class="mt-1 mb-0 pl-3">
+                        <li>Efficiency: ~30 minutes</li>
+                        <li>Balanced: ~45 minutes</li>
+                        <li>Max Hashrate: ~80 minutes</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="flex align-items-center gap-2 text-500">
+                <i class="pi pi-info-circle"></i>
+                <span>Slave is tuned via HTTP. Mining continues during this process.</span>
+            </div>
         </div>
     </div>
 

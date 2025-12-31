@@ -804,13 +804,23 @@ export class ClusterComponent implements OnInit, OnDestroy {
     this.showAutotuneDialog = false;
     this.autotuneLoading = true;
 
-    this.clusterService.startAutotune('', this.selectedAutotuneMode).subscribe({
+    // Build slave mask from selected slaves
+    const slaveMask = this.buildSlaveMask();
+    const includeMaster = this.masterIncludeInAutotune;
+
+    // Log what we're autotuning
+    console.log(`Starting autotune: mode=${this.selectedAutotuneMode}, master=${includeMaster}, slaveMask=0x${slaveMask.toString(16)}`);
+
+    this.clusterService.startAutotune('', this.selectedAutotuneMode, includeMaster, slaveMask).subscribe({
       next: () => {
         this.autotuneLoading = false;
+        const targets: string[] = [];
+        if (includeMaster) targets.push('Master');
+        if (slaveMask > 0) targets.push(`${this.slaveAutotuneIncluded.size} slave(s)`);
         this.messageService.add({
           severity: 'info',
           summary: 'Autotune Started',
-          detail: `Optimizing for ${this.selectedAutotuneMode}`
+          detail: `Optimizing ${targets.join(' + ')} for ${this.selectedAutotuneMode}`
         });
       },
       error: () => {
@@ -822,6 +832,20 @@ export class ClusterComponent implements OnInit, OnDestroy {
         });
       }
     });
+  }
+
+  /**
+   * Build a bitmask from the slaveAutotuneIncluded Set
+   * Each bit represents a slave slot (bit 0 = slave 0, bit 1 = slave 1, etc.)
+   */
+  buildSlaveMask(): number {
+    let mask = 0;
+    this.slaveAutotuneIncluded.forEach(slaveId => {
+      if (slaveId >= 0 && slaveId < 8) {
+        mask |= (1 << slaveId);
+      }
+    });
+    return mask;
   }
 
   stopAutotune(applyBest: boolean = true): void {
@@ -1221,6 +1245,30 @@ export class ClusterComponent implements OnInit, OnDestroy {
     } else {
       this.slaveAutotuneIncluded.add(slaveId);
     }
+  }
+
+  /**
+   * Check if a slave has a valid IP address for HTTP-based autotune
+   * Returns false for 'N/A', empty, or invalid IPs
+   */
+  hasValidIpForAutotune(slave: IClusterSlave): boolean {
+    if (!slave.ipAddr) return false;
+    const ip = slave.ipAddr.trim();
+    if (ip === '' || ip === 'N/A' || ip === 'n/a' || ip === '0.0.0.0' || ip === 'unknown') {
+      return false;
+    }
+    // Basic IP format check - should start with a digit
+    return ip.match(/^[0-9]/) !== null;
+  }
+
+  /**
+   * Get tooltip explaining why a slave cannot be autotuned
+   */
+  getSlaveAutotuneTooltip(slave: IClusterSlave): string {
+    if (this.hasValidIpForAutotune(slave)) {
+      return 'Slave will be included in cluster autotune';
+    }
+    return `Slave IP '${slave.ipAddr || 'none'}' is not valid for HTTP autotune. Ensure slave is connected to WiFi.`;
   }
 
   isSlaveAutotuneIncluded(slaveId: number): boolean {

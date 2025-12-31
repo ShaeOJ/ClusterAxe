@@ -238,6 +238,28 @@ static bool get_slave_stats(int slave_id, float *hashrate, float *power, float *
 }
 
 /**
+ * @brief Check if IP address is valid for HTTP communication
+ */
+static bool is_valid_ip(const char *ip)
+{
+    if (!ip || ip[0] == '\0') {
+        return false;
+    }
+    // Reject known invalid values
+    if (strcmp(ip, "N/A") == 0 ||
+        strcmp(ip, "n/a") == 0 ||
+        strcmp(ip, "0.0.0.0") == 0 ||
+        strcmp(ip, "unknown") == 0) {
+        return false;
+    }
+    // Basic format check - should start with digit
+    if (ip[0] < '0' || ip[0] > '9') {
+        return false;
+    }
+    return true;
+}
+
+/**
  * @brief Get slave IP address
  */
 static const char* get_slave_ip(int slave_id)
@@ -246,7 +268,7 @@ static const char* get_slave_ip(int slave_id)
     if (cluster_master_get_slave_info(slave_id, &slave_info) != ESP_OK) {
         return NULL;
     }
-    if (strlen(slave_info.ip_addr) == 0) {
+    if (!is_valid_ip(slave_info.ip_addr)) {
         return NULL;
     }
     return slave_info.ip_addr;
@@ -1028,7 +1050,11 @@ void cluster_autotune_task(void *pvParameters)
     if (g_autotune.task_running && g_autotune.slave_include_mask != 0) {
         ESP_LOGI(TAG, "========================================");
         ESP_LOGI(TAG, "Starting SLAVE autotune (mask: 0x%02X)", g_autotune.slave_include_mask);
+        ESP_LOGI(TAG, "Slaves must have valid IP addresses for HTTP-based autotune");
         ESP_LOGI(TAG, "========================================");
+
+        int slaves_tuned = 0;
+        int slaves_skipped = 0;
 
         for (int i = 0; i < CONFIG_CLUSTER_MAX_SLAVES && g_autotune.task_running; i++) {
             // Check if this slave is included in the mask
@@ -1036,10 +1062,21 @@ void cluster_autotune_task(void *pvParameters)
                 continue;
             }
 
-            // Check if slave exists and has IP
+            // Check if slave exists and has valid IP for HTTP communication
+            cluster_slave_t slave_info;
+            if (cluster_master_get_slave_info(i, &slave_info) != ESP_OK) {
+                ESP_LOGW(TAG, "Slave %d: Not registered, skipping autotune", i);
+                slaves_skipped++;
+                continue;
+            }
+
             const char *ip = get_slave_ip(i);
             if (!ip) {
-                ESP_LOGD(TAG, "Slave %d: No IP address, skipping", i);
+                ESP_LOGW(TAG, "Slave %d (%s): No valid IP address ('%s'), skipping autotune",
+                         i, slave_info.hostname,
+                         slave_info.ip_addr[0] ? slave_info.ip_addr : "empty");
+                ESP_LOGW(TAG, "  -> Ensure slave is connected to WiFi network for HTTP-based autotune");
+                slaves_skipped++;
                 continue;
             }
 
@@ -1047,13 +1084,22 @@ void cluster_autotune_task(void *pvParameters)
             g_autotune.current_device = i;
             unlock();
 
+            ESP_LOGI(TAG, "Slave %d (%s @ %s): Starting autotune", i, slave_info.hostname, ip);
+            slaves_tuned++;
+
             // Autotune this slave
             autotune_slave_device(i, g_autotune.status.mode);
         }
 
         ESP_LOGI(TAG, "========================================");
-        ESP_LOGI(TAG, "ALL SLAVE AUTOTUNE COMPLETE!");
+        ESP_LOGI(TAG, "SLAVE AUTOTUNE COMPLETE!");
+        ESP_LOGI(TAG, "Slaves tuned: %d, Skipped: %d", slaves_tuned, slaves_skipped);
+        if (slaves_skipped > 0) {
+            ESP_LOGW(TAG, "Some slaves were skipped - ensure they have valid WiFi IPs");
+        }
         ESP_LOGI(TAG, "========================================");
+    } else if (g_autotune.task_running) {
+        ESP_LOGI(TAG, "No slaves selected for autotune (mask: 0x%02X)", g_autotune.slave_include_mask);
     }
 #endif // CLUSTER_IS_MASTER
 

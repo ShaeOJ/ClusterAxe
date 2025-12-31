@@ -360,9 +360,14 @@ export class ClusterService {
     return of({ success: true }).pipe(delay(500));
   }
 
-  public startAutotune(uri: string = '', mode: string = 'efficiency'): Observable<any> {
+  public startAutotune(uri: string = '', mode: string = 'efficiency', includeMaster: boolean = true, slaveMask: number = 0xFF): Observable<any> {
     if (environment.production) {
-      return this.httpClient.post(`${uri}/api/cluster/autotune`, { action: 'start', mode }).pipe(timeout(5000));
+      return this.httpClient.post(`${uri}/api/cluster/autotune`, {
+        action: 'start',
+        mode,
+        includeMaster,
+        slaveMask
+      }).pipe(timeout(5000));
     }
     return of({ success: true }).pipe(delay(500));
   }
