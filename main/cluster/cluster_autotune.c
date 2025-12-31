@@ -525,6 +525,15 @@ static esp_err_t autotune_slave_device(int slave_id, autotune_mode_t mode)
     int test_num = 0;
     int total_tests = get_freq_step_count(mode) * get_voltage_step_count(mode);
 
+    // Reset progress for this slave
+    lock();
+    g_autotune.status.tests_total = total_tests;
+    g_autotune.status.tests_completed = 0;
+    g_autotune.status.progress_percent = 0;
+    g_autotune.status.current_frequency = FREQ_BASE_MHZ;
+    g_autotune.status.current_voltage = VOLTAGE_BASE_MV;
+    unlock();
+
     for (int fi = 0; fi < NUM_FREQ_STEPS && g_autotune.task_running; fi++) {
         uint16_t test_freq = FREQ_STEPS[fi];
         if (test_freq > freq_max) continue;
@@ -534,6 +543,13 @@ static esp_err_t autotune_slave_device(int slave_id, autotune_mode_t mode)
             if (test_voltage > voltage_max) continue;
 
             test_num++;
+
+            // Update status for UI
+            lock();
+            g_autotune.status.current_frequency = test_freq;
+            g_autotune.status.current_voltage = test_voltage;
+            unlock();
+
             ESP_LOGI(TAG, "Slave %d: Testing %d MHz, %d mV (%d/%d)",
                      slave_id, test_freq, test_voltage, test_num, total_tests);
 
@@ -602,7 +618,24 @@ static esp_err_t autotune_slave_device(int slave_id, autotune_mode_t mode)
                 best_voltage = test_voltage;
                 best_hashrate = avg_hashrate;
                 ESP_LOGI(TAG, "Slave %d: *** NEW BEST: %d MHz, %d mV ***", slave_id, best_freq, best_voltage);
+
+                // Update best values in status for UI
+                lock();
+                g_autotune.status.best_frequency = best_freq;
+                g_autotune.status.best_voltage = best_voltage;
+                g_autotune.status.best_efficiency = best_efficiency;
+                unlock();
             }
+
+            // Update progress after each test
+            lock();
+            g_autotune.status.tests_completed = test_num;
+            g_autotune.status.progress_percent = (test_num * 100) / total_tests;
+            g_autotune.status.current_hashrate = avg_hashrate;
+            g_autotune.status.current_power = avg_power;
+            g_autotune.status.current_temp = avg_temp;
+            g_autotune.status.current_efficiency = efficiency;
+            unlock();
         }
     }
 
