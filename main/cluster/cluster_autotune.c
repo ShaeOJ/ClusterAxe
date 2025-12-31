@@ -483,12 +483,24 @@ static esp_err_t autotune_slave_device(int slave_id, autotune_mode_t mode)
         return ESP_ERR_NOT_FOUND;
     }
 
+    // Get slave info for logging
+    cluster_slave_t slave_info;
+    cluster_master_get_slave_info(slave_id, &slave_info);
+
     ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, "Starting autotune for SLAVE %d (%s)", slave_id, ip_addr);
+    ESP_LOGI(TAG, "CLUSTER AUTOTUNE: SLAVE %d (%s @ %s)", slave_id, slave_info.hostname, ip_addr);
+    ESP_LOGI(TAG, "Mode: %s", mode == AUTOTUNE_MODE_EFFICIENCY ? "EFFICIENCY" :
+                              mode == AUTOTUNE_MODE_BALANCED ? "BALANCED" : "MAX_HASHRATE");
+    ESP_LOGI(TAG, "Current: %d MHz, %d mV", slave_info.frequency, slave_info.core_voltage);
     ESP_LOGI(TAG, "========================================");
 
     uint16_t freq_max = get_max_freq_for_mode(mode);
     uint16_t voltage_max = get_max_voltage_for_mode(mode);
+
+    ESP_LOGI(TAG, "Slave %d: Testing up to %d MHz, %d mV for %s mode",
+             slave_id, freq_max, voltage_max,
+             mode == AUTOTUNE_MODE_EFFICIENCY ? "efficiency" :
+             mode == AUTOTUNE_MODE_BALANCED ? "balanced" : "hashrate");
 
     // Best found values for this slave
     float best_efficiency = 999999.0f;
@@ -496,15 +508,18 @@ static esp_err_t autotune_slave_device(int slave_id, autotune_mode_t mode)
     uint16_t best_voltage = VOLTAGE_BASE_MV;
     float best_hashrate = 0;
 
-    // Apply base settings to slave
+    // Apply base settings to slave - this resets any previous profile
+    ESP_LOGI(TAG, "Slave %d: Resetting to base settings (%d MHz, %d mV)",
+             slave_id, FREQ_BASE_MHZ, VOLTAGE_BASE_MV);
     if (apply_settings_to_slave(ip_addr, FREQ_BASE_MHZ, VOLTAGE_BASE_MV) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to apply base settings to slave %d", slave_id);
+        ESP_LOGE(TAG, "Slave %d: FAILED to apply base settings via HTTP!", slave_id);
+        ESP_LOGE(TAG, "Check that slave is reachable at http://%s", ip_addr);
         return ESP_FAIL;
     }
 
-    // Initial stabilization
-    ESP_LOGI(TAG, "Slave %d: Waiting for stabilization...", slave_id);
-    vTaskDelay(pdMS_TO_TICKS(AUTOTUNE_STABILIZE_TIME_MS));
+    // Longer stabilization for slaves (network latency + ASIC stabilization + heartbeat update)
+    ESP_LOGI(TAG, "Slave %d: Waiting 30s for initial stabilization...", slave_id);
+    vTaskDelay(pdMS_TO_TICKS(30000));  // 30 seconds for slave initial stabilization
 
     // Test frequency/voltage combinations
     int test_num = 0;
@@ -522,14 +537,16 @@ static esp_err_t autotune_slave_device(int slave_id, autotune_mode_t mode)
             ESP_LOGI(TAG, "Slave %d: Testing %d MHz, %d mV (%d/%d)",
                      slave_id, test_freq, test_voltage, test_num, total_tests);
 
-            // Apply settings to slave
-            if (apply_settings_to_slave(ip_addr, test_freq, test_voltage) != ESP_OK) {
-                ESP_LOGW(TAG, "Failed to apply settings to slave %d - skipping test", slave_id);
+            // Apply settings to slave via HTTP
+            esp_err_t apply_result = apply_settings_to_slave(ip_addr, test_freq, test_voltage);
+            if (apply_result != ESP_OK) {
+                ESP_LOGW(TAG, "Slave %d: HTTP request failed - check connectivity", slave_id);
                 continue;
             }
 
-            // Stabilization delay
-            vTaskDelay(pdMS_TO_TICKS(AUTOTUNE_STABILIZE_TIME_MS / 2));
+            // Stabilization delay - longer for slaves due to network latency and heartbeat updates
+            // Slaves need time to: receive HTTP, apply settings, stabilize ASIC, send heartbeat
+            vTaskDelay(pdMS_TO_TICKS(AUTOTUNE_STABILIZE_TIME_MS));  // Full stabilization time
 
             // Collect samples from cluster status
             float hashrate_sum = 0, power_sum = 0, temp_sum = 0;
@@ -591,9 +608,18 @@ static esp_err_t autotune_slave_device(int slave_id, autotune_mode_t mode)
 
     // Apply best settings to slave
     if (g_autotune.task_running && best_freq > 0 && best_voltage > 0) {
-        ESP_LOGI(TAG, "Slave %d: Applying best: %d MHz, %d mV (%.2f J/TH)",
-                 slave_id, best_freq, best_voltage, best_efficiency);
-        apply_settings_to_slave(ip_addr, best_freq, best_voltage);
+        ESP_LOGI(TAG, "========================================");
+        ESP_LOGI(TAG, "SLAVE %d (%s) AUTOTUNE COMPLETE!", slave_id, slave_info.hostname);
+        ESP_LOGI(TAG, "Best Settings: %d MHz, %d mV", best_freq, best_voltage);
+        ESP_LOGI(TAG, "Best Efficiency: %.2f J/TH @ %.2f GH/s", best_efficiency, best_hashrate);
+        ESP_LOGI(TAG, "Applying final settings via HTTP...");
+
+        if (apply_settings_to_slave(ip_addr, best_freq, best_voltage) == ESP_OK) {
+            ESP_LOGI(TAG, "Slave %d: Settings applied successfully!", slave_id);
+        } else {
+            ESP_LOGE(TAG, "Slave %d: FAILED to apply final settings!", slave_id);
+        }
+        ESP_LOGI(TAG, "========================================");
 
         // Store results
         g_slave_results[slave_id].best_frequency = best_freq;
@@ -601,6 +627,8 @@ static esp_err_t autotune_slave_device(int slave_id, autotune_mode_t mode)
         g_slave_results[slave_id].best_efficiency = best_efficiency;
         g_slave_results[slave_id].best_hashrate = best_hashrate;
         g_slave_results[slave_id].valid = true;
+    } else if (!g_autotune.task_running) {
+        ESP_LOGW(TAG, "Slave %d: Autotune was stopped before completion", slave_id);
     }
 
     return ESP_OK;
