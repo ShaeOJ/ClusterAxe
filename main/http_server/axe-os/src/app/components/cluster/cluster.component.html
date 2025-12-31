@@ -438,7 +438,12 @@
                     <ng-container *ngFor="let slave of status.slaves; trackBy: trackBySlave">
                         <!-- Slave Card -->
                         <div class="surface-card border-round p-3 mb-2 cursor-pointer hover:surface-hover transition-colors transition-duration-150"
-                             [ngClass]="{'border-primary border-2': expandedSlaveId === slave.slot, 'border-1 border-transparent': expandedSlaveId !== slave.slot}"
+                             [ngClass]="{
+                                'border-primary border-2': expandedSlaveId === slave.slot,
+                                'border-cyan-500 border-2': autotuneStatus?.running && autotuneStatus?.currentDevice === slave.slot,
+                                'border-green-500 border-2': !autotuneStatus?.running && autotuneStatus?.stateCode === 5 && isSlaveAutotuneIncluded(slave.slot),
+                                'border-1 border-transparent': expandedSlaveId !== slave.slot && !(autotuneStatus?.running && autotuneStatus?.currentDevice === slave.slot) && !(autotuneStatus?.stateCode === 5 && isSlaveAutotuneIncluded(slave.slot))
+                             }"
                              (click)="toggleSlaveConfig(slave)">
                             <div class="grid align-items-center">
                                 <!-- Left: Status + Name + Autotune Badge -->
@@ -446,15 +451,28 @@
                                     <i class="pi {{getSlaveStateIcon(slave.state)}} text-lg"
                                        [ngClass]="clusterService.getSlaveStateClass(slave.state)"></i>
                                     <div>
-                                        <div class="font-bold flex align-items-center gap-2">
+                                        <div class="font-bold flex align-items-center gap-2 flex-wrap">
                                             {{slave.hostname}}
+                                            <!-- Cluster Autotune Badge - Currently Tuning This Slave -->
+                                            <span *ngIf="autotuneStatus?.running && autotuneStatus?.currentDevice === slave.slot"
+                                                  class="text-xs px-2 py-1 border-round bg-cyan-500 text-white"
+                                                  style="font-size: 0.65rem;">
+                                                <i class="pi pi-spin pi-cog mr-1"></i>Cluster Tuning
+                                            </span>
+                                            <!-- Cluster Autotune Badge - Locked State -->
+                                            <span *ngIf="!autotuneStatus?.running && autotuneStatus?.stateCode === 5 && isSlaveAutotuneIncluded(slave.slot)"
+                                                  class="text-xs px-2 py-1 border-round bg-green-500 text-white"
+                                                  style="font-size: 0.65rem;">
+                                                <i class="pi pi-lock mr-1"></i>Cluster Locked
+                                            </span>
+                                            <!-- Individual Slave Autotune Badge -->
                                             <ng-container *ngIf="getSlaveAutotuneStatus(slave.slot) as slaveAutotune">
-                                                <span *ngIf="slaveAutotune.running"
+                                                <span *ngIf="slaveAutotune.running && autotuneStatus?.currentDevice !== slave.slot"
                                                       class="text-xs px-2 py-1 border-round bg-cyan-500 text-white"
                                                       style="font-size: 0.65rem;">
                                                     <i class="pi pi-spin pi-cog mr-1"></i>{{slaveAutotune.currentFrequency}} MHz
                                                 </span>
-                                                <span *ngIf="slaveAutotune.stateCode === 5"
+                                                <span *ngIf="slaveAutotune.stateCode === 5 && !(autotuneStatus?.stateCode === 5 && isSlaveAutotuneIncluded(slave.slot))"
                                                       class="text-xs px-2 py-1 border-round bg-green-500 text-white"
                                                       style="font-size: 0.65rem;">
                                                     <i class="pi pi-lock mr-1"></i>Locked
