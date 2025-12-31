@@ -35,15 +35,16 @@ interface ThemeOption {
 
         <div class="col-12 mt-4">
           <h5>Theme Colors</h5>
-          <div class="grid gap-2">
-            <div *ngFor="let theme of themes" class="col-2 theme-color">
+          <div class="flex flex-wrap gap-3">
+            <div *ngFor="let theme of themes" class="theme-color text-center" style="min-width: 60px;">
               <button pButton [class]="'p-button-rounded p-button-text color-dot'"
                       [style.backgroundColor]="theme.primaryColor"
-                      style="width: 2rem; height: 2rem; border: none;"
+                      [style.border]="theme.primaryColor === currentColor ? '2px solid var(--text-color)' : 'none'"
+                      style="width: 2.5rem; height: 2.5rem;"
                       (click)="changeTheme(theme)">
                 <i *ngIf="theme.primaryColor === currentColor" class="pi pi-check selected-icon"></i>
               </button>
-              <div class="text-sm mt-1">{{theme.name}}</div>
+              <div class="text-xs mt-1">{{theme.name}}</div>
             </div>
           </div>
         </div>
@@ -216,6 +217,114 @@ export class ThemeConfigComponent implements OnInit {
         '--togglebutton-border': '1px solid #FF3F3F',
         '--togglebutton-hover-bg': '#e63636',
         '--togglebutton-hover-border': '1px solid #e63636',
+        '--togglebutton-text-color': '#0A0F0D'
+      }
+    },
+    {
+      name: 'Vault-Tec',
+      primaryColor: '#FFCC00',
+      accentColors: {
+        '--primary-color': '#FFCC00',
+        '--primary-color-text': '#0A0F0D',
+        '--highlight-bg': 'rgba(255, 204, 0, 0.16)',
+        '--highlight-text-color': '#E8F4F0',
+        '--focus-ring': '0 0 0 0.2rem rgba(255, 204, 0, 0.3)',
+        '--slider-bg': '#2a2a1a',
+        '--slider-range-bg': '#FFCC00',
+        '--slider-handle-bg': '#FFCC00',
+        '--progressbar-bg': '#2a2a1a',
+        '--progressbar-value-bg': '#FFCC00',
+        '--checkbox-border': '#FFCC00',
+        '--checkbox-bg': '#FFCC00',
+        '--checkbox-hover-bg': '#e6b800',
+        '--button-bg': '#FFCC00',
+        '--button-hover-bg': '#e6b800',
+        '--button-focus-shadow': '0 0 0 2px #0A0F0D, 0 0 0 4px #FFCC00',
+        '--togglebutton-bg': '#FFCC00',
+        '--togglebutton-border': '1px solid #FFCC00',
+        '--togglebutton-hover-bg': '#e6b800',
+        '--togglebutton-hover-border': '1px solid #e6b800',
+        '--togglebutton-text-color': '#0A0F0D'
+      }
+    },
+    {
+      name: 'Purple',
+      primaryColor: '#A855F7',
+      accentColors: {
+        '--primary-color': '#A855F7',
+        '--primary-color-text': '#ffffff',
+        '--highlight-bg': 'rgba(168, 85, 247, 0.16)',
+        '--highlight-text-color': '#E8F4F0',
+        '--focus-ring': '0 0 0 0.2rem rgba(168, 85, 247, 0.3)',
+        '--slider-bg': '#251a2a',
+        '--slider-range-bg': '#A855F7',
+        '--slider-handle-bg': '#A855F7',
+        '--progressbar-bg': '#251a2a',
+        '--progressbar-value-bg': '#A855F7',
+        '--checkbox-border': '#A855F7',
+        '--checkbox-bg': '#A855F7',
+        '--checkbox-hover-bg': '#9333ea',
+        '--button-bg': '#A855F7',
+        '--button-hover-bg': '#9333ea',
+        '--button-focus-shadow': '0 0 0 2px #0A0F0D, 0 0 0 4px #A855F7',
+        '--togglebutton-bg': '#A855F7',
+        '--togglebutton-border': '1px solid #A855F7',
+        '--togglebutton-hover-bg': '#9333ea',
+        '--togglebutton-hover-border': '1px solid #9333ea',
+        '--togglebutton-text-color': '#ffffff'
+      }
+    },
+    {
+      name: 'Teal',
+      primaryColor: '#14B8A6',
+      accentColors: {
+        '--primary-color': '#14B8A6',
+        '--primary-color-text': '#0A0F0D',
+        '--highlight-bg': 'rgba(20, 184, 166, 0.16)',
+        '--highlight-text-color': '#E8F4F0',
+        '--focus-ring': '0 0 0 0.2rem rgba(20, 184, 166, 0.3)',
+        '--slider-bg': '#1a2a29',
+        '--slider-range-bg': '#14B8A6',
+        '--slider-handle-bg': '#14B8A6',
+        '--progressbar-bg': '#1a2a29',
+        '--progressbar-value-bg': '#14B8A6',
+        '--checkbox-border': '#14B8A6',
+        '--checkbox-bg': '#14B8A6',
+        '--checkbox-hover-bg': '#0d9488',
+        '--button-bg': '#14B8A6',
+        '--button-hover-bg': '#0d9488',
+        '--button-focus-shadow': '0 0 0 2px #0A0F0D, 0 0 0 4px #14B8A6',
+        '--togglebutton-bg': '#14B8A6',
+        '--togglebutton-border': '1px solid #14B8A6',
+        '--togglebutton-hover-bg': '#0d9488',
+        '--togglebutton-hover-border': '1px solid #0d9488',
+        '--togglebutton-text-color': '#0A0F0D'
+      }
+    },
+    {
+      name: 'White',
+      primaryColor: '#E0E0E0',
+      accentColors: {
+        '--primary-color': '#E0E0E0',
+        '--primary-color-text': '#0A0F0D',
+        '--highlight-bg': 'rgba(224, 224, 224, 0.16)',
+        '--highlight-text-color': '#E8F4F0',
+        '--focus-ring': '0 0 0 0.2rem rgba(224, 224, 224, 0.3)',
+        '--slider-bg': '#2a2a2a',
+        '--slider-range-bg': '#E0E0E0',
+        '--slider-handle-bg': '#E0E0E0',
+        '--progressbar-bg': '#2a2a2a',
+        '--progressbar-value-bg': '#E0E0E0',
+        '--checkbox-border': '#E0E0E0',
+        '--checkbox-bg': '#E0E0E0',
+        '--checkbox-hover-bg': '#c0c0c0',
+        '--button-bg': '#E0E0E0',
+        '--button-hover-bg': '#c0c0c0',
+        '--button-focus-shadow': '0 0 0 2px #0A0F0D, 0 0 0 4px #E0E0E0',
+        '--togglebutton-bg': '#E0E0E0',
+        '--togglebutton-border': '1px solid #E0E0E0',
+        '--togglebutton-hover-bg': '#c0c0c0',
+        '--togglebutton-hover-border': '1px solid #c0c0c0',
         '--togglebutton-text-color': '#0A0F0D'
       }
     }

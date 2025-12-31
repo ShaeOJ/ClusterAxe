@@ -181,7 +181,7 @@ body:not(.layout-theme-light)::before {
     z-index: 9999;
 }
 
-/* CRT Scanline overlay - light mode (gray/sepia for old PC look) */
+/* CRT Scanline overlay - light mode (subtle grey for Vault-Tec terminal look) */
 body.layout-theme-light::before {
     content: "";
     position: fixed;
@@ -193,11 +193,29 @@ body.layout-theme-light::before {
         0deg,
         transparent,
         transparent 2px,
-        rgba(0, 0, 0, 0.025) 2px,
-        rgba(0, 0, 0, 0.025) 4px
+        rgba(100, 100, 100, 0.04) 2px,
+        rgba(100, 100, 100, 0.04) 4px
     );
     pointer-events: none;
     z-index: 9999;
+}
+
+/* Light mode: Subtle terminal glow on cards */
+body.layout-theme-light::after {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: radial-gradient(
+        ellipse at center,
+        transparent 0%,
+        transparent 60%,
+        rgba(0, 0, 0, 0.02) 100%
+    );
+    pointer-events: none;
+    z-index: 9998;
 }
 
 /* Dark mode: Pip-Boy glow effect for cards */
@@ -257,15 +275,16 @@ body:not(.layout-theme-light) a:hover {
     background-color: #f8f9fa !important;
     color: #212529 !important;
 
-    /* Cards */
+    /* Cards - subtle terminal style */
     .card {
         background: #ffffff !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
-        border: 1px solid #dee2e6 !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), inset 0 0 0 1px rgba(0, 0, 0, 0.03) !important;
+        border: 1px solid #d0d5db !important;
+        transition: all 0.2s ease;
 
         &:hover {
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15) !important;
-            border-color: #adb5bd !important;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), inset 0 0 0 1px rgba(0, 0, 0, 0.05) !important;
+            border-color: #b0b5bb !important;
         }
     }
 
