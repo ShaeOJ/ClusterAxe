@@ -900,7 +900,12 @@
                                        [ngClass]="clusterService.getSlaveStateClass(slave.state)"></i>
                                     <div>
                                         <div class="font-medium">{{slave.hostname}}</div>
-                                        <div class="text-500 text-xs">{{slave.ipAddr || 'ESP-NOW'}}</div>
+                                        <a *ngIf="slave.ipAddr"
+                                           [href]="'http://' + slave.ipAddr"
+                                           target="_blank"
+                                           class="text-primary text-xs no-underline hover:underline"
+                                           (click)="$event.stopPropagation()">{{slave.ipAddr}}</a>
+                                        <span *ngIf="!slave.ipAddr" class="text-500 text-xs">ESP-NOW</span>
                                     </div>
                                 </div>
                             </td>
