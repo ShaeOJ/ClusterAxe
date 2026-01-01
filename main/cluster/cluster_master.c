@@ -629,7 +629,7 @@ static void coordinator_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Coordinator task started");
 
-    const int64_t WORK_REBROADCAST_INTERVAL_MS = 10000;  // Re-broadcast every 10 seconds
+    const int64_t WORK_REBROADCAST_INTERVAL_MS = 700;  // Re-broadcast every 700ms (with job->en2 mapping fix)
 
     while (1) {
         int64_t now = esp_timer_get_time() / 1000;

@@ -371,8 +371,9 @@ esp_err_t cluster_slave_handle_ack(uint8_t assigned_id, const char *hostname);
  * @param job_id Numeric job ID
  * @param version The actual rolled version bits from ASIC
  * @param ntime The ntime value (may be rolled)
+ * @param extranonce2_hex The extranonce2 as hex string from the ASIC job
  */
-void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t version, uint32_t ntime);
+void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t version, uint32_t ntime, const char *extranonce2_hex);
 
 /**
  * @brief Get slave share statistics

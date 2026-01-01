@@ -1321,7 +1321,9 @@ static uint16_t get_lower_voltage_step(uint16_t current_voltage)
 // Watchdog cooldown - don't take action more than once per 60 seconds per device
 #define WATCHDOG_COOLDOWN_MS    60000
 static uint32_t watchdog_last_action_time = 0;
+#if CLUSTER_IS_MASTER
 static uint32_t watchdog_slave_last_action[CONFIG_CLUSTER_MAX_SLAVES] = {0};
+#endif
 
 /**
  * @brief Watchdog task - monitors temp and voltage, takes protective action

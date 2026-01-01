@@ -1839,3 +1839,242 @@ Fix slave settings, device info, and master dropdown refresh
 - Fixed slave device info not loading (chunked responses, wrong endpoint)
 - Master settings inputs no longer reset during polling
 ```
+
+---
+
+## Session: January 1, 2026
+
+---
+
+### 32. Pool Hashrate Discrepancy - BM1370 Timing Issue
+
+**Problem:** After rebuilding firmware, pool/stratum reports ~40% of actual hashrate.
+- UI shows correct total: 5.91 TH/s (master + slaves combined)
+- Pool shows: 2.32 TH/s
+- Machine reports: 117 unknown rejections (0.75%)
+
+**Root Cause:** BM1370 ASIC job interval was reset to default **500ms** during rebuild.
+Previously optimized to **700ms** which was the "sweet spot" found through testing.
+
+**Fixes Applied:**
+
+1. **`components/asic/asic.c`** - Changed BM1370 timing from 500ms to 700ms:
+```c
+case BM1368:
+    return 500 / GLOBAL_STATE->DEVICE_CONFIG.family.asic_count;
+case BM1370:
+    return 700 / GLOBAL_STATE->DEVICE_CONFIG.family.asic_count;  // Optimized for BM1370
+```
+
+2. **`cluster_integration.c`** - Increased MAX_JOB_MAPPINGS from 128 to 256 to prevent job mapping loss with multiple slaves
+
+3. Added better error logging for job mapping failures (ESP_LOGE instead of ESP_LOGW)
+
+---
+
+### 33. LOST FEATURE: Auto-Timing / Self-Adjusting Job Interval
+
+**Status:** NEEDS TO BE RECREATED
+
+**What was lost:** An auto-timing/self-adjusting feature that would dynamically adjust the ASIC job interval to find the optimal timing for the current network/pool latency.
+
+**What we know from user:**
+- Found optimal timing at ~700ms for BM1370 through manual testing
+- Had an option to have it "self time" to adjust for latency automatically
+- Would find the sweet spot without manual intervention
+
+**Questions to answer when recreating:**
+1. What did it adjust? (ASIC job interval - the value returned by `ASIC_get_asic_job_frequency_ms()`)
+2. What did it measure? (Share acceptance rate? Rejection rate? Unknown rejections? Pool latency?)
+3. How did it adjust? (Calibration at startup? Runtime adjustment based on rejection rate?)
+4. Where was the setting? (UI toggle? Kconfig option? Always-on?)
+
+**Possible implementation approaches:**
+
+1. **Startup Calibration:**
+   - At boot, test different intervals (500, 600, 700, 800ms)
+   - Monitor share acceptance/rejection for each
+   - Lock in the best one
+
+2. **Runtime Adjustment:**
+   - Monitor "unknown" rejection rate continuously
+   - If rejections increase, adjust interval up/down
+   - Use moving average to avoid oscillation
+
+3. **Latency-Based:**
+   - Measure pool response latency
+   - Calculate optimal interval based on RTT
+   - Adjust automatically as latency changes
+
+4. **Hybrid:**
+   - Calibrate at startup to find baseline
+   - Fine-tune during runtime based on rejection rate
+
+**Target metrics:**
+- Minimize "unknown" rejections
+- Maximize pool-reported hashrate vs local hashrate ratio
+- Optimal range for BM1370 appears to be 600-800ms (700ms sweet spot)
+
+**Files that would need changes:**
+- `components/asic/asic.c` - Make job interval dynamic instead of hardcoded
+- `main/global_state.h` - Add field for current job interval
+- `main/nvs_config.h/c` - Persist optimal interval to NVS
+- `main/http_server/http_server.c` - API to get/set interval, enable/disable auto-timing
+- `cluster.component.ts/html` - UI toggle for auto-timing feature
+
+---
+
+### Files Changed (January 1, 2026)
+
+| File | Changes |
+|------|---------|
+| `components/asic/asic.c` | BM1370 timing: 500ms → 700ms |
+| `cluster_integration.c` | MAX_JOB_MAPPINGS: 128 → 256, better error logging |
+
+---
+
+### Pending Tasks
+
+- [ ] Rebuild firmware with 700ms timing fix
+- [ ] Test that pool hashrate matches UI after fix
+- [ ] Recreate auto-timing feature (needs user input on original behavior)
+- [ ] Consider adding job interval to Kconfig for easy adjustment
+- [ ] Consider adding UI control for manual job interval override
+
+---
+
+## Session Continuation: January 1, 2026 (Part 2)
+
+### Work Rebroadcast Timing Experiments
+
+**Problem:** After rebuilding firmware, pool hashrate was ~40% of actual (2.37 TH/s vs 6 TH/s reported).
+
+**Root Cause Identified:** `WORK_REBROADCAST_INTERVAL_MS` was 10 seconds - way too long. Slaves were exhausting their nonce space and finding duplicate shares.
+
+**Experiments:**
+
+| Interval | Unknown Rejections | Notes |
+|----------|-------------------|-------|
+| 10000ms (original) | 0.75% | Pool hashrate ~40% of actual |
+| 700ms | 12.07% | Too aggressive, merkle root sync issues |
+| 1500ms | Still high | Testing... |
+
+**Key Insight:**
+- Too slow (10s): Slaves exhaust nonce space, duplicates filtered, low pool hashrate
+- Too fast (700ms): Work changes before shares submitted, merkle mismatch rejections
+
+**Current Status:**
+- Master: `WORK_REBROADCAST_INTERVAL_MS = 1500` in `cluster_master.c:632`
+- Slave ASIC timing: 700ms in `asic.c:131`
+- Need to find sweet spot that balances both issues
+
+**Hypothesis:**
+The slave ASIC timing (700ms) might need to match or coordinate with the work rebroadcast interval. If slaves are internally cycling jobs at 700ms but getting new work every 1500ms, there could be timing conflicts.
+
+**Files Changed:**
+| File | Changes |
+|------|---------|
+| `cluster_master.c:632` | WORK_REBROADCAST_INTERVAL_MS: 10000 → 700 → 1500 → 700 |
+| `cluster_autotune.c:1324` | Added #if CLUSTER_IS_MASTER guard for watchdog_slave_last_action |
+
+---
+
+### BUG FIX: Job → Extranonce2 Race Condition
+
+**Root Cause Found:**
+When a share was found, the slave copied extranonce2 from `current_work`. But if master had sent new work (with new extranonce2) while the ASIC was still working on the old job, the share would be submitted with the WRONG extranonce2.
+
+**The Race Condition:**
+1. Master sends work with `extranonce2=A`, slave stores it
+2. Slave submits job to ASIC
+3. Master sends new work with `extranonce2=B`, slave updates `current_work`
+4. ASIC finds share for OLD job (which used `en2=A`)
+5. Slave copies `extranonce2` from `current_work` which is now **B** (wrong!)
+6. Share submitted to pool with wrong extranonce2 → merkle mismatch → "low difficulty" rejection
+
+**The Fix (cluster_slave.c):**
+1. Added `job_en2_mapping_t` structure to store job_id → extranonce2 mappings
+2. Added `store_job_mapping()` - called when work is submitted to ASIC
+3. Added `lookup_job_mapping()` - called when share is found
+4. Modified `cluster_slave_on_share_found()` to look up the correct extranonce2 instead of using current_work
+
+**Code Added:**
+```c
+#define MAX_JOB_MAPPINGS 16  // Circular buffer of recent jobs
+
+typedef struct {
+    uint32_t job_id;
+    uint8_t extranonce2[8];
+    uint8_t extranonce2_len;
+    bool valid;
+} job_en2_mapping_t;
+
+static job_en2_mapping_t g_job_mappings[MAX_JOB_MAPPINGS] = {0};
+```
+
+**Files Changed:**
+| File | Changes |
+|------|---------|
+| `cluster_slave.c` | Added job→en2 mapping, store on work submit, lookup on share found |
+
+---
+
+### BUG FIX ITERATION 2: Pass Extranonce2 from ASIC Job Directly
+
+**Problem with First Fix:**
+The job mapping approach failed because the same `job_id` can have MULTIPLE different `extranonce2` values over time. When a share was found, the lookup found the FIRST (oldest, stale) mapping for that job_id, not the correct one.
+
+**Log Evidence:**
+```
+Share en2=01000034 but work has en2=01000042
+Share en2=01000034 but work has en2=01000043
+Share en2=01000034 but work has en2=01000045
+```
+
+**The Real Fix:**
+The ASIC job structure (`active_job`) already has the correct extranonce2 that was used when that specific job was submitted. Pass it directly through the call chain instead of any lookup.
+
+**Changes Made:**
+
+1. **`cluster.h:376`** - Updated function signature:
+```c
+void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t version,
+                                   uint32_t ntime, const char *extranonce2_hex);
+```
+
+2. **`cluster_integration.c:673-682`** - Pass job's extranonce2:
+```c
+// Get the extranonce2 from the job struct - this is the CORRECT one
+const char *job_en2 = active_job->extranonce2 ? active_job->extranonce2 : "";
+cluster_slave_on_share_found(nonce, numeric_job_id, version, ntime, job_en2);
+```
+
+3. **`cluster_slave.c`** - Use passed extranonce2:
+```c
+void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t version,
+                                   uint32_t ntime, const char *extranonce2_hex)
+{
+    // Use the extranonce2 from the ASIC job (passed in from intercept_share)
+    if (extranonce2_hex && extranonce2_hex[0]) {
+        size_t hex_len = strlen(extranonce2_hex);
+        share.extranonce2_len = hex_len / 2;
+        if (share.extranonce2_len > 8) share.extranonce2_len = 8;
+
+        for (int i = 0; i < share.extranonce2_len; i++) {
+            char byte_str[3] = {extranonce2_hex[i*2], extranonce2_hex[i*2+1], '\0'};
+            share.extranonce2[i] = (uint8_t)strtol(byte_str, NULL, 16);
+        }
+    }
+}
+```
+
+**Files Changed:**
+| File | Changes |
+|------|---------|
+| `cluster.h` | Added `extranonce2_hex` param to `cluster_slave_on_share_found()` |
+| `cluster_integration.c` | Pass `active_job->extranonce2` to share handler |
+| `cluster_slave.c` | Use passed extranonce2 instead of lookup |
+
+**Status:** Code changes complete, needs rebuild and test.
+
+---

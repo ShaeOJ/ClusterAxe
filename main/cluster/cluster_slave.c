@@ -106,6 +106,57 @@ __attribute__((weak)) void cluster_submit_work_to_asic(const cluster_work_t *wor
 static cluster_slave_state_t *g_slave = NULL;
 
 // ============================================================================
+// Job -> Extranonce2 Mapping (fixes race condition with work updates)
+// ============================================================================
+// When work is submitted to ASIC, we store the extranonce2 for that job.
+// When a share is found, we look up the correct extranonce2 for that job_id
+// instead of using current_work (which may have been updated).
+
+#define MAX_JOB_MAPPINGS 16  // Circular buffer of recent jobs
+
+typedef struct {
+    uint32_t job_id;
+    uint8_t extranonce2[8];
+    uint8_t extranonce2_len;
+    bool valid;
+} job_en2_mapping_t;
+
+static job_en2_mapping_t g_job_mappings[MAX_JOB_MAPPINGS] = {0};
+static int g_job_mapping_index = 0;
+
+/**
+ * @brief Store job_id -> extranonce2 mapping when work is submitted to ASIC
+ */
+static void store_job_mapping(uint32_t job_id, const uint8_t *extranonce2, uint8_t en2_len)
+{
+    int idx = g_job_mapping_index % MAX_JOB_MAPPINGS;
+    g_job_mappings[idx].job_id = job_id;
+    memcpy(g_job_mappings[idx].extranonce2, extranonce2, en2_len);
+    g_job_mappings[idx].extranonce2_len = en2_len;
+    g_job_mappings[idx].valid = true;
+    g_job_mapping_index++;
+
+    ESP_LOGD(TAG, "Stored job mapping: job=%lu -> en2 (len=%d)",
+             (unsigned long)job_id, en2_len);
+}
+
+/**
+ * @brief Look up extranonce2 for a given job_id
+ * @return true if found, false if not found (will use current_work as fallback)
+ */
+static bool lookup_job_mapping(uint32_t job_id, uint8_t *extranonce2, uint8_t *en2_len)
+{
+    for (int i = 0; i < MAX_JOB_MAPPINGS; i++) {
+        if (g_job_mappings[i].valid && g_job_mappings[i].job_id == job_id) {
+            memcpy(extranonce2, g_job_mappings[i].extranonce2, g_job_mappings[i].extranonce2_len);
+            *en2_len = g_job_mappings[i].extranonce2_len;
+            return true;
+        }
+    }
+    return false;
+}
+
+// ============================================================================
 // Work Management
 // ============================================================================
 
@@ -320,10 +371,11 @@ static void slave_record_share(uint32_t nonce, uint32_t job_id)
  * @param version The actual rolled version bits from the ASIC (not base version)
  * @param ntime The ntime value (may be rolled)
  */
-void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t version, uint32_t ntime)
+void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t version, uint32_t ntime, const char *extranonce2_hex)
 {
-    ESP_LOGW(TAG, "on_share_found: nonce=0x%08lX, job=%lu, ver=0x%08lX",
-             (unsigned long)nonce, (unsigned long)job_id, (unsigned long)version);
+    ESP_LOGW(TAG, "on_share_found: nonce=0x%08lX, job=%lu, ver=0x%08lX, en2=%s",
+             (unsigned long)nonce, (unsigned long)job_id, (unsigned long)version,
+             extranonce2_hex ? extranonce2_hex : "(null)");
 
     if (!g_slave) {
         ESP_LOGE(TAG, "ERROR: g_slave is NULL in on_share_found");
@@ -353,11 +405,27 @@ void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t vers
         .timestamp = esp_timer_get_time() / 1000
     };
 
-    // Copy extranonce2 from current work
-    xSemaphoreTake(g_slave->work_mutex, portMAX_DELAY);
-    memcpy(share.extranonce2, g_slave->current_work.extranonce2, 8);
-    share.extranonce2_len = g_slave->current_work.extranonce2_len;
-    xSemaphoreGive(g_slave->work_mutex);
+    // Use the extranonce2 from the ASIC job (passed in from intercept_share)
+    // This is the CORRECT extranonce2 that was used when this job was submitted
+    if (extranonce2_hex && extranonce2_hex[0]) {
+        // Convert hex string to bytes
+        size_t hex_len = strlen(extranonce2_hex);
+        share.extranonce2_len = hex_len / 2;
+        if (share.extranonce2_len > 8) share.extranonce2_len = 8;
+
+        for (int i = 0; i < share.extranonce2_len; i++) {
+            char byte_str[3] = {extranonce2_hex[i*2], extranonce2_hex[i*2+1], '\0'};
+            share.extranonce2[i] = (uint8_t)strtol(byte_str, NULL, 16);
+        }
+        ESP_LOGI(TAG, "Share using job's en2: %s", extranonce2_hex);
+    } else {
+        // Fallback to current work if extranonce2 not provided
+        ESP_LOGW(TAG, "No extranonce2 from job, using current_work");
+        xSemaphoreTake(g_slave->work_mutex, portMAX_DELAY);
+        memcpy(share.extranonce2, g_slave->current_work.extranonce2, 8);
+        share.extranonce2_len = g_slave->current_work.extranonce2_len;
+        xSemaphoreGive(g_slave->work_mutex);
+    }
 
     ESP_LOGI(TAG, "Share found: nonce=0x%08lX, version=0x%08lX",
              (unsigned long)nonce, (unsigned long)version);
@@ -603,6 +671,10 @@ static void worker_task(void *pvParameters)
             last_job_id = work.job_id;
             memcpy(last_extranonce2, work.extranonce2, work.extranonce2_len);
             last_en2_len = work.extranonce2_len;
+
+            // Store job_id -> extranonce2 mapping BEFORE submitting to ASIC
+            // This ensures we use the correct extranonce2 when shares are found
+            store_job_mapping(work.job_id, work.extranonce2, work.extranonce2_len);
 
             // Submit work to ASIC via integration layer
             cluster_submit_work_to_asic(&work);

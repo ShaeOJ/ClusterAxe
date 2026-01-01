@@ -345,7 +345,8 @@ void cluster_master_on_mining_notify(GlobalState *GLOBAL_STATE,
 }
 
 // Store mapping of job_id to job string for share submission
-#define MAX_JOB_MAPPINGS 128
+// Increased from 128 to 256 to prevent job mapping loss with multiple slaves
+#define MAX_JOB_MAPPINGS 256
 static struct {
     uint32_t numeric_id;
     char job_id_str[32];
@@ -404,7 +405,7 @@ void stratum_submit_share_from_cluster(uint32_t job_id, uint32_t nonce,
     if (!cluster_master_find_job_mapping(job_id, job_id_str, sizeof(job_id_str))) {
         // Fallback: convert numeric ID to hex string
         snprintf(job_id_str, sizeof(job_id_str), "%08" PRIx32, job_id);
-        ESP_LOGW(TAG, "Job mapping not found, using numeric: %s", job_id_str);
+        ESP_LOGE(TAG, "JOB MAPPING NOT FOUND! job_id=%08" PRIx32 " - share will likely be REJECTED by pool", job_id);
     }
 
     // Convert extranonce2 bytes to hex string
@@ -672,8 +673,13 @@ void cluster_slave_intercept_share(GlobalState *GLOBAL_STATE,
     // Convert job ID string to numeric
     uint32_t numeric_job_id = strtoul(active_job->jobid, NULL, 16);
 
+    // Get the extranonce2 from the job struct - this is the CORRECT one
+    // that was used when this specific job was submitted to the ASIC
+    const char *job_en2 = active_job->extranonce2 ? active_job->extranonce2 : "";
+
     // Route to cluster slave share handler with actual ASIC version bits
-    cluster_slave_on_share_found(nonce, numeric_job_id, version, ntime);
+    // Pass the extranonce2 from the job so we use the correct one
+    cluster_slave_on_share_found(nonce, numeric_job_id, version, ntime, job_en2);
 }
 
 bool cluster_slave_should_skip_stratum(void)

@@ -126,8 +126,9 @@ double ASIC_get_asic_job_frequency_ms(GlobalState * GLOBAL_STATE)
         case BM1366:
             return 2000 / GLOBAL_STATE->DEVICE_CONFIG.family.asic_count;
         case BM1368:
-        case BM1370:
             return 500 / GLOBAL_STATE->DEVICE_CONFIG.family.asic_count;
+        case BM1370:
+            return 700 / GLOBAL_STATE->DEVICE_CONFIG.family.asic_count;  // Optimized timing for BM1370
     }
     return 500;
 }
