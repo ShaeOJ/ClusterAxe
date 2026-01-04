@@ -318,10 +318,14 @@ export class HomeComponent implements OnInit, OnDestroy {
         x: {
           type: 'time',
           time: {
-            unit: 'hour', // Set the unit to 'minute'
+            unit: 'minute',
+            displayFormats: {
+              minute: 'HH:mm'
+            }
           },
           ticks: {
-            color: textColorSecondary
+            color: textColorSecondary,
+            maxTicksLimit: 12
           },
           grid: {
             color: surfaceBorder,
@@ -338,7 +342,7 @@ export class HomeComponent implements OnInit, OnDestroy {
           grace: '5%',     // Small padding around data
           ticks: {
             color: primaryColor,
-            maxTicksLimit: 6,
+            maxTicksLimit: 10,
             callback: (value: number) => HomeComponent.cbFormatValue(value, this.chartData.datasets[0].label, {tickmark: true})
           },
           grid: {
@@ -354,7 +358,7 @@ export class HomeComponent implements OnInit, OnDestroy {
           grace: '10%',    // Small padding around data
           ticks: {
             color: textColorSecondary,
-            maxTicksLimit: 5,
+            maxTicksLimit: 8,
             callback: (value: number) => {
               // Round to whole number for cleaner display, then format
               const roundedValue = Math.round(value);
