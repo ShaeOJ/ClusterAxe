@@ -63,6 +63,9 @@ export class HomeComponent implements OnInit, OnDestroy {
   public clusterPowerData: number[] = [];
   public clusterEfficiencyData: number[] = [];
 
+  // Auto-Timing
+  public autoTimingStatus$!: Observable<any | null>;
+
   public chartOptions: any;
   public dataLabel: number[] = [];
   public hashrateData: number[] = [];
@@ -122,6 +125,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   ) {
     this.initializeChart();
     this.initClusterStatus();
+    this.initAutoTimingStatus();
   }
 
   private initClusterStatus(): void {
@@ -159,6 +163,38 @@ export class HomeComponent implements OnInit, OnDestroy {
       }),
       shareReplay({ refCount: true, bufferSize: 1 })
     );
+  }
+
+  private initAutoTimingStatus(): void {
+    this.autoTimingStatus$ = interval(5000).pipe(
+      startWith(0),
+      switchMap(() => this.clusterService.getAutoTimingStatus().pipe(
+        catchError(() => of(null))
+      )),
+      shareReplay({ refCount: true, bufferSize: 1 })
+    );
+  }
+
+  public toggleAutoTiming(enabled: boolean): void {
+    this.clusterService.setAutoTimingEnabled('', enabled).subscribe({
+      next: () => {
+        this.toastr.success(`Auto-timing ${enabled ? 'enabled' : 'disabled'}`);
+      },
+      error: (err) => {
+        this.toastr.error('Failed to update auto-timing');
+      }
+    });
+  }
+
+  public recalibrateAutoTiming(): void {
+    this.clusterService.recalibrateAutoTiming().subscribe({
+      next: () => {
+        this.toastr.success('Auto-timing recalibration started');
+      },
+      error: (err) => {
+        this.toastr.error('Failed to start recalibration');
+      }
+    });
   }
 
   ngOnInit(): void {

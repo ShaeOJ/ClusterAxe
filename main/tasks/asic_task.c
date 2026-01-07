@@ -41,9 +41,19 @@ void ASIC_task(void *pvParameters)
             vTaskDelay(100 / portTICK_PERIOD_MS);
             continue;
         }
-        
+
+        // Check if auto-timing module has updated the interval
+        if (GLOBAL_STATE->AUTO_TIMING_MODULE.interval_changed) {
+            GLOBAL_STATE->AUTO_TIMING_MODULE.interval_changed = false;
+            double new_interval = ASIC_get_asic_job_frequency_ms(GLOBAL_STATE);
+            if (new_interval != asic_job_frequency_ms) {
+                asic_job_frequency_ms = new_interval;
+                ESP_LOGI(TAG, "ASIC Job Interval updated: %.2f ms", asic_job_frequency_ms);
+            }
+        }
+
         bm_job *next_bm_job = (bm_job *)queue_dequeue(&GLOBAL_STATE->ASIC_jobs_queue);
-    
+
         //(*GLOBAL_STATE->ASIC_functions.send_work_fn)(GLOBAL_STATE, next_bm_job); // send the job to the ASIC
         ASIC_send_work(GLOBAL_STATE, next_bm_job);
 

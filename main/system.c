@@ -19,6 +19,7 @@
 #include "lwip/inet.h"
 
 #include "system.h"
+#include "auto_timing.h"
 #include "i2c_bitaxe.h"
 #include "INA260.h"
 #include "adc.h"
@@ -142,6 +143,9 @@ void SYSTEM_notify_accepted_share(GlobalState * GLOBAL_STATE)
     SystemModule * module = &GLOBAL_STATE->SYSTEM_MODULE;
 
     module->shares_accepted++;
+
+    // Notify auto-timing module for rejection rate tracking
+    auto_timing_notify_share_accepted();
 }
 
 static int compare_rejected_reason_stats(const void *a, const void *b) {
@@ -155,6 +159,9 @@ void SYSTEM_notify_rejected_share(GlobalState * GLOBAL_STATE, char * error_msg)
     SystemModule * module = &GLOBAL_STATE->SYSTEM_MODULE;
 
     module->shares_rejected++;
+
+    // Notify auto-timing module for rejection rate tracking
+    auto_timing_notify_share_rejected();
 
     for (int i = 0; i < module->rejected_reason_stats_count; i++) {
         if (strncmp(module->rejected_reason_stats[i].message, error_msg, sizeof(module->rejected_reason_stats[i].message) - 1) == 0) {

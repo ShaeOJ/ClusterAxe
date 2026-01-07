@@ -122,6 +122,84 @@
         </div>
     </ng-container>
 
+    <!-- Auto-Timing Card (Master Mode Only) -->
+    <ng-container *ngIf="clusterStatus$ | async as clusterStatus">
+        <ng-container *ngIf="autoTimingStatus$ | async as autoTiming">
+            <div class="grid mb-3" *ngIf="clusterStatus.mode === 1 && autoTiming">
+                <div class="col-12">
+                    <div class="surface-card border-round p-3">
+                        <div class="flex align-items-center justify-content-between mb-3">
+                            <div class="flex align-items-center gap-2">
+                                <i class="pi pi-clock text-primary text-xl"></i>
+                                <span class="text-lg font-bold">Auto-Timing</span>
+                                <span class="px-2 py-1 border-round text-xs font-medium"
+                                    [ngClass]="{
+                                        'bg-green-100 text-green-700': autoTiming.state === 'monitoring',
+                                        'bg-blue-100 text-blue-700': autoTiming.state === 'calibrating',
+                                        'bg-yellow-100 text-yellow-700': autoTiming.state === 'locked',
+                                        'bg-gray-100 text-gray-700': autoTiming.state === 'disabled'
+                                    }">
+                                    {{autoTiming.state | titlecase}}
+                                </span>
+                            </div>
+                            <div class="flex align-items-center gap-2">
+                                <p-inputSwitch [(ngModel)]="autoTiming.enabled"
+                                    (onChange)="toggleAutoTiming($event.checked)"></p-inputSwitch>
+                            </div>
+                        </div>
+                        <div class="grid" *ngIf="autoTiming.enabled">
+                            <!-- Current Interval -->
+                            <div class="col-6 md:col-3">
+                                <div class="text-center p-2 surface-ground border-round">
+                                    <div class="text-500 text-xs mb-1">Current Interval</div>
+                                    <div class="text-xl font-bold text-primary">{{autoTiming.currentInterval}}ms</div>
+                                </div>
+                            </div>
+                            <!-- Optimal Interval -->
+                            <div class="col-6 md:col-3">
+                                <div class="text-center p-2 surface-ground border-round">
+                                    <div class="text-500 text-xs mb-1">Optimal</div>
+                                    <div class="text-xl font-bold">{{autoTiming.optimalInterval}}ms</div>
+                                </div>
+                            </div>
+                            <!-- Rejection Rate -->
+                            <div class="col-6 md:col-3">
+                                <div class="text-center p-2 surface-ground border-round">
+                                    <div class="text-500 text-xs mb-1">Rejection Rate</div>
+                                    <div class="text-xl font-bold"
+                                        [ngClass]="{
+                                            'text-green-500': autoTiming.rejectionRate < 2,
+                                            'text-yellow-500': autoTiming.rejectionRate >= 2 && autoTiming.rejectionRate < 5,
+                                            'text-red-500': autoTiming.rejectionRate >= 5
+                                        }">
+                                        {{autoTiming.rejectionRate | number:'1.1-1'}}%
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Calibration Progress / Actions -->
+                            <div class="col-6 md:col-3">
+                                <div class="text-center p-2 surface-ground border-round">
+                                    <ng-container *ngIf="autoTiming.state === 'calibrating'">
+                                        <div class="text-500 text-xs mb-1">Calibrating</div>
+                                        <div class="text-xl font-bold text-blue-500">Step {{autoTiming.calibrationStep + 1}}/7</div>
+                                    </ng-container>
+                                    <ng-container *ngIf="autoTiming.state !== 'calibrating'">
+                                        <div class="text-500 text-xs mb-1">Best Rate</div>
+                                        <div class="text-xl font-bold text-green-500">{{autoTiming.bestRejectionRate | number:'1.1-1'}}%</div>
+                                    </ng-container>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex justify-content-end mt-2" *ngIf="autoTiming.enabled && autoTiming.state !== 'calibrating'">
+                            <button pButton pRipple type="button" label="Recalibrate" icon="pi pi-refresh"
+                                class="p-button-sm p-button-text" (click)="recalibrateAutoTiming()"></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </ng-container>
+    </ng-container>
+
     <div class="grid">
         <div class="col-12 md:col-6 xl:col-3">
             <div class="card mb-0">

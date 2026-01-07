@@ -67,7 +67,13 @@ static Settings settings[NVS_CONFIG_COUNT] = {
     [NVS_CONFIG_ASIC_FREQUENCY]                        = {.nvs_key_name = "asicfrequency_f", .type = TYPE_FLOAT, .default_value = {.f   = CONFIG_ASIC_FREQUENCY},                       .rest_name = "frequency",                          .min = 1,  .max = UINT16_MAX},
     [NVS_CONFIG_ASIC_VOLTAGE]                          = {.nvs_key_name = "asicvoltage",     .type = TYPE_U16,   .default_value = {.u16 = CONFIG_ASIC_VOLTAGE},                         .rest_name = "coreVoltage",                        .min = 1,  .max = UINT16_MAX},
     [NVS_CONFIG_OVERCLOCK_ENABLED]                     = {.nvs_key_name = "oc_enabled",      .type = TYPE_BOOL,                                                                         .rest_name = "overclockEnabled",                   .min = 0,  .max = 1},
-    
+
+    // Auto-timing configuration
+    [NVS_CONFIG_AUTO_TIMING_ENABLED]                   = {.nvs_key_name = "autotiming",      .type = TYPE_BOOL,  .default_value = {.b   = false},                                       .rest_name = "autoTimingEnabled",                  .min = 0,  .max = 1},
+    [NVS_CONFIG_JOB_INTERVAL_MS]                       = {.nvs_key_name = "jobinterval",     .type = TYPE_U16,   .default_value = {.u16 = 700},                                         .rest_name = "jobIntervalMs",                      .min = 500, .max = 800},
+    [NVS_CONFIG_AUTO_TIMING_MIN]                       = {.nvs_key_name = "autotiming_min",  .type = TYPE_U16,   .default_value = {.u16 = 500},                                         .rest_name = "autoTimingMin",                      .min = 400, .max = 800},
+    [NVS_CONFIG_AUTO_TIMING_MAX]                       = {.nvs_key_name = "autotiming_max",  .type = TYPE_U16,   .default_value = {.u16 = 800},                                         .rest_name = "autoTimingMax",                      .min = 500, .max = 1000},
+
     [NVS_CONFIG_DISPLAY]                               = {.nvs_key_name = "display",         .type = TYPE_STR,   .default_value = {.str = DEFAULT_DISPLAY},                             .rest_name = "display",                            .min = 0,  .max = NVS_STR_LIMIT},
     [NVS_CONFIG_ROTATION]                              = {.nvs_key_name = "rotation",        .type = TYPE_U16,                                                                          .rest_name = "rotation",                           .min = 0,  .max = 270},
     [NVS_CONFIG_INVERT_SCREEN]                         = {.nvs_key_name = "invertscreen",    .type = TYPE_BOOL,                                                                         .rest_name = "invertscreen",                       .min = 0,  .max = 1},

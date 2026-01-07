@@ -119,6 +119,16 @@ bool ASIC_set_frequency(GlobalState * GLOBAL_STATE, float frequency)
 
 double ASIC_get_asic_job_frequency_ms(GlobalState * GLOBAL_STATE)
 {
+    // Check if auto-timing is active and has a valid interval
+    if (GLOBAL_STATE->AUTO_TIMING_MODULE.enabled &&
+        GLOBAL_STATE->AUTO_TIMING_MODULE.current_interval_ms >= 500 &&
+        GLOBAL_STATE->AUTO_TIMING_MODULE.current_interval_ms <= 1000) {
+        // Use dynamic interval from auto-timing module, scaled by ASIC count
+        return (double)GLOBAL_STATE->AUTO_TIMING_MODULE.current_interval_ms /
+               (double)GLOBAL_STATE->DEVICE_CONFIG.family.asic_count;
+    }
+
+    // Fall back to hardcoded defaults per ASIC type
     switch (GLOBAL_STATE->DEVICE_CONFIG.family.asic.id) {
         case BM1397:
             // no version-rolling so same Nonce Space is splitted between Small Cores

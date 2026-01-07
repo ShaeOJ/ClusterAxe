@@ -125,6 +125,20 @@ int cluster_protocol_encode_ack(uint8_t slave_id,
                                  char *buffer,
                                  size_t buffer_len);
 
+/**
+ * @brief Encode timing sync message (auto-timing interval broadcast)
+ *
+ * Format: $CLTIM,interval_ms*XX
+ *
+ * @param interval_ms Job interval in milliseconds (500-800)
+ * @param buffer Output buffer
+ * @param buffer_len Buffer size
+ * @return Length of encoded message, or -1 on error
+ */
+int cluster_protocol_encode_timing(uint16_t interval_ms,
+                                    char *buffer,
+                                    size_t buffer_len);
+
 // ============================================================================
 // Decoding Functions
 // ============================================================================
@@ -200,6 +214,16 @@ esp_err_t cluster_protocol_decode_ack(const char *payload,
                                        uint8_t *slave_id,
                                        char *status,
                                        size_t status_len);
+
+/**
+ * @brief Decode timing sync message from received message
+ *
+ * @param payload Message payload
+ * @param interval_ms Output: job interval in milliseconds
+ * @return ESP_OK on success
+ */
+esp_err_t cluster_protocol_decode_timing(const char *payload,
+                                          uint16_t *interval_ms);
 
 // ============================================================================
 // Utility Functions

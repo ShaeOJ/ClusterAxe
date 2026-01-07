@@ -50,6 +50,7 @@ SRCS
     "./cluster/cluster_integration.c"
     "./cluster/cluster_espnow.c"
     "./cluster/cluster_autotune.c"
+    "auto_timing.c"
 
 INCLUDE_DIRS
     "."

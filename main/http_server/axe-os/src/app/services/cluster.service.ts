@@ -101,6 +101,21 @@ export interface IProfilesResponse {
   profiles: IAutotuneProfile[];
 }
 
+export interface IAutoTimingStatus {
+  enabled: boolean;
+  state: string;
+  currentInterval: number;
+  optimalInterval: number;
+  minInterval: number;
+  maxInterval: number;
+  rejectionRate: number;
+  windowAccepted: number;
+  windowRejected: number;
+  calibrationStep: number;
+  bestInterval: number;
+  bestRejectionRate: number;
+}
+
 export interface IClusterStatus {
   enabled: boolean;
   mode: number;
@@ -531,5 +546,51 @@ export class ClusterService {
     if (rssi >= -70) return 'Fair';
     if (rssi >= -80) return 'Weak';
     return 'Poor';
+  }
+
+  // ========================================================================
+  // Auto-Timing API
+  // ========================================================================
+
+  public getAutoTimingStatus(uri: string = ''): Observable<IAutoTimingStatus> {
+    if (environment.production) {
+      return this.httpClient.get<IAutoTimingStatus>(`${uri}/api/system/autotiming`).pipe(timeout(5000));
+    }
+    // Mock data for development
+    return of({
+      enabled: true,
+      state: 'monitoring',
+      currentInterval: 700,
+      optimalInterval: 700,
+      minInterval: 500,
+      maxInterval: 800,
+      rejectionRate: 1.2,
+      windowAccepted: 150,
+      windowRejected: 2,
+      calibrationStep: 0,
+      bestInterval: 700,
+      bestRejectionRate: 1.0
+    }).pipe(delay(500));
+  }
+
+  public setAutoTimingEnabled(uri: string = '', enabled: boolean): Observable<any> {
+    if (environment.production) {
+      return this.httpClient.patch(`${uri}/api/system/autotiming`, { enabled }).pipe(timeout(5000));
+    }
+    return of({ success: true }).pipe(delay(500));
+  }
+
+  public setAutoTimingInterval(uri: string = '', interval: number): Observable<any> {
+    if (environment.production) {
+      return this.httpClient.patch(`${uri}/api/system/autotiming`, { interval }).pipe(timeout(5000));
+    }
+    return of({ success: true }).pipe(delay(500));
+  }
+
+  public recalibrateAutoTiming(uri: string = ''): Observable<any> {
+    if (environment.production) {
+      return this.httpClient.patch(`${uri}/api/system/autotiming`, { recalibrate: true }).pipe(timeout(5000));
+    }
+    return of({ success: true }).pipe(delay(500));
   }
 }

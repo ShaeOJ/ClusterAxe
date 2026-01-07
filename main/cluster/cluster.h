@@ -53,6 +53,7 @@ typedef struct cluster_heartbeat_data cluster_heartbeat_data_t;
 #define BAP_MSG_STATUS      "CLSTS"     // Status report
 #define BAP_MSG_ACK         "CLACK"     // Acknowledgment
 #define BAP_MSG_REGISTER    "CLREG"     // Slave registration
+#define BAP_MSG_TIMING      "CLTIM"     // Timing sync: master -> slave (auto-timing interval)
 
 // Protocol constants
 #define CLUSTER_MSG_START       '$'
@@ -324,6 +325,12 @@ esp_err_t cluster_master_handle_heartbeat(uint8_t slave_id,
                                            uint32_t hashrate,
                                            float temp,
                                            uint16_t fan_rpm);
+
+/**
+ * @brief Broadcast timing interval to all slaves (auto-timing sync)
+ * @param interval_ms Job interval in milliseconds (500-800)
+ */
+void cluster_master_broadcast_timing(uint16_t interval_ms);
 
 // ============================================================================
 // Public API - Slave Functions

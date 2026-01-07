@@ -98,6 +98,50 @@ typedef struct
     char *finished;
 } SelfTestModule;
 
+/**
+ * @brief Auto-timing states
+ */
+typedef enum {
+    AUTO_TIMING_DISABLED = 0,     // Feature disabled, use hardcoded interval
+    AUTO_TIMING_CALIBRATING,      // Testing intervals at startup
+    AUTO_TIMING_MONITORING,       // Normal operation, monitoring rejections
+    AUTO_TIMING_LOCKED            // Optimal found, stable operation
+} auto_timing_state_t;
+
+/**
+ * @brief Auto-timing module for dynamic ASIC job interval adjustment
+ *
+ * This module monitors share rejection rate and automatically adjusts
+ * the ASIC job interval to find the optimal timing for current network conditions.
+ */
+typedef struct {
+    bool enabled;                    // Auto-timing feature enabled
+    auto_timing_state_t state;       // Current state
+    uint16_t current_interval_ms;    // Current job interval (500-800)
+    uint16_t optimal_interval_ms;    // Best found interval (saved to NVS)
+    uint16_t min_interval_ms;        // Minimum allowed (default 500)
+    uint16_t max_interval_ms;        // Maximum allowed (default 800)
+    bool interval_changed;           // Flag to notify asic_task of change
+
+    // Monitoring stats (rolling window)
+    uint32_t window_shares_accepted;
+    uint32_t window_shares_rejected;
+    int64_t window_start_time;
+    int64_t last_adjustment_time;
+
+    // Calibration tracking
+    uint8_t calibration_step;        // Which interval being tested (0-6)
+    uint16_t calibration_intervals[7]; // 500, 550, 600, 650, 700, 750, 800
+    float calibration_results[7];    // Rejection rate for each interval
+    int64_t calibration_start_time;
+    uint32_t calibration_shares_start; // Shares at start of calibration step
+
+    // Best tracking
+    float best_rejection_rate;
+    uint16_t best_interval;
+    float current_rejection_rate;    // Current window rejection rate
+} AutoTimingModule;
+
 typedef struct
 {
     work_queue stratum_queue;
@@ -111,6 +155,7 @@ typedef struct
     PowerManagementModule POWER_MANAGEMENT_MODULE;
     SelfTestModule SELF_TEST_MODULE;
     HashrateMonitorModule HASHRATE_MONITOR_MODULE;
+    AutoTimingModule AUTO_TIMING_MODULE;
 
     char * extranonce_str;
     int extranonce_2_len;

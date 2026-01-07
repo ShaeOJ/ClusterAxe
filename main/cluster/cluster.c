@@ -12,6 +12,7 @@
 #include "cluster.h"
 #include "cluster_protocol.h"
 #include "cluster_config.h"
+#include "cluster_integration.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "nvs_flash.h"
@@ -347,6 +348,23 @@ esp_err_t cluster_handle_bap_message(const char *msg_type,
         if (strcmp(msg_type, BAP_MSG_SYNC) == 0) {
             // TODO: Handle difficulty updates
             ESP_LOGD(TAG, "Received sync message");
+            return ESP_OK;
+        }
+
+        // Timing sync message (auto-timing interval from master)
+        if (strcmp(msg_type, BAP_MSG_TIMING) == 0) {
+            uint16_t interval_ms = 0;
+            if (cluster_protocol_decode_timing(payload, &interval_ms) == ESP_OK) {
+                // Apply the interval from master
+                if (interval_ms >= 500 && interval_ms <= 800) {
+                    GlobalState *GLOBAL_STATE = cluster_get_global_state();
+                    if (GLOBAL_STATE) {
+                        GLOBAL_STATE->AUTO_TIMING_MODULE.current_interval_ms = interval_ms;
+                        GLOBAL_STATE->AUTO_TIMING_MODULE.interval_changed = true;
+                        ESP_LOGI(TAG, "Received timing interval from master: %u ms", interval_ms);
+                    }
+                }
+            }
             return ESP_OK;
         }
     }

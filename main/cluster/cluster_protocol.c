@@ -367,6 +367,32 @@ int cluster_protocol_encode_ack(uint8_t slave_id,
     return finalize_message(buffer, buffer_len, len);
 }
 
+int cluster_protocol_encode_timing(uint16_t interval_ms,
+                                    char *buffer,
+                                    size_t buffer_len)
+{
+    if (!buffer || buffer_len < 30) {
+        return -1;
+    }
+
+    // Validate interval is in range
+    if (interval_ms < 400 || interval_ms > 1000) {
+        return -1;
+    }
+
+    // Format: $CLTIM,interval_ms
+    int len = snprintf(buffer, buffer_len,
+                       "$%s,%u",
+                       BAP_MSG_TIMING,
+                       interval_ms);
+
+    if (len < 0 || (size_t)len >= buffer_len - 10) {
+        return -1;
+    }
+
+    return finalize_message(buffer, buffer_len, len);
+}
+
 // ============================================================================
 // Decoding Functions
 // ============================================================================
@@ -733,6 +759,28 @@ esp_err_t cluster_protocol_decode_ack(const char *payload,
         get_next_field(p, status, status_len);
     }
 
+    return ESP_OK;
+}
+
+esp_err_t cluster_protocol_decode_timing(const char *payload,
+                                          uint16_t *interval_ms)
+{
+    if (!payload || !interval_ms) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char field[16];
+
+    // interval_ms
+    get_next_field(payload, field, sizeof(field));
+    uint16_t val = (uint16_t)strtoul(field, NULL, 10);
+
+    // Validate range
+    if (val < 400 || val > 1000) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    *interval_ms = val;
     return ESP_OK;
 }
 

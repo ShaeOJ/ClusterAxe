@@ -49,6 +49,7 @@
 #include "http_server.h"
 #include "system.h"
 #include "websocket.h"
+#include "auto_timing.h"
 
 // Clusteraxe integration
 #include "cluster_config.h"
@@ -2100,6 +2101,124 @@ static esp_err_t POST_autotune(httpd_req_t *req)
 }
 
 // ============================================================================
+// Auto-Timing API
+// ============================================================================
+
+#if CLUSTER_ENABLED && CLUSTER_IS_MASTER
+/* Handler for getting auto-timing status */
+static esp_err_t GET_autotiming_status(httpd_req_t *req)
+{
+    if (is_network_allowed(req) != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Unauthorized");
+    }
+
+    httpd_resp_set_type(req, "application/json");
+
+    cJSON *root = cJSON_CreateObject();
+
+    // Get state info
+    cJSON_AddBoolToObject(root, "enabled", auto_timing_is_enabled());
+    cJSON_AddNumberToObject(root, "currentInterval", auto_timing_get_interval());
+
+    // State string
+    const char *state_str = "disabled";
+    switch (auto_timing_get_state()) {
+        case AUTO_TIMING_DISABLED: state_str = "disabled"; break;
+        case AUTO_TIMING_CALIBRATING: state_str = "calibrating"; break;
+        case AUTO_TIMING_MONITORING: state_str = "monitoring"; break;
+        case AUTO_TIMING_LOCKED: state_str = "locked"; break;
+    }
+    cJSON_AddStringToObject(root, "state", state_str);
+
+    // Rejection rate
+    cJSON_AddNumberToObject(root, "rejectionRate", auto_timing_get_rejection_rate());
+
+    // Get module data from global state for more details
+    if (GLOBAL_STATE) {
+        AutoTimingModule *at = &GLOBAL_STATE->AUTO_TIMING_MODULE;
+        cJSON_AddNumberToObject(root, "optimalInterval", at->optimal_interval_ms);
+        cJSON_AddNumberToObject(root, "minInterval", at->min_interval_ms);
+        cJSON_AddNumberToObject(root, "maxInterval", at->max_interval_ms);
+        cJSON_AddNumberToObject(root, "windowAccepted", at->window_shares_accepted);
+        cJSON_AddNumberToObject(root, "windowRejected", at->window_shares_rejected);
+        cJSON_AddNumberToObject(root, "calibrationStep", at->calibration_step);
+        cJSON_AddNumberToObject(root, "bestInterval", at->best_interval);
+        cJSON_AddNumberToObject(root, "bestRejectionRate", at->best_rejection_rate);
+    }
+
+    char *response = cJSON_Print(root);
+    httpd_resp_sendstr(req, response);
+    free(response);
+    cJSON_Delete(root);
+
+    return ESP_OK;
+}
+
+/* Handler for updating auto-timing settings */
+static esp_err_t PATCH_autotiming(httpd_req_t *req)
+{
+    if (is_network_allowed(req) != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Unauthorized");
+    }
+
+    // Read request body
+    int content_len = req->content_len;
+    if (content_len <= 0 || content_len > 512) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid request");
+    }
+
+    char *buf = malloc(content_len + 1);
+    if (!buf) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory error");
+    }
+
+    int received = httpd_req_recv(req, buf, content_len);
+    if (received <= 0) {
+        free(buf);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Failed to receive data");
+    }
+    buf[received] = '\0';
+
+    // Parse JSON
+    cJSON *root = cJSON_Parse(buf);
+    free(buf);
+    if (!root) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    }
+
+    // Handle enable/disable
+    cJSON *enabled = cJSON_GetObjectItem(root, "enabled");
+    if (cJSON_IsBool(enabled)) {
+        auto_timing_set_enabled(cJSON_IsTrue(enabled));
+        // NVS is saved inside auto_timing_set_enabled()
+    }
+
+    // Handle manual interval override
+    cJSON *interval = cJSON_GetObjectItem(root, "interval");
+    if (cJSON_IsNumber(interval)) {
+        uint16_t val = (uint16_t)interval->valueint;
+        if (val >= 500 && val <= 800) {
+            auto_timing_set_interval(val);
+        }
+    }
+
+    // Handle recalibrate
+    cJSON *recalibrate = cJSON_GetObjectItem(root, "recalibrate");
+    if (cJSON_IsBool(recalibrate) && cJSON_IsTrue(recalibrate)) {
+        auto_timing_start_calibration();
+    }
+
+    cJSON_Delete(root);
+
+    // Send success response
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"success\": true}");
+
+    return ESP_OK;
+}
+#endif // CLUSTER_ENABLED && CLUSTER_IS_MASTER
+
+// ============================================================================
 // Autotune Profiles API
 // ============================================================================
 
@@ -2709,6 +2828,23 @@ esp_err_t start_rest_server(void * pvParameters)
         .user_ctx = rest_context
     };
     httpd_register_uri_handler(server, &cluster_slaves_api_uri);
+
+    // Auto-Timing API endpoints
+    httpd_uri_t autotiming_status_uri = {
+        .uri = "/api/system/autotiming",
+        .method = HTTP_GET,
+        .handler = GET_autotiming_status,
+        .user_ctx = rest_context
+    };
+    httpd_register_uri_handler(server, &autotiming_status_uri);
+
+    httpd_uri_t autotiming_update_uri = {
+        .uri = "/api/system/autotiming",
+        .method = HTTP_PATCH,
+        .handler = PATCH_autotiming,
+        .user_ctx = rest_context
+    };
+    httpd_register_uri_handler(server, &autotiming_update_uri);
 #endif // CLUSTER_IS_MASTER
 #endif // CLUSTER_ENABLED
 

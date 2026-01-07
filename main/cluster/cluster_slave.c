@@ -140,22 +140,6 @@ static void store_job_mapping(uint32_t job_id, const uint8_t *extranonce2, uint8
              (unsigned long)job_id, en2_len);
 }
 
-/**
- * @brief Look up extranonce2 for a given job_id
- * @return true if found, false if not found (will use current_work as fallback)
- */
-static bool lookup_job_mapping(uint32_t job_id, uint8_t *extranonce2, uint8_t *en2_len)
-{
-    for (int i = 0; i < MAX_JOB_MAPPINGS; i++) {
-        if (g_job_mappings[i].valid && g_job_mappings[i].job_id == job_id) {
-            memcpy(extranonce2, g_job_mappings[i].extranonce2, g_job_mappings[i].extranonce2_len);
-            *en2_len = g_job_mappings[i].extranonce2_len;
-            return true;
-        }
-    }
-    return false;
-}
-
 // ============================================================================
 // Work Management
 // ============================================================================

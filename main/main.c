@@ -26,6 +26,9 @@
 #include "cluster_config.h"
 #if CLUSTER_ENABLED
 #include "cluster_integration.h"
+#if CLUSTER_IS_MASTER
+#include "auto_timing.h"
+#endif
 #endif
 
 static GlobalState GLOBAL_STATE;
@@ -109,6 +112,11 @@ void app_main(void)
     } else {
         ESP_LOGI(TAG, "Clusteraxe module initialized");
     }
+#if CLUSTER_IS_MASTER
+    // Initialize auto-timing module (master only)
+    auto_timing_init(&GLOBAL_STATE);
+    auto_timing_start(&GLOBAL_STATE);
+#endif
 #endif
 
     queue_init(&GLOBAL_STATE.stratum_queue);

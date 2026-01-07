@@ -808,6 +808,33 @@ void cluster_master_update_slave_share_count(uint8_t slave_id, bool accepted)
     xSemaphoreGive(g_master->slaves_mutex);
 }
 
+/**
+ * @brief Broadcast timing interval to all slaves (auto-timing sync)
+ * Called from auto_timing.c when interval changes
+ */
+void cluster_master_broadcast_timing(uint16_t interval_ms)
+{
+    if (!g_master || !g_master->initialized) {
+        return;
+    }
+
+    char buffer[64];
+    int len = cluster_protocol_encode_timing(interval_ms, buffer, sizeof(buffer));
+    if (len <= 0) {
+        ESP_LOGE(TAG, "Failed to encode timing message");
+        return;
+    }
+
+    // Send via ESP-NOW broadcast to all slaves
+    extern esp_err_t cluster_espnow_broadcast(const char *data, size_t len);
+    esp_err_t ret = cluster_espnow_broadcast(buffer, len);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Broadcast timing interval: %u ms to all slaves", interval_ms);
+    } else {
+        ESP_LOGW(TAG, "Failed to broadcast timing: %s", esp_err_to_name(ret));
+    }
+}
+
 // ============================================================================
 // Initialization
 // ============================================================================
