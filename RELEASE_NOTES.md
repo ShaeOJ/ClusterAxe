@@ -1,5 +1,23 @@
 # ClusterAxe Release Notes
 
+## v1.0.3 (January 10, 2026)
+
+### Improvements
+
+- **Cleaner Console Output**: Removed excessive debug logging from cluster code. Important messages still logged, but verbose debug output reduced significantly.
+
+- **Improved Slave Share Display**: Slave UI now shows shares found vs submitted separately, with pending/failed count if applicable.
+
+- **Master Pool Difficulty**: Slaves now display the master's pool difficulty in the Master Connection card.
+
+- **Shares Per Hour**: Added shares per hour calculation to slave performance stats.
+
+### Bug Fixes
+
+- **HTTP Server Handler Limit**: Increased max URI handlers from 30 to 40 to support all API endpoints.
+
+---
+
 ## v1.0.2 (December 31, 2025)
 
 ### Bug Fixes

@@ -2078,3 +2078,87 @@ void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t vers
 **Status:** Code changes complete, needs rebuild and test.
 
 ---
+
+## Session: January 10, 2026
+
+---
+
+### 34. Debug Log Cleanup
+
+**Problem:** Excessive LOGW debug statements cluttering console output and making it hard to read important messages.
+
+**Solution:** Cleaned up logging across cluster code:
+
+**Files Changed:**
+
+| File | Changes |
+|------|---------|
+| `cluster.c` | Removed init debug logs, changed to appropriate levels |
+| `cluster_espnow.c` | Changed share forwarding log from LOGW to LOGD |
+| `cluster_integration.c` | Removed midstate debug logs, simplified messages |
+| `cluster_protocol.c` | Clarified ESP-NOW size limit comment |
+| `cluster_slave.c` | Major cleanup - removed excessive debug logging from worker task |
+
+**Key Changes:**
+- Removed "=== CLUSTER_INIT CALLED ===" and similar banner logs
+- Changed share-related debug logs from LOGW to LOGD
+- Removed verbose midstate hex dumps
+- Simplified worker task to not log on every iteration
+- Kept important error logs (ESP_LOGE)
+
+---
+
+### 35. Slave UI Share Display Improvements
+
+**Problem:** Slave shares display only showed "Shares to Master" count, no breakdown.
+
+**Solution:** Updated slave UI to show:
+- Shares found (total found locally)
+- Shares submitted to master
+- Pending/failed count (if any)
+
+**Files Changed:**
+
+| File | Changes |
+|------|---------|
+| `home.component.html` | Split shares display into found/submitted |
+| `home.component.ts` | Added `getSharesPerHour()` function |
+| `cluster.service.ts` | Added `masterPoolDiff` to interface |
+| `http_server.c` | Added master pool diff to slave cluster status API |
+
+**New Slave UI Elements:**
+- "Shares: X found" with "Y submitted to master" below
+- "Z pending/failed" shown in orange if found > submitted
+- Pool difficulty from master now displayed in Master Connection card
+
+---
+
+### 36. HTTP Server Handler Limit
+
+**Problem:** Added new API endpoints hitting handler limit.
+
+**Fix:** Increased `max_uri_handlers` from 30 to 40 in `http_server.c:2637`.
+
+---
+
+### Git Commit
+
+```
+757465a Clean up debug logging and improve slave UI
+```
+
+---
+
+### Current Status
+
+**Completed:**
+- Debug log cleanup across cluster code
+- Slave UI improvements for share tracking
+- HTTP server handler limit increase
+
+**Pending:**
+- Rebuild firmware with all changes
+- Test slave share display
+- Test auto-timing feature (from previous session)
+
+---
