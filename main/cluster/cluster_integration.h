@@ -38,11 +38,13 @@ extern "C" {
  * @param notification Mining notification from stratum
  * @param extranonce_str Pool extranonce string
  * @param extranonce_2_len Length of extranonce2
+ * @param pool_id Pool ID: 0=primary, 1=secondary (for dual pool mode)
  */
 void cluster_master_on_mining_notify(GlobalState *GLOBAL_STATE,
                                       const mining_notify *notification,
                                       const char *extranonce_str,
-                                      int extranonce_2_len);
+                                      int extranonce_2_len,
+                                      uint8_t pool_id);
 
 /**
  * @brief Submit a share received from a slave to the pool
@@ -56,11 +58,12 @@ void cluster_master_on_mining_notify(GlobalState *GLOBAL_STATE,
  * @param ntime Block timestamp
  * @param version Block version
  * @param slave_id Which slave sent this share (for counter updates)
+ * @param pool_id Pool ID: 0=primary, 1=secondary (for dual pool mode)
  */
 void stratum_submit_share_from_cluster(uint32_t job_id, uint32_t nonce,
                                         uint8_t *extranonce2, uint8_t en2_len,
                                         uint32_t ntime, uint32_t version,
-                                        uint8_t slave_id);
+                                        uint8_t slave_id, uint8_t pool_id);
 
 /**
  * @brief Notify cluster module of share result from pool

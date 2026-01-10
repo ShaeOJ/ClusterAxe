@@ -358,13 +358,19 @@ void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t vers
     g_slave->shares_found++;
 
     // Build share structure with actual ASIC values
+    // Include pool_id from current work for dual pool support
+    xSemaphoreTake(g_slave->work_mutex, portMAX_DELAY);
+    uint8_t pool_id = g_slave->current_work.pool_id;
+    xSemaphoreGive(g_slave->work_mutex);
+
     cluster_share_t share = {
         .job_id = job_id,
         .nonce = nonce,
         .slave_id = g_slave->my_id,
         .version = version,    // Use actual rolled version from ASIC
         .ntime = ntime,        // Use actual ntime (may be rolled)
-        .timestamp = esp_timer_get_time() / 1000
+        .timestamp = esp_timer_get_time() / 1000,
+        .pool_id = pool_id     // For dual pool routing on master
     };
 
     // Use the extranonce2 from the ASIC job (passed in from intercept_share)

@@ -2149,15 +2149,53 @@ void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t vers
 
 ---
 
+---
+
+### 37. Dual Pool Cluster Support (v1.1.0)
+
+**Problem:** In dual pool mode, only primary pool work was distributed to cluster slaves. Secondary pool work was only mined by the master locally. This meant the secondary pool only received hashrate from the master, not the full cluster.
+
+**Solution:** Added pool_id to cluster protocol and implemented full dual pool routing.
+
+**Changes:**
+
+| File | Changes |
+|------|---------|
+| `cluster.h` | Added `pool_id` field to `cluster_work_t` and `cluster_share_t` |
+| `cluster_protocol.c` | Encode/decode pool_id in CLWRK and CLSHR messages |
+| `cluster_integration.c` | Route shares to correct pool based on pool_id |
+| `cluster_integration.h` | Updated function signatures with pool_id parameter |
+| `cluster_master.c` | Pass pool_id from share to submission function |
+| `cluster_slave.c` | Copy pool_id from work to share when finding shares |
+| `stratum_task.c` | Call cluster distribution for BOTH primary and secondary pools |
+| `generate-version.js` | Updated version to v1.1.0 |
+
+**How it works:**
+1. Master receives mining.notify from both pools
+2. Each pool's work is tagged with pool_id (0=primary, 1=secondary)
+3. Work is distributed to slaves via ESP-NOW with pool_id included
+4. Slaves store pool_id from work and include it when finding shares
+5. Master routes incoming slave shares to correct pool based on pool_id
+6. Secondary pool shares use secondary socket, extranonce, and user credentials
+
+**Backwards Compatibility:**
+- Old slaves will ignore unknown pool_id field (graceful fallback)
+- Old slaves will continue to mine primary pool only
+- New slaves receiving old work will default pool_id to 0
+
+---
+
 ### Current Status
 
 **Completed:**
 - Debug log cleanup across cluster code
 - Slave UI improvements for share tracking
 - HTTP server handler limit increase
+- Dual pool cluster support (v1.1.0)
 
 **Pending:**
 - Rebuild firmware with all changes
+- Test dual pool mode with cluster
 - Test slave share display
 - Test auto-timing feature (from previous session)
 

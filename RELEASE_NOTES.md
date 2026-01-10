@@ -1,5 +1,23 @@
 # ClusterAxe Release Notes
 
+## v1.1.0 (January 10, 2026)
+
+### New Features
+
+- **Dual Pool Cluster Support**: Cluster master now distributes work from BOTH pools to slaves in dual pool mode. Previously only primary pool work was distributed.
+  - Slaves receive work tagged with pool_id (0=primary, 1=secondary)
+  - Slave shares are routed back to the correct pool based on which pool's work they mined
+  - Pool difficulty is synced per-pool to slaves
+  - Backwards compatible: Old slaves still work but only mine primary pool
+
+### Protocol Changes
+
+- Added `pool_id` field to cluster work messages (CLWRK)
+- Added `pool_id` field to cluster share messages (CLSHR)
+- Protocol remains backwards compatible (pool_id defaults to 0 if missing)
+
+---
+
 ## v1.0.3 (January 10, 2026)
 
 ### Improvements

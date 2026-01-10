@@ -103,6 +103,7 @@ typedef struct {
     bool     clean_jobs;                // Clear pending work flag
     int64_t  timestamp;                 // When work was distributed
     uint32_t pool_diff;                 // Pool difficulty requirement
+    uint8_t  pool_id;                   // Pool ID: 0=primary, 1=secondary (for dual pool mode)
     // Display info for slave UI
     uint32_t block_height;              // Current block height
     char     scriptsig[32];             // Pool tag from coinbase (truncated)
@@ -121,6 +122,7 @@ typedef struct {
     uint32_t version;                   // Version (may be rolled for AsicBoost)
     uint8_t  slave_id;                  // Which slave found it
     int64_t  timestamp;                 // When share was found
+    uint8_t  pool_id;                   // Pool ID: 0=primary, 1=secondary (for dual pool mode)
 } cluster_share_t;
 
 /**

@@ -169,9 +169,9 @@ int cluster_protocol_encode_work(const cluster_work_t *work,
     cluster_protocol_bytes_to_hex(work->extranonce2, work->extranonce2_len, en2_hex);
 
     // Build message - core fields only (compact for ESP-NOW 250 byte limit)
-    // Format: $CLWRK,slave_id,job_id,prevhash,merkle,version,version_mask,nbits,ntime,nonce_start,nonce_end,en2,en2_len,clean,pool_diff
+    // Format: $CLWRK,slave_id,job_id,prevhash,merkle,version,version_mask,nbits,ntime,nonce_start,nonce_end,en2,en2_len,clean,pool_diff,pool_id
     int len = snprintf(buffer, buffer_len,
-                       "$%s,%u,%lu,%s,%s,%lu,%lu,%lu,%lu,%lu,%lu,%s,%u,%d,%lu",
+                       "$%s,%u,%lu,%s,%s,%lu,%lu,%lu,%lu,%lu,%lu,%s,%u,%d,%lu,%u",
                        BAP_MSG_WORK,
                        work->target_slave_id,
                        (unsigned long)work->job_id,
@@ -186,7 +186,8 @@ int cluster_protocol_encode_work(const cluster_work_t *work,
                        en2_hex,
                        work->extranonce2_len,
                        work->clean_jobs ? 1 : 0,
-                       (unsigned long)work->pool_diff);
+                       (unsigned long)work->pool_diff,
+                       work->pool_id);
 
     if (len < 0 || (size_t)len >= buffer_len - 10) {
         return -1;
@@ -210,9 +211,9 @@ int cluster_protocol_encode_share(const cluster_share_t *share,
     char en2_hex[17];
     cluster_protocol_bytes_to_hex(share->extranonce2, share->extranonce2_len, en2_hex);
 
-    // Format: $CLSHR,slave_id,job_id,nonce,ntime,version,en2,en2_len
+    // Format: $CLSHR,slave_id,job_id,nonce,ntime,version,en2,en2_len,pool_id
     int len = snprintf(buffer, buffer_len,
-                       "$%s,%u,%lu,%lu,%lu,%lu,%s,%u",
+                       "$%s,%u,%lu,%lu,%lu,%lu,%s,%u,%u",
                        BAP_MSG_SHARE,
                        share->slave_id,
                        (unsigned long)share->job_id,
@@ -220,7 +221,8 @@ int cluster_protocol_encode_share(const cluster_share_t *share,
                        (unsigned long)share->ntime,
                        (unsigned long)share->version,
                        en2_hex,
-                       share->extranonce2_len);
+                       share->extranonce2_len,
+                       share->pool_id);
 
     if (len < 0 || (size_t)len >= buffer_len - 10) {
         return -1;
@@ -494,6 +496,15 @@ esp_err_t cluster_protocol_decode_work(const char *payload,
         ESP_LOGW(TAG, "pool_diff not in message, using default: %lu", (unsigned long)work->pool_diff);
     }
 
+    // pool_id (may not be present in legacy messages - default to primary pool)
+    if (p) {
+        p = get_next_field(p, field, sizeof(field));
+        work->pool_id = (uint8_t)strtoul(field, NULL, 10);
+        ESP_LOGD(TAG, "Decoded pool_id: %u", work->pool_id);
+    } else {
+        work->pool_id = 0;  // Default to primary pool
+    }
+
     // block_height (may not be present in legacy messages)
     if (p) {
         p = get_next_field(p, field, sizeof(field));
@@ -563,8 +574,17 @@ esp_err_t cluster_protocol_decode_share(const char *payload,
     share->extranonce2_len = cluster_protocol_hex_to_bytes(field, share->extranonce2, 8);
 
     // extranonce2_len
-    get_next_field(p, field, sizeof(field));
-    // Already parsed above
+    if (!p) return ESP_ERR_INVALID_ARG;
+    p = get_next_field(p, field, sizeof(field));
+    // Already parsed above from hex string
+
+    // pool_id (may not be present in legacy messages - default to primary pool)
+    if (p) {
+        get_next_field(p, field, sizeof(field));
+        share->pool_id = (uint8_t)strtoul(field, NULL, 10);
+    } else {
+        share->pool_id = 0;  // Default to primary pool
+    }
 
     share->timestamp = esp_timer_get_time() / 1000;
 

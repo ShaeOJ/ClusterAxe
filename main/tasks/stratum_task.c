@@ -574,12 +574,13 @@ void stratum_task(void * pvParameters)
                 }
                 decode_mining_notification(GLOBAL_STATE, stratum_api_v1_message.mining_notification);
 
-                // Clusteraxe: Distribute work to slave devices
+                // Clusteraxe: Distribute work to slave devices (primary pool)
 #if CLUSTER_ENABLED && CLUSTER_IS_MASTER
                 cluster_master_on_mining_notify(GLOBAL_STATE,
                                                  stratum_api_v1_message.mining_notification,
                                                  GLOBAL_STATE->extranonce_str,
-                                                 GLOBAL_STATE->extranonce_2_len);
+                                                 GLOBAL_STATE->extranonce_2_len,
+                                                 POOL_PRIMARY);
 #endif
             } else if (stratum_api_v1_message.method == MINING_SET_DIFFICULTY) {
                 ESP_LOGI(TAG, "Set pool difficulty: %ld", stratum_api_v1_message.new_difficulty);
@@ -903,6 +904,15 @@ void stratum_secondary_task(void * pvParameters)
                 }
                 // Extract block header info from secondary pool
                 decode_mining_notification_secondary(GLOBAL_STATE, stratum_api_v1_message_secondary.mining_notification);
+
+                // Clusteraxe: Distribute secondary pool work to slave devices (dual pool mode)
+#if CLUSTER_ENABLED && CLUSTER_IS_MASTER
+                cluster_master_on_mining_notify(GLOBAL_STATE,
+                                                 stratum_api_v1_message_secondary.mining_notification,
+                                                 GLOBAL_STATE->extranonce_str_secondary,
+                                                 GLOBAL_STATE->extranonce_2_len_secondary,
+                                                 POOL_SECONDARY);
+#endif
             } else if (stratum_api_v1_message_secondary.method == MINING_SET_DIFFICULTY) {
                 ESP_LOGI(TAG_SECONDARY, "Secondary pool difficulty: %ld", stratum_api_v1_message_secondary.new_difficulty);
                 GLOBAL_STATE->pool_difficulty_secondary = stratum_api_v1_message_secondary.new_difficulty;

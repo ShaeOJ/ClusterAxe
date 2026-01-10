@@ -132,12 +132,10 @@ void app_main(void)
     if (xTaskCreate(stratum_task, "stratum admin", 8192, (void *) &GLOBAL_STATE, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Error creating stratum admin task");
     }
-    // Start secondary stratum task for dual pool mode (not needed for cluster master either)
-#if !CLUSTER_IS_MASTER
+    // Start secondary stratum task for dual pool mode (cluster masters also need this for dual pool support)
     if (xTaskCreateWithCaps(stratum_secondary_task, "stratum secondary", 8192, (void *) &GLOBAL_STATE, 5, NULL, MALLOC_CAP_SPIRAM) != pdPASS) {
         ESP_LOGE(TAG, "Error creating stratum secondary task");
     }
-#endif
     if (xTaskCreate(create_jobs_task, "stratum miner", 8192, (void *) &GLOBAL_STATE, 10, &GLOBAL_STATE.create_jobs_task_handle) != pdPASS) {
         ESP_LOGE(TAG, "Error creating stratum miner task");
     }

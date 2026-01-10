@@ -30,7 +30,7 @@ static const char *TAG = "cluster_master";
 extern void stratum_submit_share_from_cluster(uint32_t job_id, uint32_t nonce,
                                                uint8_t *extranonce2, uint8_t en2_len,
                                                uint32_t ntime, uint32_t version,
-                                               uint8_t slave_id);
+                                               uint8_t slave_id, uint8_t pool_id);
 
 // ============================================================================
 // Private State
@@ -358,15 +358,17 @@ static void share_submitter_task(void *pvParameters)
         if (xQueueReceive(g_master->share_queue, &share, portMAX_DELAY) == pdTRUE) {
             // Submit to pool via existing stratum infrastructure
             // Pass slave_id so we can update the correct slave's counter when pool responds
+            // Pass pool_id so share is routed to correct pool in dual pool mode
             stratum_submit_share_from_cluster(share.job_id,
                                                share.nonce,
                                                share.extranonce2,
                                                share.extranonce2_len,
                                                share.ntime,
                                                share.version,
-                                               share.slave_id);
+                                               share.slave_id,
+                                               share.pool_id);
 
-            ESP_LOGD(TAG, "Submitted share from slave %d to pool", share.slave_id);
+            ESP_LOGD(TAG, "Submitted share from slave %d to pool %d", share.slave_id, share.pool_id);
         }
     }
 }

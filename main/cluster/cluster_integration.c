@@ -177,7 +177,8 @@ float cluster_get_voltage_in(void)
 
 // Forward declaration for job mapping storage
 void cluster_master_store_job_mapping(uint32_t numeric_id, const char *job_id_str,
-                                       const char *extranonce2, uint32_t ntime, uint32_t version);
+                                       const char *extranonce2, uint32_t ntime, uint32_t version,
+                                       uint8_t pool_id);
 
 // Store notification data needed for merkle root computation
 static struct {
@@ -272,13 +273,15 @@ bool cluster_master_compute_merkle_root(const uint8_t *extranonce2, uint8_t extr
 void cluster_master_on_mining_notify(GlobalState *GLOBAL_STATE,
                                       const mining_notify *notification,
                                       const char *extranonce_str,
-                                      int extranonce_2_len)
+                                      int extranonce_2_len,
+                                      uint8_t pool_id)
 {
     if (!notification || !cluster_is_active()) {
         return;
     }
 
-    ESP_LOGI(TAG, "Converting mining.notify to cluster work: job=%s", notification->job_id);
+    ESP_LOGI(TAG, "Converting mining.notify to cluster work: job=%s, pool=%d",
+             notification->job_id, pool_id);
 
     // Store notification data for merkle root computation when distributing to slaves
     store_notify_data(notification, extranonce_str, extranonce_2_len);
@@ -294,10 +297,11 @@ void cluster_master_on_mining_notify(GlobalState *GLOBAL_STATE,
         }
     }
 
-    // Store job mapping for share submission later
+    // Store job mapping for share submission later (includes pool_id for routing)
     cluster_master_store_job_mapping(work.job_id, notification->job_id,
-                                      "", notification->ntime, notification->version);
-    ESP_LOGD(TAG, "Stored job mapping: %08lx -> %s", (unsigned long)work.job_id, notification->job_id);
+                                      "", notification->ntime, notification->version, pool_id);
+    ESP_LOGD(TAG, "Stored job mapping: %08lx -> %s (pool=%d)",
+             (unsigned long)work.job_id, notification->job_id, pool_id);
 
     // Convert prev_block_hash from hex string
     if (notification->prev_block_hash) {
@@ -311,8 +315,14 @@ void cluster_master_on_mining_notify(GlobalState *GLOBAL_STATE,
     work.ntime = notification->ntime;
 
     // Set pool difficulty so slave knows minimum share requirement
-    work.pool_diff = g_global_state->pool_difficulty;
-    ESP_LOGI(TAG, "Work pool_diff set to: %lu", (unsigned long)work.pool_diff);
+    // Use correct difficulty based on pool
+    if (pool_id == 1) {
+        work.pool_diff = g_global_state->pool_difficulty_secondary;
+    } else {
+        work.pool_diff = g_global_state->pool_difficulty;
+    }
+    work.pool_id = pool_id;
+    ESP_LOGI(TAG, "Work pool_diff=%lu, pool_id=%d", (unsigned long)work.pool_diff, pool_id);
 
     // Extranonce2 length (will be assigned per-slave in distribution)
     work.extranonce2_len = (uint8_t)extranonce_2_len;
@@ -350,6 +360,7 @@ static struct {
     char extranonce2_str[32];
     uint32_t ntime;
     uint32_t version;
+    uint8_t pool_id;  // 0=primary, 1=secondary for dual pool mode
     bool valid;
 } job_mappings[MAX_JOB_MAPPINGS];
 static int job_mapping_index = 0;
@@ -364,7 +375,8 @@ static struct {
 static int pending_share_index = 0;
 
 void cluster_master_store_job_mapping(uint32_t numeric_id, const char *job_id_str,
-                                       const char *extranonce2, uint32_t ntime, uint32_t version)
+                                       const char *extranonce2, uint32_t ntime, uint32_t version,
+                                       uint8_t pool_id)
 {
     int idx = job_mapping_index % MAX_JOB_MAPPINGS;
     job_mappings[idx].numeric_id = numeric_id;
@@ -372,6 +384,7 @@ void cluster_master_store_job_mapping(uint32_t numeric_id, const char *job_id_st
     strncpy(job_mappings[idx].extranonce2_str, extranonce2, sizeof(job_mappings[idx].extranonce2_str) - 1);
     job_mappings[idx].ntime = ntime;
     job_mappings[idx].version = version;
+    job_mappings[idx].pool_id = pool_id;
     job_mappings[idx].valid = true;
     job_mapping_index++;
 }
@@ -390,7 +403,7 @@ static bool cluster_master_find_job_mapping(uint32_t numeric_id, char *job_id_st
 void stratum_submit_share_from_cluster(uint32_t job_id, uint32_t nonce,
                                         uint8_t *extranonce2, uint8_t en2_len,
                                         uint32_t ntime, uint32_t version,
-                                        uint8_t slave_id)
+                                        uint8_t slave_id, uint8_t pool_id)
 {
     if (!g_global_state) {
         ESP_LOGE(TAG, "Global state not available for share submission");
@@ -412,13 +425,36 @@ void stratum_submit_share_from_cluster(uint32_t job_id, uint32_t nonce,
     }
     extranonce2_str[en2_len * 2] = '\0';
 
-    ESP_LOGI(TAG, "Submitting cluster share: job=%s, nonce=%08" PRIx32 ", en2=%s, ver=%08" PRIx32 ", slave=%d",
-             job_id_str, nonce, extranonce2_str, version, slave_id);
+    ESP_LOGI(TAG, "Submitting cluster share: job=%s, nonce=%08" PRIx32 ", en2=%s, ver=%08" PRIx32 ", slave=%d, pool=%d",
+             job_id_str, nonce, extranonce2_str, version, slave_id, pool_id);
 
-    // Get socket and credentials for primary pool
-    int sock = g_global_state->sock;
-    int send_uid = g_global_state->send_uid++;
-    char *user = g_global_state->SYSTEM_MODULE.pool_user;
+    // Select socket, send_uid, and user based on pool_id (dual pool support)
+    int sock;
+    int send_uid;
+    char *user;
+
+    // Check for dual pool mode and secondary pool
+    extern bool stratum_is_secondary_connected(GlobalState *GLOBAL_STATE);
+    if (pool_id == 1 && stratum_is_secondary_connected(g_global_state)) {
+        // Submit to secondary pool
+        sock = g_global_state->sock_secondary;
+        send_uid = g_global_state->send_uid_secondary++;
+        user = g_global_state->SYSTEM_MODULE.fallback_pool_user;
+        ESP_LOGI(TAG, "Routing cluster share to SECONDARY pool");
+
+        // Stamp transmission time for secondary pool
+        extern void STRATUM_V1_stamp_tx_secondary(int request_id);
+        STRATUM_V1_stamp_tx_secondary(send_uid);
+    } else {
+        // Submit to primary pool (default)
+        sock = g_global_state->sock;
+        send_uid = g_global_state->send_uid++;
+        user = g_global_state->SYSTEM_MODULE.pool_user;
+
+        // Stamp transmission time for primary pool
+        extern void STRATUM_V1_stamp_tx(int request_id);
+        STRATUM_V1_stamp_tx(send_uid);
+    }
 
     // Track this pending share so we can update slave stats when pool responds
     int idx = pending_share_index % MAX_PENDING_SHARES;
@@ -431,10 +467,6 @@ void stratum_submit_share_from_cluster(uint32_t job_id, uint32_t nonce,
     // Do NOT XOR again - pass directly to stratum
     uint32_t version_bits = version;
 
-    // Stamp transmission time for response tracking
-    extern void STRATUM_V1_stamp_tx(int request_id);
-    STRATUM_V1_stamp_tx(send_uid);
-
     // Submit share to pool
     extern int STRATUM_V1_submit_share(int socket, int send_uid, const char *username,
                                         const char *job_id, const char *extranonce_2,
@@ -445,7 +477,7 @@ void stratum_submit_share_from_cluster(uint32_t job_id, uint32_t nonce,
                                        extranonce2_str, ntime, nonce, version_bits);
 
     if (ret < 0) {
-        ESP_LOGE(TAG, "Failed to submit cluster share: %d", ret);
+        ESP_LOGE(TAG, "Failed to submit cluster share to pool %d: %d", pool_id, ret);
     }
 }
 
