@@ -1413,6 +1413,14 @@ static esp_err_t GET_cluster_status(httpd_req_t *req)
     cluster_slave_get_shares(&shares_found, &shares_submitted);
     cJSON_AddNumberToObject(root, "sharesFound", shares_found);
     cJSON_AddNumberToObject(root, "sharesSubmitted", shares_submitted);
+
+    // Master's pool info from current work (for slave UI display)
+    cluster_work_t work;
+    esp_err_t work_err = cluster_slave_get_work(&work);
+    cJSON_AddBoolToObject(root, "hasWork", work_err == ESP_OK);
+    if (work_err == ESP_OK && work.pool_diff > 0) {
+        cJSON_AddNumberToObject(root, "masterPoolDiff", work.pool_diff);
+    }
 #endif
 
     esp_err_t res = HTTP_send_json(req, root, &cluster_prebuffer_len);
@@ -2626,7 +2634,7 @@ esp_err_t start_rest_server(void * pvParameters)
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.stack_size = 8192;
     config.max_open_sockets = 20;
-    config.max_uri_handlers = 30;
+    config.max_uri_handlers = 40;
     config.close_fn = websocket_close_fn;
     config.lru_purge_enable = true;
 

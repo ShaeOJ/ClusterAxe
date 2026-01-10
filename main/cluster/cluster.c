@@ -133,8 +133,6 @@ esp_err_t cluster_init(cluster_mode_t mode)
     g_cluster_state.mode = CLUSTER_MODE_DISABLED;
     return ESP_OK;
 #else
-    ESP_LOGW(TAG, "=== CLUSTER_INIT CALLED: requested mode=%d ===", mode);
-
     if (g_cluster_state.mode != CLUSTER_MODE_DISABLED) {
         ESP_LOGW(TAG, "Cluster already initialized");
         return ESP_ERR_INVALID_STATE;
@@ -143,7 +141,6 @@ esp_err_t cluster_init(cluster_mode_t mode)
     // If mode is disabled, check NVS for stored mode (or use compile-time default)
     if (mode == CLUSTER_MODE_DISABLED) {
         mode = load_mode_from_nvs();
-        ESP_LOGW(TAG, "Loaded mode from NVS: %d", mode);
     }
 
     if (mode == CLUSTER_MODE_DISABLED) {
@@ -155,10 +152,8 @@ esp_err_t cluster_init(cluster_mode_t mode)
 
 #if CLUSTER_IS_MASTER
     if (mode == CLUSTER_MODE_MASTER) {
-        ESP_LOGW(TAG, "Initializing cluster MASTER mode");
         memset(&g_cluster_state.master, 0, sizeof(cluster_master_state_t));
         ret = cluster_master_init(&g_cluster_state.master);
-        ESP_LOGW(TAG, "cluster_master_init returned: %s", esp_err_to_name(ret));
     }
     else {
         ESP_LOGE(TAG, "This firmware is built as MASTER only");
@@ -166,10 +161,8 @@ esp_err_t cluster_init(cluster_mode_t mode)
     }
 #elif CLUSTER_IS_SLAVE
     if (mode == CLUSTER_MODE_SLAVE) {
-        ESP_LOGW(TAG, "Initializing cluster SLAVE mode");
         memset(&g_cluster_state.slave, 0, sizeof(cluster_slave_state_t));
         ret = cluster_slave_init(&g_cluster_state.slave);
-        ESP_LOGW(TAG, "cluster_slave_init returned: %s", esp_err_to_name(ret));
     }
     else {
         ESP_LOGE(TAG, "This firmware is built as SLAVE only");
@@ -183,7 +176,7 @@ esp_err_t cluster_init(cluster_mode_t mode)
     if (ret == ESP_OK) {
         g_cluster_state.mode = mode;
         save_mode_to_nvs(mode);
-        ESP_LOGW(TAG, "=== CLUSTER INIT COMPLETE: %s ===", CLUSTERAXE_VERSION_STRING);
+        ESP_LOGI(TAG, "Cluster initialized: %s", CLUSTERAXE_VERSION_STRING);
     }
 
     return ret;
@@ -291,15 +284,14 @@ esp_err_t cluster_handle_bap_message(const char *msg_type,
 
         // Share from slave
         if (strcmp(msg_type, BAP_MSG_SHARE) == 0) {
-            ESP_LOGW(TAG, "SHARE RX: Decoding share message from slave");
             cluster_share_t share;
             esp_err_t ret = cluster_protocol_decode_share(payload, &share);
             if (ret == ESP_OK) {
-                ESP_LOGW(TAG, "SHARE RX: Decoded share - slave=%d, job=%lu, nonce=0x%08lX",
+                ESP_LOGI(TAG, "Share from slave %d: job=%lu, nonce=0x%08lX",
                          share.slave_id, (unsigned long)share.job_id, (unsigned long)share.nonce);
                 return cluster_master_receive_share(&share);
             } else {
-                ESP_LOGE(TAG, "SHARE RX: Failed to decode share: %s", esp_err_to_name(ret));
+                ESP_LOGE(TAG, "Failed to decode share: %s", esp_err_to_name(ret));
             }
             return ret;
         }
@@ -370,7 +362,7 @@ esp_err_t cluster_handle_bap_message(const char *msg_type,
     }
 #endif
 
-    ESP_LOGW(TAG, "Unhandled message type: %s", msg_type);
+    ESP_LOGD(TAG, "Unhandled message type: %s", msg_type);
     return ESP_ERR_NOT_SUPPORTED;
 }
 

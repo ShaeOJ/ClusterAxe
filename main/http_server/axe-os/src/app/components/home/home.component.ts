@@ -767,6 +767,12 @@ export class HomeComponent implements OnInit, OnDestroy {
     return this.calculateEfficiency(info, 'hashRate');
   }
 
+  public getSharesPerHour(info: ISystemInfo): number {
+    if (!info.uptimeSeconds || info.uptimeSeconds === 0) return 0;
+    const shares = info.sharesAccepted || 0;
+    return (shares / info.uptimeSeconds) * 3600;
+  }
+
   public getEfficiencyAverage(): number {
     return this.calculateEfficiencyAverage(this.hashrateData, this.powerData);
   }

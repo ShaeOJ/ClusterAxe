@@ -48,18 +48,14 @@ static void espnow_rx_wrapper(const char *msg_type, const char *payload, size_t 
 
 esp_err_t cluster_integration_init(GlobalState *GLOBAL_STATE)
 {
-    ESP_LOGW(TAG, "=== CLUSTER_INTEGRATION_INIT CALLED ===");
-
     if (!GLOBAL_STATE) {
-        ESP_LOGE(TAG, "ERROR: GLOBAL_STATE is NULL!");
+        ESP_LOGE(TAG, "GLOBAL_STATE is NULL");
         return ESP_ERR_INVALID_ARG;
     }
 
     g_global_state = GLOBAL_STATE;
-    ESP_LOGW(TAG, "g_global_state set to %p", (void*)g_global_state);
 
     // Initialize cluster subsystem with compile-time default mode
-    ESP_LOGW(TAG, "Calling cluster_init with mode=%d", CLUSTER_MODE_DEFAULT);
     esp_err_t ret = cluster_init(CLUSTER_MODE_DEFAULT);
 
 #if defined(CONFIG_CLUSTER_TRANSPORT_ESPNOW) || defined(CONFIG_CLUSTER_TRANSPORT_BOTH)
@@ -327,7 +323,8 @@ void cluster_master_on_mining_notify(GlobalState *GLOBAL_STATE,
 
     work.timestamp = esp_timer_get_time() / 1000;
 
-    // Display info for slave UI
+    // Display info for slave UI (currently not transmitted due to ESP-NOW size limits)
+    // Pool difficulty is transmitted and displayed on slaves
     work.block_height = g_global_state->block_height;
     if (g_global_state->scriptsig) {
         strncpy(work.scriptsig, g_global_state->scriptsig, sizeof(work.scriptsig) - 1);
@@ -554,19 +551,8 @@ void cluster_slave_submit_to_asic(GlobalState *GLOBAL_STATE,
     midstate_sha256_bin(midstate_data, 64, midstate);
     reverse_32bit_words(midstate, job->midstate);
 
-    // Debug: log midstate data for troubleshooting - use LOGW for visibility
-    ESP_LOGW(TAG, "=== MIDSTATE DEBUG ===");
-    ESP_LOGW(TAG, "Job version=0x%08lX, version_mask=0x%08lX",
+    ESP_LOGD(TAG, "Job version=0x%08lX, version_mask=0x%08lX",
              (unsigned long)job->version, (unsigned long)work->version_mask);
-    ESP_LOGW(TAG, "Prev hash (processed): %02X%02X%02X%02X %02X%02X%02X%02X...",
-             prev_hash_work[0], prev_hash_work[1], prev_hash_work[2], prev_hash_work[3],
-             prev_hash_work[4], prev_hash_work[5], prev_hash_work[6], prev_hash_work[7]);
-    ESP_LOGW(TAG, "Merkle root (original): %02X%02X%02X%02X %02X%02X%02X%02X...",
-             work->merkle_root[0], work->merkle_root[1], work->merkle_root[2], work->merkle_root[3],
-             work->merkle_root[4], work->merkle_root[5], work->merkle_root[6], work->merkle_root[7]);
-    ESP_LOGW(TAG, "Midstate0: %02X%02X%02X%02X %02X%02X%02X%02X...",
-             job->midstate[0], job->midstate[1], job->midstate[2], job->midstate[3],
-             job->midstate[4], job->midstate[5], job->midstate[6], job->midstate[7]);
 
     // Compute all 4 midstates when version rolling is enabled (matching construct_bm_job)
     // Use version_mask from master's work, not slave's local settings
@@ -593,15 +579,8 @@ void cluster_slave_submit_to_asic(GlobalState *GLOBAL_STATE,
         reverse_32bit_words(midstate, job->midstate3);
 
         job->num_midstates = 4;
-        ESP_LOGW(TAG, "Version rolling enabled: mask=0x%08lX, num_midstates=%d",
-                 (unsigned long)version_mask, job->num_midstates);
-        ESP_LOGW(TAG, "Midstate1: %02X%02X%02X%02X..., Midstate2: %02X%02X%02X%02X..., Midstate3: %02X%02X%02X%02X...",
-                 job->midstate1[0], job->midstate1[1], job->midstate1[2], job->midstate1[3],
-                 job->midstate2[0], job->midstate2[1], job->midstate2[2], job->midstate2[3],
-                 job->midstate3[0], job->midstate3[1], job->midstate3[2], job->midstate3[3]);
     } else {
         job->num_midstates = 1;
-        ESP_LOGI(TAG, "Version rolling disabled: num_midstates=%d", job->num_midstates);
     }
 
     // Set nonce range for this slave
@@ -698,7 +677,7 @@ void cluster_submit_work_to_asic(const cluster_work_t *work)
         ESP_LOGE(TAG, "ERROR: work is NULL");
         return;
     }
-    ESP_LOGW(TAG, "Submitting work to ASIC: job=%lu", (unsigned long)work->job_id);
+    ESP_LOGD(TAG, "Submitting work to ASIC: job=%lu", (unsigned long)work->job_id);
     cluster_slave_submit_to_asic(g_global_state, work);
 }
 

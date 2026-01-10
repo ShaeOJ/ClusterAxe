@@ -180,26 +180,13 @@ esp_err_t cluster_slave_receive_work(const cluster_work_t *work)
 
     xSemaphoreGive(g_slave->work_mutex);
 
-    ESP_LOGW(TAG, "Received work: job %lu, nonce range 0x%08lX - 0x%08lX",
+    ESP_LOGI(TAG, "Received work: job %lu, nonce 0x%08lX-0x%08lX",
              (unsigned long)work->job_id,
              (unsigned long)work->nonce_start,
              (unsigned long)work->nonce_end);
-    ESP_LOGW(TAG, "Work details: version=0x%08lX, version_mask=0x%08lX, pool_diff=%lu",
-             (unsigned long)work->version,
-             (unsigned long)work->version_mask,
-             (unsigned long)work->pool_diff);
-
-    // Log extranonce2 for debugging
-    char en2_hex[17];
-    for (int i = 0; i < work->extranonce2_len && i < 8; i++) {
-        sprintf(en2_hex + i * 2, "%02x", work->extranonce2[i]);
-    }
-    en2_hex[work->extranonce2_len * 2] = '\0';
-    ESP_LOGW(TAG, "Work extranonce2: %s (len=%d)", en2_hex, work->extranonce2_len);
 
     // Notify worker task that new work is available
     if (g_slave->worker_task) {
-        ESP_LOGW(TAG, "Notifying worker_task (handle=%p) of new work", (void*)g_slave->worker_task);
         xTaskNotifyGive(g_slave->worker_task);
     } else {
         ESP_LOGE(TAG, "ERROR: worker_task handle is NULL - cannot notify!");
@@ -260,8 +247,7 @@ esp_err_t cluster_slave_submit_share(const cluster_share_t *share)
         return ESP_FAIL;
     }
 
-    // Log the full share message being sent
-    ESP_LOGW(TAG, "SHARE TX: %s (len=%d)", payload, len);
+    ESP_LOGD(TAG, "SHARE TX: %s (len=%d)", payload, len);
 
     esp_err_t ret = ESP_FAIL;
 
@@ -273,33 +259,26 @@ esp_err_t cluster_slave_submit_share(const cluster_share_t *share)
 
     uint8_t master_mac[6];
     if (cluster_espnow_get_master_mac(master_mac)) {
-        ESP_LOGW(TAG, "Sending share via ESP-NOW to %02X:%02X:%02X:%02X:%02X:%02X",
-                 master_mac[0], master_mac[1], master_mac[2],
-                 master_mac[3], master_mac[4], master_mac[5]);
-
         // Retry up to 3 times with delays (master broadcasts work frequently, may miss our TX)
         for (int attempt = 0; attempt < 3; attempt++) {
             ret = cluster_espnow_send(master_mac, payload, len);
             if (ret == ESP_OK) {
-                ESP_LOGW(TAG, "ESP-NOW share send SUCCESS (attempt %d)", attempt + 1);
+                ESP_LOGD(TAG, "ESP-NOW share sent (attempt %d)", attempt + 1);
                 break;
             }
-            ESP_LOGW(TAG, "ESP-NOW share attempt %d failed: %s", attempt + 1, esp_err_to_name(ret));
+            ESP_LOGD(TAG, "ESP-NOW share attempt %d failed: %s", attempt + 1, esp_err_to_name(ret));
             vTaskDelay(pdMS_TO_TICKS(30));  // Small delay before retry
         }
 
         if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "All ESP-NOW attempts failed, falling back to broadcast");
+            ESP_LOGW(TAG, "ESP-NOW failed, falling back to broadcast");
         }
-    } else {
-        ESP_LOGW(TAG, "No master MAC available for share, using broadcast");
     }
 #endif
 
     // Fallback to UART broadcast if ESP-NOW failed or unavailable
     if (ret != ESP_OK) {
         extern esp_err_t BAP_uart_send_raw(const char *data, size_t len);
-        ESP_LOGW(TAG, "Sending share via broadcast fallback");
         ret = BAP_uart_send_raw(payload, len);
     }
 
@@ -357,22 +336,21 @@ static void slave_record_share(uint32_t nonce, uint32_t job_id)
  */
 void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t version, uint32_t ntime, const char *extranonce2_hex)
 {
-    ESP_LOGW(TAG, "on_share_found: nonce=0x%08lX, job=%lu, ver=0x%08lX, en2=%s",
-             (unsigned long)nonce, (unsigned long)job_id, (unsigned long)version,
-             extranonce2_hex ? extranonce2_hex : "(null)");
+    ESP_LOGD(TAG, "on_share_found: nonce=0x%08lX, job=%lu, ver=0x%08lX",
+             (unsigned long)nonce, (unsigned long)job_id, (unsigned long)version);
 
     if (!g_slave) {
         ESP_LOGE(TAG, "ERROR: g_slave is NULL in on_share_found");
         return;
     }
     if (!g_slave->work_valid) {
-        ESP_LOGW(TAG, "Ignoring share - no valid work (work_valid=false)");
+        ESP_LOGD(TAG, "Ignoring share - no valid work");
         return;
     }
 
     // Check for duplicate share (ASIC might report same result multiple times)
     if (slave_is_duplicate(nonce, job_id)) {
-        ESP_LOGW(TAG, "Ignoring DUPLICATE share: nonce=0x%08lX, job=%lu", (unsigned long)nonce, (unsigned long)job_id);
+        ESP_LOGD(TAG, "Ignoring duplicate share: nonce=0x%08lX, job=%lu", (unsigned long)nonce, (unsigned long)job_id);
         return;
     }
     slave_record_share(nonce, job_id);
@@ -404,7 +382,6 @@ void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t vers
         ESP_LOGI(TAG, "Share using job's en2: %s", extranonce2_hex);
     } else {
         // Fallback to current work if extranonce2 not provided
-        ESP_LOGW(TAG, "No extranonce2 from job, using current_work");
         xSemaphoreTake(g_slave->work_mutex, portMAX_DELAY);
         memcpy(share.extranonce2, g_slave->current_work.extranonce2, 8);
         share.extranonce2_len = g_slave->current_work.extranonce2_len;
@@ -594,43 +571,23 @@ static void heartbeat_task(void *pvParameters)
  */
 static void worker_task(void *pvParameters)
 {
-    ESP_LOGW(TAG, "=== WORKER TASK STARTED ===");
+    ESP_LOGI(TAG, "Worker task started");
 
     cluster_work_t work;
     uint32_t last_job_id = 0;
     uint8_t last_extranonce2[8] = {0};
     uint8_t last_en2_len = 0;
-    uint32_t loop_count = 0;
 
     while (1) {
         // Wait for notification of new work (or timeout for polling)
-        uint32_t notif = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
-        loop_count++;
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
 
-        // Log every 10 iterations to show we're alive
-        if (loop_count % 10 == 1) {
-            ESP_LOGW(TAG, "worker_task loop %lu: notif=%lu, work_valid=%d",
-                     (unsigned long)loop_count, (unsigned long)notif,
-                     g_slave ? g_slave->work_valid : -1);
-        }
-
-        if (!g_slave) {
-            ESP_LOGE(TAG, "worker_task: g_slave is NULL!");
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            continue;
-        }
-
-        if (!g_slave->work_valid) {
-            // Only log occasionally when waiting for work
-            if (loop_count % 10 == 1) {
-                ESP_LOGW(TAG, "worker_task: work_valid=false, waiting for work...");
-            }
+        if (!g_slave || !g_slave->work_valid) {
             continue;
         }
 
         // Get current work
         if (cluster_slave_get_work(&work) != ESP_OK) {
-            ESP_LOGW(TAG, "worker_task: Failed to get work from queue");
             continue;
         }
 
@@ -641,15 +598,7 @@ static void worker_task(void *pvParameters)
                            (memcmp(work.extranonce2, last_extranonce2, work.extranonce2_len) != 0);
 
         if (job_changed || en2_changed) {
-            // Log the change
-            char en2_hex[17];
-            for (int i = 0; i < work.extranonce2_len && i < 8; i++) {
-                sprintf(en2_hex + i * 2, "%02x", work.extranonce2[i]);
-            }
-            en2_hex[work.extranonce2_len * 2] = '\0';
-
-            ESP_LOGW(TAG, "*** NEW WORK: job %lu, en2=%s (job_changed=%d, en2_changed=%d) ***",
-                     (unsigned long)work.job_id, en2_hex, job_changed, en2_changed);
+            ESP_LOGI(TAG, "New work: job %lu", (unsigned long)work.job_id);
 
             // Update tracking
             last_job_id = work.job_id;
@@ -662,13 +611,6 @@ static void worker_task(void *pvParameters)
 
             // Submit work to ASIC via integration layer
             cluster_submit_work_to_asic(&work);
-
-            ESP_LOGW(TAG, "*** cluster_submit_work_to_asic returned ***");
-        } else {
-            // Only log occasionally to reduce spam
-            if (loop_count % 10 == 1) {
-                ESP_LOGD(TAG, "Same work (job=%lu), not resubmitting", (unsigned long)work.job_id);
-            }
         }
 
         // Check for stale work
@@ -685,15 +627,12 @@ static void worker_task(void *pvParameters)
 
 esp_err_t cluster_slave_init(cluster_slave_state_t *state)
 {
-    ESP_LOGW(TAG, "=== CLUSTER SLAVE INIT CALLED ===");
-
     if (!state) {
-        ESP_LOGE(TAG, "cluster_slave_init: state is NULL!");
+        ESP_LOGE(TAG, "cluster_slave_init: state is NULL");
         return ESP_ERR_INVALID_ARG;
     }
 
     g_slave = state;
-    ESP_LOGW(TAG, "g_slave set to %p", (void*)g_slave);
 
     // Initialize synchronization primitives
     g_slave->work_mutex = xSemaphoreCreateMutex();
@@ -712,13 +651,9 @@ esp_err_t cluster_slave_init(cluster_slave_state_t *state)
     g_slave->shares_found = 0;
     g_slave->shares_submitted = 0;
 
-    ESP_LOGW(TAG, "Creating worker_task...");
     // Create tasks with balanced stack sizes (avoid memory exhaustion)
-    BaseType_t ret = xTaskCreate(worker_task, "cluster_worker", 3072, NULL, 6,
+    xTaskCreate(worker_task, "cluster_worker", 3072, NULL, 6,
                 &g_slave->worker_task);
-    ESP_LOGW(TAG, "worker_task create result: %d, handle: %p",
-             ret, (void*)g_slave->worker_task);
-
     xTaskCreate(heartbeat_task, "cluster_hb", 3072, NULL, 4,
                 &g_slave->heartbeat_task);
 
@@ -728,7 +663,7 @@ esp_err_t cluster_slave_init(cluster_slave_state_t *state)
 
     g_slave->initialized = true;
 
-    ESP_LOGW(TAG, "=== CLUSTER SLAVE INIT COMPLETE ===");
+    ESP_LOGI(TAG, "Cluster slave initialized");
 
     return ESP_OK;
 }

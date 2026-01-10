@@ -140,6 +140,8 @@ export interface IClusterStatus {
   hostname?: string;
   sharesFound?: number;
   sharesSubmitted?: number;
+  // Master's pool info (for slaves to display)
+  masterPoolDiff?: number;
 }
 
 // Setting IDs for remote configuration

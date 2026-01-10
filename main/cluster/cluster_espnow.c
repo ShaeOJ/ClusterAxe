@@ -284,7 +284,7 @@ static void espnow_rx_task(void *pvParameters)
             if (g_espnow.rx_callback) {
                 // Use LOGW for share messages to ensure visibility
                 if (strcmp(msg_type, "CLSHR") == 0) {
-                    ESP_LOGW(TAG, "SHARE: Forwarding CLSHR to callback from " MACSTR,
+                    ESP_LOGD(TAG, "SHARE: Forwarding CLSHR to callback from " MACSTR,
                              MAC2STR(evt.src_mac));
                 } else {
                     ESP_LOGI(TAG, "Forwarding to callback: type=%s", msg_type);
@@ -377,7 +377,7 @@ esp_err_t cluster_espnow_init(void)
         return ret;
     }
 
-    ESP_LOGW(TAG, "=== MY MAC ADDRESS: " MACSTR " ===", MAC2STR(g_espnow.self_mac));
+    ESP_LOGI(TAG, "MAC: " MACSTR, MAC2STR(g_espnow.self_mac));
 
     // Get current WiFi channel
     uint8_t primary_channel;

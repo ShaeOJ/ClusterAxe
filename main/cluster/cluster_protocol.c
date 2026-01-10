@@ -192,22 +192,9 @@ int cluster_protocol_encode_work(const cluster_work_t *work,
         return -1;
     }
 
-    // Try to add optional display fields if there's room (for UART/larger buffers)
-    // ESP-NOW limit is 250 bytes, so only add these if we have space
-    size_t remaining = buffer_len - len - 10;  // Reserve for checksum
-    if (remaining > 60 && work->block_height > 0) {
-        // Add block_height, scriptsig, network_diff
-        int extra = snprintf(buffer + len, remaining,
-                            ",%lu,%s,%s",
-                            (unsigned long)work->block_height,
-                            work->scriptsig[0] ? work->scriptsig : "-",
-                            work->network_diff_str[0] ? work->network_diff_str : "-");
-        if (extra > 0 && (size_t)extra < remaining) {
-            len += extra;
-        }
-    }
-
-    ESP_LOGD(TAG, "Work message size: %d bytes", len + 5);  // +5 for checksum/terminator
+    // Note: Optional display fields (block_height, scriptsig, network_diff) removed
+    // ESP-NOW 250 byte limit is too tight after core fields (~228 bytes)
+    // Pool difficulty is included in core fields and works fine
 
     return finalize_message(buffer, buffer_len, len);
 }
