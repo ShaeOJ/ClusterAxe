@@ -370,6 +370,7 @@ static int job_mapping_index = 0;
 static struct {
     int send_uid;       // Stratum message ID
     uint8_t slave_id;   // Which slave sent this share
+    uint8_t pool_id;    // Which pool this share was submitted to (0=primary, 1=secondary)
     bool valid;
 } pending_cluster_shares[MAX_PENDING_SHARES];
 static int pending_share_index = 0;
@@ -460,6 +461,7 @@ void stratum_submit_share_from_cluster(uint32_t job_id, uint32_t nonce,
     int idx = pending_share_index % MAX_PENDING_SHARES;
     pending_cluster_shares[idx].send_uid = send_uid;
     pending_cluster_shares[idx].slave_id = slave_id;
+    pending_cluster_shares[idx].pool_id = pool_id;
     pending_cluster_shares[idx].valid = true;
     pending_share_index++;
 
@@ -505,17 +507,18 @@ void cluster_notify_share_result(int message_id, bool accepted)
     for (int i = 0; i < MAX_PENDING_SHARES; i++) {
         if (pending_cluster_shares[i].valid && pending_cluster_shares[i].send_uid == message_id) {
             uint8_t slave_id = pending_cluster_shares[i].slave_id;
+            uint8_t pool_id = pending_cluster_shares[i].pool_id;
             pending_cluster_shares[i].valid = false;  // Clear this entry
 
-            // Update slave counters
+            // Update slave counters (including per-pool stats)
             cluster_slave_t slave;
             if (cluster_master_get_slave(slave_id, &slave) == ESP_OK) {
                 // Update the slave's counter in master state
-                extern void cluster_master_update_slave_share_count(uint8_t slave_id, bool accepted);
-                cluster_master_update_slave_share_count(slave_id, accepted);
+                extern void cluster_master_update_slave_share_count(uint8_t slave_id, bool accepted, uint8_t pool_id);
+                cluster_master_update_slave_share_count(slave_id, accepted, pool_id);
 
-                ESP_LOGI(TAG, "Cluster share from slave %d %s", slave_id,
-                         accepted ? "ACCEPTED" : "REJECTED");
+                ESP_LOGI(TAG, "Cluster share from slave %d %s (pool %d)", slave_id,
+                         accepted ? "ACCEPTED" : "REJECTED", pool_id);
             }
             return;
         }

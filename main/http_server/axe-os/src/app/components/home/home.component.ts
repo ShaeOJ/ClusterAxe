@@ -1135,6 +1135,31 @@ export class HomeComponent implements OnInit, OnDestroy {
     return slavePower + devicePower;
   }
 
+  // Cluster Dual Pool methods
+  public isClusterDualPoolActive(status: IClusterStatus | null): boolean {
+    if (!status) return false;
+    // Show dual pool breakdown when secondary pool has any shares
+    return ((status.secondarySharesAccepted || 0) > 0 || (status.secondarySharesRejected || 0) > 0);
+  }
+
+  public getClusterPoolSplitPercent(status: IClusterStatus | null, pool: 'primary' | 'secondary'): number {
+    if (!status) return pool === 'primary' ? 100 : 0;
+    const primaryTotal = (status.primarySharesAccepted || 0) + (status.primarySharesRejected || 0);
+    const secondaryTotal = (status.secondarySharesAccepted || 0) + (status.secondarySharesRejected || 0);
+    const total = primaryTotal + secondaryTotal;
+    if (total === 0) return pool === 'primary' ? 100 : 0;
+    const value = pool === 'primary' ? primaryTotal : secondaryTotal;
+    return Math.round((value / total) * 100);
+  }
+
+  public getClusterPoolHashrate(status: IClusterStatus | null, info: ISystemInfo, pool: 'primary' | 'secondary'): number {
+    if (!status) return 0;
+    // Calculate hashrate based on share ratio
+    const totalHashrate = status.totalHashrate || 0;
+    const splitPercent = this.getClusterPoolSplitPercent(status, pool);
+    return (totalHashrate * splitPercent) / 100;
+  }
+
   public getSlaveStateIcon(state: number): string {
     switch (state) {
       case 0: return 'pi-times-circle';

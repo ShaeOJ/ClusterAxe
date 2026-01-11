@@ -50,6 +50,35 @@
             </div>
         </div>
 
+        <!-- Dual Pool Stats Row (shown when secondary pool has shares) -->
+        <div class="flex flex-wrap justify-content-center gap-2 mb-3"
+             *ngIf="(status.secondarySharesAccepted || 0) > 0 || (status.secondarySharesRejected || 0) > 0">
+            <div class="surface-card border-round p-2 px-3 text-center flex-grow-1" style="min-width: 140px;">
+                <div class="text-400 text-xs mb-1">Primary Pool</div>
+                <div class="text-lg font-bold">
+                    <span class="text-theme">{{status.primarySharesAccepted || 0}}</span>
+                    <span class="text-red-500 text-sm" *ngIf="(status.primarySharesRejected || 0) > 0">/{{status.primarySharesRejected}}</span>
+                    <span class="text-500 text-xs ml-1">shares</span>
+                </div>
+            </div>
+            <div class="surface-card border-round p-2 px-3 text-center flex-grow-1" style="min-width: 140px;">
+                <div class="text-400 text-xs mb-1">Secondary Pool</div>
+                <div class="text-lg font-bold">
+                    <span class="text-cyan-500">{{status.secondarySharesAccepted || 0}}</span>
+                    <span class="text-red-500 text-sm" *ngIf="(status.secondarySharesRejected || 0) > 0">/{{status.secondarySharesRejected}}</span>
+                    <span class="text-500 text-xs ml-1">shares</span>
+                </div>
+            </div>
+            <div class="surface-card border-round p-2 px-3 text-center flex-grow-1" style="min-width: 140px;">
+                <div class="text-400 text-xs mb-1">Pool Split</div>
+                <div class="text-lg font-bold">
+                    <span class="text-theme">{{getPoolSplitPercent(status, 'primary')}}%</span>
+                    <span class="text-500 mx-1">/</span>
+                    <span class="text-cyan-500">{{getPoolSplitPercent(status, 'secondary')}}%</span>
+                </div>
+            </div>
+        </div>
+
         <!-- ================================================================ -->
         <!-- CLUSTER AUTO-TUNE SECTION -->
         <!-- ================================================================ -->

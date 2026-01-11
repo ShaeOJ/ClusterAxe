@@ -324,6 +324,15 @@ export class ClusterComponent implements OnInit, OnDestroy {
     return slaves.reduce((sum, slave) => sum + (slave.power || 0), 0);
   }
 
+  getPoolSplitPercent(status: IClusterStatus, pool: 'primary' | 'secondary'): number {
+    const primaryTotal = (status.primarySharesAccepted || 0) + (status.primarySharesRejected || 0);
+    const secondaryTotal = (status.secondarySharesAccepted || 0) + (status.secondarySharesRejected || 0);
+    const total = primaryTotal + secondaryTotal;
+    if (total === 0) return pool === 'primary' ? 100 : 0;
+    const value = pool === 'primary' ? primaryTotal : secondaryTotal;
+    return Math.round((value / total) * 100);
+  }
+
   // TrackBy function to prevent ngFor from recreating DOM elements
   trackBySlave(index: number, slave: IClusterSlave): number {
     return slave.slot;

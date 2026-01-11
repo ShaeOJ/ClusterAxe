@@ -1331,6 +1331,12 @@ static esp_err_t GET_cluster_status(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "totalSharesAccepted", stats.total_shares_accepted);
     cJSON_AddNumberToObject(root, "totalSharesRejected", stats.total_shares_rejected);
 
+    // Per-pool stats for dual pool mode
+    cJSON_AddNumberToObject(root, "primarySharesAccepted", stats.primary_shares_accepted);
+    cJSON_AddNumberToObject(root, "primarySharesRejected", stats.primary_shares_rejected);
+    cJSON_AddNumberToObject(root, "secondarySharesAccepted", stats.secondary_shares_accepted);
+    cJSON_AddNumberToObject(root, "secondarySharesRejected", stats.secondary_shares_rejected);
+
     // Calculate total power (master + all slaves)
     float master_power = GLOBAL_STATE->POWER_MANAGEMENT_MODULE.power;
     float total_power = master_power;

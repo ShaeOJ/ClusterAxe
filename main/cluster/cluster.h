@@ -138,6 +138,11 @@ typedef struct {
     uint32_t        shares_submitted;   // Total shares submitted by slave
     uint32_t        shares_accepted;    // Shares accepted by pool
     uint32_t        shares_rejected;    // Shares rejected by pool
+    // Per-pool stats for dual pool mode
+    uint32_t        shares_accepted_primary;
+    uint32_t        shares_rejected_primary;
+    uint32_t        shares_accepted_secondary;
+    uint32_t        shares_rejected_secondary;
     int64_t         last_heartbeat;     // Last heartbeat timestamp
     int64_t         last_seen;          // Last activity timestamp (ms since boot)
     int64_t         last_work_sent;     // Last work distribution time
@@ -224,6 +229,11 @@ typedef struct {
     uint32_t total_shares;          // Total shares found by cluster
     uint32_t total_shares_accepted; // Total shares accepted by pool
     uint32_t total_shares_rejected; // Total shares rejected by pool
+    // Per-pool stats for dual pool mode
+    uint32_t primary_shares_accepted;
+    uint32_t primary_shares_rejected;
+    uint32_t secondary_shares_accepted;
+    uint32_t secondary_shares_rejected;
 } cluster_stats_t;
 
 // ============================================================================

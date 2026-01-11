@@ -130,6 +130,11 @@ export interface IClusterStatus {
   totalShares?: number;
   totalSharesAccepted?: number;
   totalSharesRejected?: number;
+  // Per-pool stats for dual pool mode
+  primarySharesAccepted?: number;
+  primarySharesRejected?: number;
+  secondarySharesAccepted?: number;
+  secondarySharesRejected?: number;
   currentTime?: number;  // Device time (ms since boot) for calculating last seen
   slaves?: IClusterSlave[];
   // Slave fields
@@ -180,6 +185,10 @@ export class ClusterService {
       totalShares: 256,
       totalSharesAccepted: 250,
       totalSharesRejected: 6,
+      primarySharesAccepted: 125,
+      primarySharesRejected: 3,
+      secondarySharesAccepted: 125,
+      secondarySharesRejected: 3,
       slaves: [
         {
           slot: 0,

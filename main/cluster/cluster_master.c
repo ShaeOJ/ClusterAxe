@@ -451,6 +451,11 @@ static esp_err_t handle_registration_internal(const char *hostname,
     slave->shares_submitted = 0;
     slave->shares_accepted = 0;
     slave->shares_rejected = 0;
+    // Initialize per-pool counters
+    slave->shares_accepted_primary = 0;
+    slave->shares_rejected_primary = 0;
+    slave->shares_accepted_secondary = 0;
+    slave->shares_rejected_secondary = 0;
 
     g_master->slave_count++;
 
@@ -735,12 +740,20 @@ void cluster_master_get_stats(cluster_stats_t *stats, uint8_t *active_slaves)
         stats->total_hashrate = g_master->total_hashrate;
         stats->total_shares = g_master->total_shares;
 
-        // Calculate accepted/rejected from all slaves
+        // Calculate accepted/rejected from all slaves (total and per-pool)
         stats->total_shares_accepted = 0;
         stats->total_shares_rejected = 0;
+        stats->primary_shares_accepted = 0;
+        stats->primary_shares_rejected = 0;
+        stats->secondary_shares_accepted = 0;
+        stats->secondary_shares_rejected = 0;
         for (int i = 0; i < CLUSTER_MAX_SLAVES; i++) {
             stats->total_shares_accepted += g_master->slaves[i].shares_accepted;
             stats->total_shares_rejected += g_master->slaves[i].shares_rejected;
+            stats->primary_shares_accepted += g_master->slaves[i].shares_accepted_primary;
+            stats->primary_shares_rejected += g_master->slaves[i].shares_rejected_primary;
+            stats->secondary_shares_accepted += g_master->slaves[i].shares_accepted_secondary;
+            stats->secondary_shares_rejected += g_master->slaves[i].shares_rejected_secondary;
         }
     }
 
@@ -790,8 +803,11 @@ esp_err_t cluster_master_get_slave_info(uint8_t slot_index, cluster_slave_t *sla
 /**
  * @brief Update slave's share counter when pool responds
  * Called from cluster_integration.c when pool accepts/rejects a share
+ * @param slave_id Slave ID (0-7)
+ * @param accepted true if pool accepted, false if rejected
+ * @param pool_id Pool ID (0=primary, 1=secondary)
  */
-void cluster_master_update_slave_share_count(uint8_t slave_id, bool accepted)
+void cluster_master_update_slave_share_count(uint8_t slave_id, bool accepted, uint8_t pool_id)
 {
     if (!g_master || slave_id >= CLUSTER_MAX_SLAVES) {
         return;
@@ -800,12 +816,24 @@ void cluster_master_update_slave_share_count(uint8_t slave_id, bool accepted)
     xSemaphoreTake(g_master->slaves_mutex, portMAX_DELAY);
     if (accepted) {
         g_master->slaves[slave_id].shares_accepted++;
-        ESP_LOGI(TAG, "Slave %d shares_accepted now: %lu", slave_id,
-                 (unsigned long)g_master->slaves[slave_id].shares_accepted);
+        // Track per-pool stats
+        if (pool_id == 1) {
+            g_master->slaves[slave_id].shares_accepted_secondary++;
+        } else {
+            g_master->slaves[slave_id].shares_accepted_primary++;
+        }
+        ESP_LOGI(TAG, "Slave %d shares_accepted now: %lu (pool %d)", slave_id,
+                 (unsigned long)g_master->slaves[slave_id].shares_accepted, pool_id);
     } else {
         g_master->slaves[slave_id].shares_rejected++;
-        ESP_LOGW(TAG, "Slave %d shares_rejected now: %lu", slave_id,
-                 (unsigned long)g_master->slaves[slave_id].shares_rejected);
+        // Track per-pool stats
+        if (pool_id == 1) {
+            g_master->slaves[slave_id].shares_rejected_secondary++;
+        } else {
+            g_master->slaves[slave_id].shares_rejected_primary++;
+        }
+        ESP_LOGW(TAG, "Slave %d shares_rejected now: %lu (pool %d)", slave_id,
+                 (unsigned long)g_master->slaves[slave_id].shares_rejected, pool_id);
     }
     xSemaphoreGive(g_master->slaves_mutex);
 }
