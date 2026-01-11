@@ -18,6 +18,20 @@
     - Visual split bar showing pool distribution percentage
   - API endpoint `/api/cluster/status` now returns per-pool stats
 
+### Bug Fixes
+
+- **Pool-Aware Merkle Root Computation**: Fixed critical bug where dual pool mode used wrong pool's coinbase/extranonce data when computing merkle roots for slaves, causing all shares from one pool to be rejected.
+  - Notify data is now stored per-pool (separate storage for primary and secondary)
+  - Merkle roots are computed using the correct pool's data based on work's pool_id
+
+- **Work Rebroadcast Timing Sync**: Work rebroadcast interval now syncs with auto-timing instead of being hardcoded at 700ms.
+  - Ensures work distribution aligns with ASIC mining cycle
+  - Reduces stale share rejections when auto-timing adjusts interval
+
+- **Job Mapping Pool Collision**: Job mapping lookup now includes pool_id to prevent collisions when both pools send jobs with the same hash.
+  - First tries exact match (numeric_id + pool_id)
+  - Falls back to numeric_id only for backwards compatibility
+
 ### Protocol Changes
 
 - Added `pool_id` field to cluster work messages (CLWRK)
