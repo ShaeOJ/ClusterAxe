@@ -1,6 +1,6 @@
 # ClusterAxe Release Notes
 
-## v1.1.0 (January 10, 2026)
+## v1.1.0 (January 11, 2026)
 
 ### New Features
 
@@ -9,6 +9,14 @@
   - Slave shares are routed back to the correct pool based on which pool's work they mined
   - Pool difficulty is synced per-pool to slaves
   - Backwards compatible: Old slaves still work but only mine primary pool
+
+- **Per-Pool Share Tracking**: Track and display shares separately for each pool in dual pool cluster mode.
+  - Cluster page shows per-pool share counts when dual pool is active
+  - Master dashboard displays "Dual Pool Distribution" section with:
+    - Per-pool share counts (accepted/rejected)
+    - Estimated hashrate per pool (based on share ratio)
+    - Visual split bar showing pool distribution percentage
+  - API endpoint `/api/cluster/status` now returns per-pool stats
 
 ### Protocol Changes
 
