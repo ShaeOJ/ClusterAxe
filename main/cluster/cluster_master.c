@@ -12,6 +12,7 @@
 #include "cluster.h"
 #include "cluster_protocol.h"
 #include "cluster_config.h"
+#include "auto_timing.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "string.h"
@@ -638,12 +639,15 @@ static void coordinator_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Coordinator task started");
 
-    const int64_t WORK_REBROADCAST_INTERVAL_MS = 700;  // Re-broadcast every 700ms (with job->en2 mapping fix)
-
     while (1) {
         int64_t now = esp_timer_get_time() / 1000;
         uint32_t total_hashrate = 0;
         bool needs_recalc = false;  // Flag to defer calculate_nonce_ranges()
+
+        // Get work rebroadcast interval from auto-timing (syncs with ASIC job interval)
+        // This ensures work distribution is aligned with mining cycle
+        uint16_t timing_interval = auto_timing_get_interval();
+        int64_t work_rebroadcast_interval = (timing_interval > 0) ? timing_interval : 700;
 
         // Collect list of slaves that need work re-broadcast
         uint8_t slaves_needing_work[CLUSTER_MAX_SLAVES];
@@ -684,7 +688,7 @@ static void coordinator_task(void *pvParameters)
                 // Uses last_work_sent which is updated by send_work_to_slave()
                 // Re-broadcast if: work is valid AND enough time has passed since last send
                 int64_t time_since_work = now - slave->last_work_sent;
-                if (g_master->work_valid && time_since_work > WORK_REBROADCAST_INTERVAL_MS) {
+                if (g_master->work_valid && time_since_work > work_rebroadcast_interval) {
                     slaves_needing_work[work_rebroadcast_count++] = i;
                 }
             }

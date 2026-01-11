@@ -407,10 +407,30 @@ void cluster_master_store_job_mapping(uint32_t numeric_id, const char *job_id_st
     job_mapping_index++;
 }
 
-static bool cluster_master_find_job_mapping(uint32_t numeric_id, char *job_id_str, size_t max_len)
+/**
+ * @brief Find job mapping by numeric ID and pool ID
+ * @param numeric_id Numeric job ID (hash of job_id string)
+ * @param pool_id Pool ID (0=primary, 1=secondary) - required to avoid collisions in dual pool mode
+ * @param job_id_str Output buffer for job ID string
+ * @param max_len Maximum length of output buffer
+ * @return true if mapping found, false otherwise
+ */
+static bool cluster_master_find_job_mapping(uint32_t numeric_id, uint8_t pool_id, char *job_id_str, size_t max_len)
 {
+    // First try to find exact match (same numeric_id AND pool_id)
+    for (int i = 0; i < MAX_JOB_MAPPINGS; i++) {
+        if (job_mappings[i].valid &&
+            job_mappings[i].numeric_id == numeric_id &&
+            job_mappings[i].pool_id == pool_id) {
+            strncpy(job_id_str, job_mappings[i].job_id_str, max_len - 1);
+            return true;
+        }
+    }
+    // Fallback: try to find by numeric_id only (for backwards compatibility)
     for (int i = 0; i < MAX_JOB_MAPPINGS; i++) {
         if (job_mappings[i].valid && job_mappings[i].numeric_id == numeric_id) {
+            ESP_LOGW(TAG, "Job mapping found by numeric_id only (pool mismatch: stored=%d, requested=%d)",
+                     job_mappings[i].pool_id, pool_id);
             strncpy(job_id_str, job_mappings[i].job_id_str, max_len - 1);
             return true;
         }
@@ -428,12 +448,13 @@ void stratum_submit_share_from_cluster(uint32_t job_id, uint32_t nonce,
         return;
     }
 
-    // Look up the original job_id string
+    // Look up the original job_id string (include pool_id to avoid dual pool collisions)
     char job_id_str[32];
-    if (!cluster_master_find_job_mapping(job_id, job_id_str, sizeof(job_id_str))) {
+    if (!cluster_master_find_job_mapping(job_id, pool_id, job_id_str, sizeof(job_id_str))) {
         // Fallback: convert numeric ID to hex string
         snprintf(job_id_str, sizeof(job_id_str), "%08" PRIx32, job_id);
-        ESP_LOGE(TAG, "JOB MAPPING NOT FOUND! job_id=%08" PRIx32 " - share will likely be REJECTED by pool", job_id);
+        ESP_LOGE(TAG, "JOB MAPPING NOT FOUND! job_id=%08" PRIx32 " pool=%d - share will likely be REJECTED by pool",
+                 job_id, pool_id);
     }
 
     // Convert extranonce2 bytes to hex string
