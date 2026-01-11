@@ -286,60 +286,10 @@ bool cluster_master_compute_merkle_root(const uint8_t *extranonce2, uint8_t extr
     return true;
 }
 
-// Track cluster work distribution counts for pool balance
-static uint32_t cluster_primary_distributed = 0;
-static uint32_t cluster_secondary_distributed = 0;
-
-/**
- * @brief Check if we should distribute work from this pool based on pool balance
- * Maintains proper ratio by tracking actual distribution counts
- * @param pool_id Pool sending the work (0=primary, 1=secondary)
- * @return true if work should be distributed, false to skip
- */
-static bool cluster_should_distribute_work(uint8_t pool_id)
-{
-    if (!g_global_state) return true;
-
-    // Get pool balance (percentage for primary pool, e.g., 50 means 50% primary, 50% secondary)
-    int primary_pct = g_global_state->SYSTEM_MODULE.pool_balance;
-    if (primary_pct <= 0) primary_pct = 1;
-    if (primary_pct >= 100) primary_pct = 99;
-
-    uint32_t total = cluster_primary_distributed + cluster_secondary_distributed;
-
-    // Always distribute first few to get started
-    if (total < 10) {
-        if (pool_id == 0) cluster_primary_distributed++;
-        else cluster_secondary_distributed++;
-        return true;
-    }
-
-    // Calculate target counts based on current total and desired ratio
-    uint32_t target_primary = (total * primary_pct) / 100;
-    uint32_t target_secondary = total - target_primary;
-
-    if (pool_id == 0) {
-        // Primary pool work - check if we need more primary distributions
-        if (cluster_primary_distributed <= target_primary) {
-            cluster_primary_distributed++;
-            return true;  // Distribute primary pool work
-        }
-        // We have enough primary, skip this one
-        ESP_LOGD(TAG, "Pool balance: skipping primary (have %lu, target %lu)",
-                 (unsigned long)cluster_primary_distributed, (unsigned long)target_primary);
-        return false;
-    } else {
-        // Secondary pool work - check if we need more secondary distributions
-        if (cluster_secondary_distributed <= target_secondary) {
-            cluster_secondary_distributed++;
-            return true;  // Distribute secondary pool work
-        }
-        // We have enough secondary, skip this one
-        ESP_LOGD(TAG, "Pool balance: skipping secondary (have %lu, target %lu)",
-                 (unsigned long)cluster_secondary_distributed, (unsigned long)target_secondary);
-        return false;
-    }
-}
+// Note: Pool balance for cluster is handled by distributing ALL work from both pools.
+// The actual share split depends on timing of when pools send work and when shares are found.
+// Trying to skip/delay work distribution causes stale work and higher rejection rates.
+// For precise pool balance control, use single pool mode or accept natural timing-based split.
 
 void cluster_master_on_mining_notify(GlobalState *GLOBAL_STATE,
                                       const mining_notify *notification,
@@ -351,15 +301,9 @@ void cluster_master_on_mining_notify(GlobalState *GLOBAL_STATE,
         return;
     }
 
-    // Always store notification data (needed for merkle root computation even if we skip distribution)
+    // Store notification data for merkle root computation when distributing to slaves
+    // Each pool has its own storage to avoid overwriting during dual pool mode
     store_notify_data(notification, extranonce_str, extranonce_2_len, pool_id);
-
-    // Check pool balance to decide if we should distribute this work
-    // This ensures cluster work distribution matches the configured pool balance ratio
-    if (!cluster_should_distribute_work(pool_id)) {
-        ESP_LOGD(TAG, "Skipping cluster distribution for pool %d (balancing)", pool_id);
-        return;
-    }
 
     ESP_LOGI(TAG, "Converting mining.notify to cluster work: job=%s, pool=%d",
              notification->job_id, pool_id);
