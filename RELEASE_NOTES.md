@@ -32,6 +32,11 @@
   - First tries exact match (numeric_id + pool_id)
   - Falls back to numeric_id only for backwards compatibility
 
+- **Pool Balance Applied to Cluster Distribution**: Cluster work distribution now respects the pool balance setting.
+  - Previously all work from both pools was distributed regardless of balance
+  - Now tracks distribution counts per pool and maintains configured ratio
+  - Actual share distribution should match pool balance setting
+
 ### Protocol Changes
 
 - Added `pool_id` field to cluster work messages (CLWRK)
