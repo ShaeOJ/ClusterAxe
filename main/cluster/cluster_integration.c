@@ -180,8 +180,8 @@ void cluster_master_store_job_mapping(uint32_t numeric_id, const char *job_id_st
                                        const char *extranonce2, uint32_t ntime, uint32_t version,
                                        uint8_t pool_id);
 
-// Store notification data needed for merkle root computation
-static struct {
+// Store notification data needed for merkle root computation (per-pool for dual pool support)
+typedef struct {
     char *coinbase_1;
     char *coinbase_2;
     char *extranonce_str;
@@ -189,7 +189,9 @@ static struct {
     uint8_t (*merkle_branches)[32];
     int n_merkle_branches;
     bool valid;
-} g_stored_notify = {0};
+} stored_notify_t;
+
+static stored_notify_t g_stored_notify[2] = {0};  // Index 0 = primary, 1 = secondary
 
 /**
  * @brief Convert hex string to bytes
@@ -204,50 +206,65 @@ static void hex_to_bytes(const char *hex, uint8_t *bytes, size_t len)
 
 /**
  * @brief Store notification data for later merkle root computation
+ * @param notification Mining notification from pool
+ * @param extranonce_str Pool's extranonce string
+ * @param extranonce_2_len Length of extranonce2
+ * @param pool_id Pool ID (0=primary, 1=secondary)
  */
 static void store_notify_data(const mining_notify *notification,
                                const char *extranonce_str,
-                               int extranonce_2_len)
+                               int extranonce_2_len,
+                               uint8_t pool_id)
 {
+    if (pool_id > 1) pool_id = 0;  // Safety check
+    stored_notify_t *notify = &g_stored_notify[pool_id];
+
     // Free old data
-    if (g_stored_notify.coinbase_1) free(g_stored_notify.coinbase_1);
-    if (g_stored_notify.coinbase_2) free(g_stored_notify.coinbase_2);
-    if (g_stored_notify.extranonce_str) free(g_stored_notify.extranonce_str);
-    if (g_stored_notify.merkle_branches) free(g_stored_notify.merkle_branches);
+    if (notify->coinbase_1) free(notify->coinbase_1);
+    if (notify->coinbase_2) free(notify->coinbase_2);
+    if (notify->extranonce_str) free(notify->extranonce_str);
+    if (notify->merkle_branches) free(notify->merkle_branches);
 
     // Store new data
-    g_stored_notify.coinbase_1 = notification->coinbase_1 ? strdup(notification->coinbase_1) : NULL;
-    g_stored_notify.coinbase_2 = notification->coinbase_2 ? strdup(notification->coinbase_2) : NULL;
-    g_stored_notify.extranonce_str = extranonce_str ? strdup(extranonce_str) : NULL;
-    g_stored_notify.extranonce_2_len = extranonce_2_len;
+    notify->coinbase_1 = notification->coinbase_1 ? strdup(notification->coinbase_1) : NULL;
+    notify->coinbase_2 = notification->coinbase_2 ? strdup(notification->coinbase_2) : NULL;
+    notify->extranonce_str = extranonce_str ? strdup(extranonce_str) : NULL;
+    notify->extranonce_2_len = extranonce_2_len;
 
     // Copy merkle branches
     if (notification->n_merkle_branches > 0 && notification->merkle_branches) {
-        g_stored_notify.merkle_branches = malloc(notification->n_merkle_branches * 32);
-        if (g_stored_notify.merkle_branches) {
-            memcpy(g_stored_notify.merkle_branches, notification->merkle_branches,
+        notify->merkle_branches = malloc(notification->n_merkle_branches * 32);
+        if (notify->merkle_branches) {
+            memcpy(notify->merkle_branches, notification->merkle_branches,
                    notification->n_merkle_branches * 32);
         }
-        g_stored_notify.n_merkle_branches = notification->n_merkle_branches;
+        notify->n_merkle_branches = notification->n_merkle_branches;
     } else {
-        g_stored_notify.merkle_branches = NULL;
-        g_stored_notify.n_merkle_branches = 0;
+        notify->merkle_branches = NULL;
+        notify->n_merkle_branches = 0;
     }
 
-    g_stored_notify.valid = true;
-    ESP_LOGD(TAG, "Stored notify data: cb1=%s, branches=%d",
-             g_stored_notify.coinbase_1 ? "yes" : "no", g_stored_notify.n_merkle_branches);
+    notify->valid = true;
+    ESP_LOGD(TAG, "Stored notify data for pool %d: cb1=%s, branches=%d",
+             pool_id, notify->coinbase_1 ? "yes" : "no", notify->n_merkle_branches);
 }
 
 /**
  * @brief Compute merkle root for a specific extranonce2
  * This allows each slave to have a unique merkle root based on their extranonce2
+ * @param extranonce2 Slave's unique extranonce2 bytes
+ * @param extranonce2_len Length of extranonce2
+ * @param merkle_root_out Output buffer for computed merkle root (32 bytes)
+ * @param pool_id Pool ID (0=primary, 1=secondary)
  */
 bool cluster_master_compute_merkle_root(const uint8_t *extranonce2, uint8_t extranonce2_len,
-                                         uint8_t *merkle_root_out)
+                                         uint8_t *merkle_root_out, uint8_t pool_id)
 {
-    if (!g_stored_notify.valid || !g_stored_notify.coinbase_1 || !g_stored_notify.coinbase_2) {
-        ESP_LOGW(TAG, "No stored notify data for merkle computation");
+    if (pool_id > 1) pool_id = 0;  // Safety check
+    stored_notify_t *notify = &g_stored_notify[pool_id];
+
+    if (!notify->valid || !notify->coinbase_1 || !notify->coinbase_2) {
+        ESP_LOGW(TAG, "No stored notify data for pool %d merkle computation", pool_id);
         return false;
     }
 
@@ -259,13 +276,12 @@ bool cluster_master_compute_merkle_root(const uint8_t *extranonce2, uint8_t extr
     extranonce2_str[extranonce2_len * 2] = '\0';
 
     // Calculate coinbase hash and merkle root using mining.h functions
-    // (mining.h is already included via mining.h)
     uint8_t coinbase_hash[32];
-    calculate_coinbase_tx_hash(g_stored_notify.coinbase_1, g_stored_notify.coinbase_2,
-                               g_stored_notify.extranonce_str, extranonce2_str, coinbase_hash);
+    calculate_coinbase_tx_hash(notify->coinbase_1, notify->coinbase_2,
+                               notify->extranonce_str, extranonce2_str, coinbase_hash);
 
-    calculate_merkle_root_hash(coinbase_hash, (const uint8_t (*)[32])g_stored_notify.merkle_branches,
-                               g_stored_notify.n_merkle_branches, merkle_root_out);
+    calculate_merkle_root_hash(coinbase_hash, (const uint8_t (*)[32])notify->merkle_branches,
+                               notify->n_merkle_branches, merkle_root_out);
 
     return true;
 }
@@ -284,7 +300,8 @@ void cluster_master_on_mining_notify(GlobalState *GLOBAL_STATE,
              notification->job_id, pool_id);
 
     // Store notification data for merkle root computation when distributing to slaves
-    store_notify_data(notification, extranonce_str, extranonce_2_len);
+    // Each pool has its own storage to avoid overwriting during dual pool mode
+    store_notify_data(notification, extranonce_str, extranonce_2_len, pool_id);
 
     cluster_work_t work = {0};
 

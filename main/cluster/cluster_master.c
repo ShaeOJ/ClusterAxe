@@ -150,11 +150,13 @@ static esp_err_t send_work_to_slave(uint8_t slave_id, const cluster_work_t *work
 
     // Compute the proper merkle root for this slave's extranonce2
     // This is essential - without the correct merkle root, the slave can't mine valid blocks
+    // Pass pool_id so we use the correct pool's coinbase/merkle data (critical for dual pool mode)
     extern bool cluster_master_compute_merkle_root(const uint8_t *extranonce2, uint8_t extranonce2_len,
-                                                    uint8_t *merkle_root_out);
+                                                    uint8_t *merkle_root_out, uint8_t pool_id);
     if (!cluster_master_compute_merkle_root(slave_work.extranonce2, slave_work.extranonce2_len,
-                                             slave_work.merkle_root)) {
-        ESP_LOGW(TAG, "Failed to compute merkle root for slave %d - work may be invalid", slave_id);
+                                             slave_work.merkle_root, slave_work.pool_id)) {
+        ESP_LOGW(TAG, "Failed to compute merkle root for slave %d pool %d - work may be invalid",
+                 slave_id, slave_work.pool_id);
     }
 
     // Use compact 250-byte buffer for ESP-NOW (skips optional display fields)
