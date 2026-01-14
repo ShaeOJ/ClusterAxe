@@ -47,7 +47,8 @@ static const char *TAG = "autotune";
 #define WATCHDOG_TASK_PRIORITY        6       // Higher priority than autotune
 
 // Temperature limits
-#define TEMP_TARGET_C         65       // Target max temperature - reject settings above this
+#define TEMP_TARGET_C         65       // Target max temperature for autotune - reject settings above this
+#define TEMP_WATCHDOG_C       68       // Watchdog trigger temperature - take protective action above this
 #define TEMP_CHECK_INTERVAL   5        // Check temp every N seconds during test
 
 // Input voltage protection
@@ -1354,10 +1355,11 @@ static void cluster_watchdog_task(void *pvParameters)
         uint16_t new_freq = current_freq;
         uint16_t new_voltage = current_voltage;
 
-        // Check temperature - if over 65°C, drop voltage
-        if (current_temp > TEMP_TARGET_C) {
-            ESP_LOGW(TAG, "WATCHDOG: Temp %.1f°C > %d°C - reducing voltage",
-                     current_temp, TEMP_TARGET_C);
+        // Check temperature - if over 68°C, drop frequency and voltage to safe levels
+        if (current_temp > TEMP_WATCHDOG_C) {
+            ESP_LOGW(TAG, "WATCHDOG: Temp %.1f°C > %d°C - reducing freq & voltage",
+                     current_temp, TEMP_WATCHDOG_C);
+            new_freq = get_lower_freq_step(current_freq);
             new_voltage = get_lower_voltage_step(current_voltage);
             need_action = true;
         }
@@ -1449,10 +1451,11 @@ static void cluster_watchdog_task(void *pvParameters)
             uint16_t new_slave_freq = slave_info.frequency;
             uint16_t new_slave_voltage = slave_info.core_voltage;
 
-            // Check slave temperature - if over 65°C, drop voltage
-            if (slave_temp > TEMP_TARGET_C) {
-                ESP_LOGW(TAG, "WATCHDOG: Slave %d temp %.1f°C > %d°C - reducing voltage",
-                         i, slave_temp, TEMP_TARGET_C);
+            // Check slave temperature - if over 68°C, drop frequency and voltage
+            if (slave_temp > TEMP_WATCHDOG_C) {
+                ESP_LOGW(TAG, "WATCHDOG: Slave %d temp %.1f°C > %d°C - reducing freq & voltage",
+                         i, slave_temp, TEMP_WATCHDOG_C);
+                new_slave_freq = get_lower_freq_step(slave_info.frequency);
                 new_slave_voltage = get_lower_voltage_step(slave_info.core_voltage);
                 slave_need_action = true;
             }

@@ -31,7 +31,7 @@
 
     <!-- Slave Mode Banner -->
     <ng-container *ngIf="clusterStatus$ | async as clusterStatus">
-        <div *ngIf="clusterStatus.mode === 2" class="surface-card border-round p-3 mb-3">
+        <div *ngIf="clusterStatus.mode === 2" class="card p-3 mb-3">
             <div class="flex align-items-center gap-3">
                 <div class="flex align-items-center justify-content-center bg-blue-100 border-round" style="width: 48px; height: 48px;">
                     <i class="pi pi-wifi text-blue-600 text-2xl"></i>
@@ -61,7 +61,7 @@
     <ng-container *ngIf="clusterStatus$ | async as clusterStatus">
         <div class="grid mb-3" *ngIf="clusterStatus.mode === 1">
             <div class="col-12">
-                <div class="surface-card border-round p-3 mb-2">
+                <div class="card p-3 mb-2">
                     <div class="flex align-items-center justify-content-between mb-3">
                         <div class="flex align-items-center gap-2">
                             <i class="pi pi-server text-primary text-xl"></i>

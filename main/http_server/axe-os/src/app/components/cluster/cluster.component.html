@@ -106,7 +106,7 @@
                             <i class="pi pi-shield" [ngClass]="{'text-green-500': watchdogEnabled, 'text-500': !watchdogEnabled}"></i>
                             Safety Watchdog
                         </span>
-                        <span class="text-500 text-xs">Temp &gt;65°C / Vin &lt;4.9V protection</span>
+                        <span class="text-500 text-xs">Temp &gt;68°C / Vin &lt;4.9V protection</span>
                     </div>
                 </div>
             </div>
@@ -317,8 +317,12 @@
                         <div class="flex align-items-center gap-2">
                             <i class="pi pi-bolt text-orange-500"></i>
                             <div>
-                                <div class="text-xs text-500">Voltage</div>
-                                <div class="font-bold">{{masterInfo.coreVoltageActual || masterInfo.coreVoltage}} mV</div>
+                                <div class="text-xs text-500">Core / Input</div>
+                                <div class="font-bold">
+                                    {{masterInfo.coreVoltageActual || masterInfo.coreVoltage}} mV
+                                    <span class="text-500 font-normal">/ </span>
+                                    <span [ngClass]="{'text-red-500': masterInfo.voltage / 1000 < 4.9, 'text-orange-500': masterInfo.voltage / 1000 >= 4.9 && masterInfo.voltage / 1000 < 5.0}">{{masterInfo.voltage / 1000 | number:'1.2-2'}}V</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -566,8 +570,12 @@
                                         <div class="flex align-items-center gap-2">
                                             <i class="pi pi-bolt text-orange-500"></i>
                                             <div>
-                                                <div class="text-xs text-500">Voltage</div>
-                                                <div class="font-bold">{{slave.coreVoltage}} mV</div>
+                                                <div class="text-xs text-500">Core / Input</div>
+                                                <div class="font-bold">
+                                                    {{slave.coreVoltage}} mV
+                                                    <span class="text-500 font-normal">/ </span>
+                                                    <span [ngClass]="{'text-red-500': slave.voltageIn < 4.9, 'text-orange-500': slave.voltageIn >= 4.9 && slave.voltageIn < 5.0}">{{slave.voltageIn | number:'1.2-2'}}V</span>
+                                                </div>
                                             </div>
                                         </div>
                                         <!-- Shares -->
