@@ -49,68 +49,62 @@
 - **Fix**: Updated `version.txt` to `ClusterAxe-v1.0.3`
 - **Note**: This should be fixed in the repo for future releases
 
-## Auto-Tuner Improvement Plan
+## Auto-Tuner Improvements (IMPLEMENTED)
 
-### Current State
-- Tests frequency steps: 450, 500, 525, 550, 600, 625, 650, 700, 725, 750, 800 MHz
-- Tests voltage steps: 1100, 1150, 1200, 1225, 1250, 1275, 1300 mV
-- Mode limits:
-  - Efficiency: max 625 MHz, 1175 mV
-  - Balanced: max 700 MHz, 1200 mV
-  - Hashrate: max 800 MHz, 1300 mV
-- Test time: 20s stabilize + 45s test per combination
-- Temperature limit: 65°C (autotune), 68°C (watchdog)
+### Changes Made to `cluster_autotune.c`
 
-### Problems
-1. ASICs vary widely - same settings produce different results
-2. Efficiency mode doesn't push enough to find true optimal
-3. No validation that target hashrate is actually achieved
-4. Balanced mode complex - should be simpler
-5. Long test times for many combinations
+#### Extended Frequency/Voltage Ranges
+- Frequency steps: 450-900 MHz (added 850, 900 for hashrate mode)
+- Voltage steps: 1100-1350 mV (added 1325, 1350 for hashrate mode)
 
-### Proposed Improvements
+#### Mode-Specific Limits
+| Mode | Max Freq | Max Voltage | Temp Limit |
+|------|----------|-------------|------------|
+| Efficiency | 625 MHz | 1200 mV | 65°C |
+| Balanced | 700 MHz | 1250 mV | 60°C |
+| Hashrate | 900 MHz | 1350 mV | 68°C |
+
+#### New Hashrate Validation
+- Expected hashrate calculation: `freq × small_core_count × asic_count / 1000`
+- Hashrate ratio tracking: `actual / expected` (threshold: 90%)
+- Hashrate stability tracking via coefficient of variation
+- Logs show actual vs expected percentage for each test
 
 #### High Hashrate Mode
-- **Goal**: Push limits, maximize hashrate regardless of efficiency
-- Extend frequency range: test up to 850-900 MHz if ASIC supports
-- Higher temp tolerance: allow up to 68°C during testing
-- Voltage headroom: allow up to 1350 mV
-- Validate hashrate: ensure measured hashrate matches expected
-- Track hashrate stability (variance over test period)
+- Pushes limits: up to 900 MHz, 1350 mV
+- Higher temp tolerance: 68°C (same as watchdog)
+- Requires at least 75% of expected hashrate
+- Optimizes for maximum actual hashrate
 
 #### Efficiency Mode
-- **Goal**: Best J/TH while maintaining good actual hashrate
-- Focus on efficiency (J/TH) but require minimum hashrate threshold
-- Validate actual vs expected hashrate ratio (>90%)
-- If hashrate underperforms, try higher voltage at same freq
-- Adaptive testing: if good efficiency found, test nearby combinations more
-- Shorter stabilization for initial screening, longer for promising settings
+- Best J/TH while maintaining ≥90% of expected hashrate
+- Validates hashrate ratio before accepting a result
+- Warns when hashrate underperforms (may need more voltage)
+- Temperature limit: 65°C
 
-#### Balanced Mode
-- **Goal**: Simple, safe, good results with device defaults
-- Start from device default frequency (from config)
-- Find minimum voltage that achieves target hashrate
-- Don't push beyond default frequency
-- Quick test: only vary voltage to find sweet spot
-- Conservative temps: stay under 60°C
-- Fallback: if can't achieve target, reduce frequency and retry
+#### Balanced Mode (Complete Rewrite)
+- **Voltage-only tuning** from device defaults
+- Uses device's default frequency from config
+- Only iterates through voltage steps
+- Finds minimum voltage that achieves 90% of expected hashrate
+- Conservative: 60°C temperature limit
+- Much faster: only tests 7-9 voltage combinations instead of 77+
 
-### Key Metrics to Track
+### Key Metrics Tracked
 1. **Expected hashrate**: freq × cores × asic_count / 1000
 2. **Actual hashrate**: measured from ASIC
-3. **Efficiency**: J/TH = (power × 1000) / hashrate_GH
-4. **Hashrate ratio**: actual / expected (should be >90%)
-5. **Temp headroom**: max_allowed - current
-6. **Power headroom**: PSU limit - current
+3. **Hashrate ratio**: actual / expected
+4. **Efficiency**: J/TH = (power × 1000) / hashrate_GH
+5. **Stability**: coefficient of variation (std_dev / mean)
+6. **Min/Max hashrate** during test period
 
-### Implementation Steps
-1. Add hashrate validation (actual vs expected)
-2. Add hashrate stability tracking (variance)
-3. Implement mode-specific logic changes
-4. Add adaptive testing for efficiency mode
-5. Simplify balanced mode to voltage-only tuning
-6. Add higher limits for hashrate mode
-7. Update UI to show hashrate validation status
+### Helper Functions Added
+- `calculate_expected_hashrate(freq_mhz)` - calculates theoretical hashrate
+- `get_device_default_frequency()` - gets ASIC default freq from config
+- `get_device_default_voltage()` - gets ASIC default voltage from config
+- `get_temp_limit_for_mode(mode)` - returns mode-specific temp limit
+- `calculate_hashrate_ratio(actual, expected)` - computes ratio
+- `calculate_hashrate_stability()` - computes coefficient of variation
 
 ## Dual Pool Cluster Mode (v1.1.x) - NOT PRODUCTION READY
 
