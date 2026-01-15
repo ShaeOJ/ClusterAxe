@@ -245,8 +245,8 @@
         <!-- END CLUSTER AUTO-TUNE SECTION -->
 
         <!-- Master Device Card -->
-        <div class="surface-card border-round p-3 mb-3 cursor-pointer hover:surface-hover transition-colors transition-duration-150"
-             [ngClass]="{'border-primary border-2': masterExpanded, 'border-1 border-transparent': !masterExpanded}"
+        <div class="card p-3 mb-3 cursor-pointer hover:surface-hover transition-colors transition-duration-150"
+             [ngClass]="{'border-primary border-2': masterExpanded}"
              (click)="toggleMasterExpanded()">
             <div class="grid align-items-center">
                 <!-- Left: Icon + Name + Autotune Badge -->
@@ -337,7 +337,7 @@
         </div>
 
         <!-- Expanded Master Configuration Panel -->
-        <div class="surface-card border-round p-4 mb-3 border-left-3 border-primary"
+        <div class="card p-4 mb-3 border-left-3 border-primary"
              *ngIf="masterExpanded"
              @fadeInOut>
             <div class="grid">

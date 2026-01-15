@@ -1846,14 +1846,136 @@ static esp_err_t cluster_slaves_api_handler(httpd_req_t *req)
     httpd_resp_set_type(req, "application/json");
     set_cors_headers(req);
 
+    // Read request body
     char buf[256];
     int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
-    if (received > 0) {
-        buf[received] = '\0';
-        ESP_LOGI(TAG, "Bulk %s: %s", action, buf);
+    if (received <= 0) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No request body");
+    }
+    buf[received] = '\0';
+    ESP_LOGI(TAG, "Bulk %s: %s", action, buf);
+
+    cJSON *root = cJSON_Parse(buf);
+    if (!root) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
     }
 
-    httpd_resp_sendstr(req, "{\"success\":true,\"affectedSlaves\":0}");
+    int affected_slaves = 0;
+    int failed_slaves = 0;
+
+    // Handle different actions
+    if (strcmp(action, "setting") == 0) {
+        // Apply setting to all slaves: {settingId: number, value: number}
+        cJSON *setting_id = cJSON_GetObjectItem(root, "settingId");
+        cJSON *value = cJSON_GetObjectItem(root, "value");
+
+        if (!setting_id || !cJSON_IsNumber(setting_id) || !value || !cJSON_IsNumber(value)) {
+            cJSON_Delete(root);
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing settingId or value");
+        }
+
+        // Build the PATCH data based on settingId
+        char patch_data[128];
+        int sid = setting_id->valueint;
+        int val = value->valueint;
+
+        // settingId: 32=frequency, 33=coreVoltage, 34=fanSpeed
+        if (sid == 32) {
+            snprintf(patch_data, sizeof(patch_data), "{\"frequency\":%d}", val);
+        } else if (sid == 33) {
+            snprintf(patch_data, sizeof(patch_data), "{\"coreVoltage\":%d}", val);
+        } else if (sid == 34) {
+            snprintf(patch_data, sizeof(patch_data), "{\"manualFanSpeed\":%d,\"autofanspeed\":0}", val);
+        } else {
+            cJSON_Delete(root);
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown settingId");
+        }
+
+        ESP_LOGI(TAG, "Applying to all slaves: %s", patch_data);
+
+        // Iterate through all slaves
+        for (int i = 0; i < CONFIG_CLUSTER_MAX_SLAVES; i++) {
+            cluster_slave_t slave_info;
+            if (cluster_master_get_slave_info(i, &slave_info) != ESP_OK) {
+                continue;
+            }
+            if (slave_info.state != SLAVE_STATE_ACTIVE) {
+                continue;
+            }
+            if (slave_info.ip_addr[0] == '\0' || strcmp(slave_info.ip_addr, "N/A") == 0) {
+                continue;
+            }
+
+            char *response = NULL;
+            esp_err_t err = http_proxy_to_slave(slave_info.ip_addr, "/api/system", HTTP_METHOD_PATCH, patch_data, &response);
+            if (response) free(response);
+
+            if (err == ESP_OK) {
+                affected_slaves++;
+                ESP_LOGI(TAG, "Applied setting to slave %d (%s)", i, slave_info.hostname);
+            } else {
+                failed_slaves++;
+                ESP_LOGW(TAG, "Failed to apply setting to slave %d (%s)", i, slave_info.hostname);
+            }
+        }
+    }
+    else if (strcmp(action, "command") == 0) {
+        // Execute command on all slaves: {command: "restart" | "identify"}
+        cJSON *command = cJSON_GetObjectItem(root, "command");
+        if (!command || !cJSON_IsString(command)) {
+            cJSON_Delete(root);
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing command");
+        }
+
+        const char *cmd = command->valuestring;
+        ESP_LOGI(TAG, "Executing command '%s' on all slaves", cmd);
+
+        // Iterate through all slaves
+        for (int i = 0; i < CONFIG_CLUSTER_MAX_SLAVES; i++) {
+            cluster_slave_t slave_info;
+            if (cluster_master_get_slave_info(i, &slave_info) != ESP_OK) {
+                continue;
+            }
+            if (slave_info.state != SLAVE_STATE_ACTIVE) {
+                continue;
+            }
+            if (slave_info.ip_addr[0] == '\0' || strcmp(slave_info.ip_addr, "N/A") == 0) {
+                continue;
+            }
+
+            char *response = NULL;
+            esp_err_t err = ESP_FAIL;
+
+            if (strcmp(cmd, "restart") == 0) {
+                err = http_proxy_to_slave(slave_info.ip_addr, "/api/system/restart", HTTP_METHOD_POST, "{}", &response);
+            } else if (strcmp(cmd, "identify") == 0) {
+                err = http_proxy_to_slave(slave_info.ip_addr, "/api/system/identify", HTTP_METHOD_POST, "{}", &response);
+            }
+
+            if (response) free(response);
+
+            if (err == ESP_OK) {
+                affected_slaves++;
+                ESP_LOGI(TAG, "Executed '%s' on slave %d (%s)", cmd, i, slave_info.hostname);
+            } else {
+                failed_slaves++;
+                ESP_LOGW(TAG, "Failed to execute '%s' on slave %d (%s)", cmd, i, slave_info.hostname);
+            }
+        }
+    }
+    else {
+        cJSON_Delete(root);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown action");
+    }
+
+    cJSON_Delete(root);
+
+    // Build response
+    char response[128];
+    snprintf(response, sizeof(response),
+             "{\"success\":true,\"affectedSlaves\":%d,\"failedSlaves\":%d}",
+             affected_slaves, failed_slaves);
+    httpd_resp_sendstr(req, response);
     return ESP_OK;
 }
 #endif // CLUSTER_IS_MASTER
