@@ -1147,8 +1147,9 @@ export class HomeComponent implements OnInit, OnDestroy {
     const totalHashrate = this.getClusterTotalHashrate(status, info.hashRate);
     const totalPower = this.getTotalClusterPower(status, info.power);
     if (totalHashrate <= 0 || totalPower <= 0) return 0;
-    // J/TH = (Watts * 1000) / (GH/s) = Watts / (TH/s)
-    const hashrateInTH = totalHashrate / 1000; // Convert GH/s to TH/s
+    // totalHashrate is in GH/s * 100, so divide by 100 to get GH/s, then by 1000 to get TH/s
+    // J/TH = Watts / TH/s
+    const hashrateInTH = totalHashrate / 100 / 1000; // Convert from GH/s*100 to TH/s
     return (totalPower / hashrateInTH);
   }
 
