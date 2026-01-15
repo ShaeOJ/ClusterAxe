@@ -37,7 +37,7 @@ typedef enum {
 typedef enum {
     AUTOTUNE_MODE_EFFICIENCY = 0,  // Best J/TH with ≥90% hashrate validation, max 625 MHz, temp ≤65°C
     AUTOTUNE_MODE_HASHRATE,        // Push limits: max hashrate up to 900 MHz, 1350 mV, temp ≤68°C
-    AUTOTUNE_MODE_BALANCED         // Voltage-only tuning from device defaults, temp ≤60°C
+    AUTOTUNE_MODE_BALANCED         // Conservative: 500-700 MHz with voltage tuning, temp ≤60°C
 } autotune_mode_t;
 
 // ============================================================================

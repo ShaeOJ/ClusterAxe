@@ -82,13 +82,12 @@
 - Warns when hashrate underperforms (may need more voltage)
 - Temperature limit: 65°C
 
-#### Balanced Mode (Complete Rewrite)
-- **Voltage-only tuning** from device defaults
-- Uses device's default frequency from config
-- Only iterates through voltage steps
-- Finds minimum voltage that achieves 90% of expected hashrate
+#### Balanced Mode (Conservative Tuning)
+- Tests frequencies: **500, 550, 600, 650, 700 MHz**
+- Tests voltage steps at each frequency
 - Conservative: 60°C temperature limit
-- Much faster: only tests 7-9 voltage combinations instead of 77+
+- Finds best efficiency while achieving ≥90% of expected hashrate
+- Total tests: 5 frequencies × 7 voltages = ~35 combinations
 
 ### Key Metrics Tracked
 1. **Expected hashrate**: freq × cores × asic_count / 1000

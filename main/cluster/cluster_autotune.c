@@ -1047,202 +1047,223 @@ void cluster_autotune_task(void *pvParameters)
     }
 
     // ========================================================================
-    // BALANCED MODE: Voltage-only tuning from device defaults
+    // BALANCED MODE: Test common frequencies with voltage tuning
     // ========================================================================
     if (g_autotune.status.mode == AUTOTUNE_MODE_BALANCED) {
         ESP_LOGI(TAG, "========================================");
-        ESP_LOGI(TAG, "BALANCED MODE: Voltage-only tuning");
-        ESP_LOGI(TAG, "Using device default frequency, finding optimal voltage");
+        ESP_LOGI(TAG, "BALANCED MODE: Conservative freq/voltage tuning");
+        ESP_LOGI(TAG, "Testing common frequencies with voltage optimization");
         ESP_LOGI(TAG, "========================================");
 
-        // Get device default frequency - don't push beyond what the device was designed for
+        // Balanced mode frequencies to test (conservative range)
+        static const uint16_t BALANCED_FREQ_STEPS[] = {500, 550, 600, 650, 700};
+        #define NUM_BALANCED_FREQ_STEPS (sizeof(BALANCED_FREQ_STEPS) / sizeof(BALANCED_FREQ_STEPS[0]))
+
+        // Get device default frequency for reference
         uint16_t default_freq = get_device_default_frequency();
         uint16_t default_voltage = get_device_default_voltage();
 
-        // Clamp to mode limit
-        if (default_freq > freq_max) {
-            default_freq = freq_max;
-        }
-
         ESP_LOGI(TAG, "Device defaults: %d MHz, %d mV", default_freq, default_voltage);
-        ESP_LOGI(TAG, "Testing voltage range to find optimal setting...");
-
-        // Calculate expected hashrate at default frequency
-        float expected_hr = calculate_expected_hashrate(default_freq);
-        g_autotune.expected_hashrate = expected_hr;
-        ESP_LOGI(TAG, "Expected hashrate at %d MHz: %.2f GH/s", default_freq, expected_hr);
+        ESP_LOGI(TAG, "Testing frequencies: 500, 550, 600, 650, 700 MHz");
 
         // Temperature limit for balanced mode (conservative)
         uint8_t temp_limit = TEMP_BALANCED_MODE_C;
 
-        // Update progress tracking
-        int voltage_tests = get_voltage_step_count(AUTOTUNE_MODE_BALANCED);
+        // Count total tests (frequencies × voltages within limits)
+        int freq_count = 0;
+        for (int i = 0; i < NUM_BALANCED_FREQ_STEPS; i++) {
+            if (BALANCED_FREQ_STEPS[i] <= freq_max) freq_count++;
+        }
+        int voltage_count = get_voltage_step_count(AUTOTUNE_MODE_BALANCED);
+        int total_tests = freq_count * voltage_count;
+
         lock();
-        g_autotune.status.tests_total = voltage_tests;
+        g_autotune.status.tests_total = total_tests;
         g_autotune.status.tests_completed = 0;
         unlock();
 
+        ESP_LOGI(TAG, "Total tests: %d frequencies × %d voltages = %d",
+                 freq_count, voltage_count, total_tests);
+
         // Best found - start with nothing
         float best_eff = 999999.0f;
+        uint16_t best_f = default_freq;
         uint16_t best_v = default_voltage;
         float best_hr = 0;
         float best_t = 0;
 
-        // Test each voltage step at the default frequency
-        for (int vi = 0; vi < NUM_VOLTAGE_STEPS && g_autotune.task_running; vi++) {
-            uint16_t test_voltage = VOLTAGE_STEPS[vi];
+        // Test each frequency
+        for (int fi = 0; fi < NUM_BALANCED_FREQ_STEPS && g_autotune.task_running; fi++) {
+            uint16_t test_freq = BALANCED_FREQ_STEPS[fi];
 
-            // Skip voltages above mode limit
-            if (test_voltage > voltage_max) {
+            // Skip frequencies above mode limit
+            if (test_freq > freq_max) {
                 continue;
             }
 
-            // Check input voltage before each test
-            if (!check_input_voltage_protection()) {
-                ESP_LOGW(TAG, "Skipping test due to low input voltage");
-                lock();
-                g_autotune.status.tests_completed++;
-                g_autotune.status.progress_percent =
-                    (g_autotune.status.tests_completed * 100) / g_autotune.status.tests_total;
-                unlock();
-                continue;
-            }
+            // Calculate expected hashrate at this frequency
+            float expected_hr = calculate_expected_hashrate(test_freq);
+            g_autotune.expected_hashrate = expected_hr;
 
-            lock();
-            g_autotune.status.state = AUTOTUNE_STATE_ADJUSTING;
-            g_autotune.status.current_frequency = default_freq;
-            g_autotune.status.current_voltage = test_voltage;
-            unlock();
+            ESP_LOGI(TAG, "--- Testing %d MHz (expected: %.2f GH/s) ---", test_freq, expected_hr);
 
-            ESP_LOGI(TAG, "Testing: %d MHz, %d mV (%d/%d)",
-                     default_freq, test_voltage,
-                     g_autotune.status.tests_completed + 1,
-                     g_autotune.status.tests_total);
+            // Test each voltage step at this frequency
+            for (int vi = 0; vi < NUM_VOLTAGE_STEPS && g_autotune.task_running; vi++) {
+                uint16_t test_voltage = VOLTAGE_STEPS[vi];
 
-            // Apply settings
-            cluster_autotune_apply_settings(default_freq, test_voltage);
-
-            // Wait for stabilization
-            lock();
-            g_autotune.status.state = AUTOTUNE_STATE_STABILIZING;
-            unlock();
-            vTaskDelay(pdMS_TO_TICKS(AUTOTUNE_STABILIZE_TIME_MS / 2));
-
-            // Check temperature after stabilization
-            float temp = get_current_temp();
-            if (temp > temp_limit) {
-                ESP_LOGW(TAG, "Temperature %.1f°C exceeds balanced limit %d°C - skipping",
-                         temp, temp_limit);
-                lock();
-                g_autotune.status.tests_completed++;
-                g_autotune.status.progress_percent =
-                    (g_autotune.status.tests_completed * 100) / g_autotune.status.tests_total;
-                unlock();
-                continue;
-            }
-
-            // Test phase
-            lock();
-            g_autotune.status.state = AUTOTUNE_STATE_TESTING;
-            unlock();
-
-            reset_measurements();
-            bool temp_exceeded = false;
-            float max_temp_seen = 0;
-
-            for (int i = 0; i < AUTOTUNE_TEST_TIME_MS / 1000 && g_autotune.task_running; i++) {
-                vTaskDelay(pdMS_TO_TICKS(1000));
-                collect_sample();
-
-                if (i % TEMP_CHECK_INTERVAL == 0) {
-                    temp = get_current_temp();
-                    if (temp > max_temp_seen) max_temp_seen = temp;
-
-                    if (temp > temp_limit) {
-                        ESP_LOGW(TAG, "Temperature %.1f°C exceeded limit %d°C during test",
-                                 temp, temp_limit);
-                        temp_exceeded = true;
-                        break;
-                    }
-
-                    if (!check_input_voltage_protection()) {
-                        temp_exceeded = true;
-                        break;
-                    }
+                // Skip voltages above mode limit
+                if (test_voltage > voltage_max) {
+                    continue;
                 }
-            }
 
-            if (!g_autotune.task_running) break;
-
-            if (temp_exceeded) {
-                lock();
-                g_autotune.status.tests_completed++;
-                g_autotune.status.progress_percent =
-                    (g_autotune.status.tests_completed * 100) / g_autotune.status.tests_total;
-                unlock();
-                continue;
-            }
-
-            // Calculate results
-            float avg_hashrate, avg_power, avg_temp;
-            get_average_measurements(&avg_hashrate, &avg_power, &avg_temp);
-            float efficiency = calculate_efficiency(avg_hashrate, avg_power);
-            float hashrate_ratio = calculate_hashrate_ratio(avg_hashrate, expected_hr);
-
-            ESP_LOGI(TAG, "Results: %.2f GH/s (%.0f%% of expected), %.2f W, %.2f J/TH, %.1f°C",
-                     avg_hashrate, hashrate_ratio * 100, avg_power, efficiency, avg_temp);
-
-            // Balanced mode selection criteria:
-            // - Must achieve at least 90% of expected hashrate
-            // - Must be within temperature limit
-            // - Prefer lower voltage (less power) while meeting hashrate threshold
-            bool valid_hashrate = (hashrate_ratio >= HASHRATE_MIN_RATIO);
-            bool valid_temp = (avg_temp <= temp_limit);
-
-            if (valid_hashrate && valid_temp) {
-                // For balanced mode, prefer lower efficiency (better J/TH) while meeting hashrate
-                if (efficiency < best_eff) {
-                    best_eff = efficiency;
-                    best_v = test_voltage;
-                    best_hr = avg_hashrate;
-                    best_t = avg_temp;
-
+                // Check input voltage before each test
+                if (!check_input_voltage_protection()) {
+                    ESP_LOGW(TAG, "Skipping test due to low input voltage");
                     lock();
-                    g_autotune.status.best_frequency = default_freq;
-                    g_autotune.status.best_voltage = best_v;
-                    g_autotune.status.best_efficiency = best_eff;
-                    g_autotune.status.best_hashrate = best_hr;
+                    g_autotune.status.tests_completed++;
+                    g_autotune.status.progress_percent =
+                        (g_autotune.status.tests_completed * 100) / g_autotune.status.tests_total;
                     unlock();
-
-                    ESP_LOGI(TAG, "*** NEW BEST: %d MHz, %d mV (%.2f J/TH) ***",
-                             default_freq, best_v, best_eff);
+                    continue;
                 }
-            } else if (!valid_hashrate) {
-                ESP_LOGW(TAG, "Hashrate ratio %.0f%% below threshold - voltage may be too low",
-                         hashrate_ratio * 100);
-            }
 
-            // Update progress
-            lock();
-            g_autotune.status.tests_completed++;
-            g_autotune.status.progress_percent =
-                (g_autotune.status.tests_completed * 100) / g_autotune.status.tests_total;
-            unlock();
-        }
+                lock();
+                g_autotune.status.state = AUTOTUNE_STATE_ADJUSTING;
+                g_autotune.status.current_frequency = test_freq;
+                g_autotune.status.current_voltage = test_voltage;
+                unlock();
+
+                ESP_LOGI(TAG, "Testing: %d MHz, %d mV (%d/%d)",
+                         test_freq, test_voltage,
+                         g_autotune.status.tests_completed + 1,
+                         g_autotune.status.tests_total);
+
+                // Apply settings
+                cluster_autotune_apply_settings(test_freq, test_voltage);
+
+                // Wait for stabilization
+                lock();
+                g_autotune.status.state = AUTOTUNE_STATE_STABILIZING;
+                unlock();
+                vTaskDelay(pdMS_TO_TICKS(AUTOTUNE_STABILIZE_TIME_MS / 2));
+
+                // Check temperature after stabilization
+                float temp = get_current_temp();
+                if (temp > temp_limit) {
+                    ESP_LOGW(TAG, "Temperature %.1f°C exceeds balanced limit %d°C - skipping",
+                             temp, temp_limit);
+                    lock();
+                    g_autotune.status.tests_completed++;
+                    g_autotune.status.progress_percent =
+                        (g_autotune.status.tests_completed * 100) / g_autotune.status.tests_total;
+                    unlock();
+                    continue;
+                }
+
+                // Test phase
+                lock();
+                g_autotune.status.state = AUTOTUNE_STATE_TESTING;
+                unlock();
+
+                reset_measurements();
+                bool temp_exceeded = false;
+                float max_temp_seen = 0;
+
+                for (int i = 0; i < AUTOTUNE_TEST_TIME_MS / 1000 && g_autotune.task_running; i++) {
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    collect_sample();
+
+                    if (i % TEMP_CHECK_INTERVAL == 0) {
+                        temp = get_current_temp();
+                        if (temp > max_temp_seen) max_temp_seen = temp;
+
+                        if (temp > temp_limit) {
+                            ESP_LOGW(TAG, "Temperature %.1f°C exceeded limit %d°C during test",
+                                     temp, temp_limit);
+                            temp_exceeded = true;
+                            break;
+                        }
+
+                        if (!check_input_voltage_protection()) {
+                            temp_exceeded = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!g_autotune.task_running) break;
+
+                if (temp_exceeded) {
+                    lock();
+                    g_autotune.status.tests_completed++;
+                    g_autotune.status.progress_percent =
+                        (g_autotune.status.tests_completed * 100) / g_autotune.status.tests_total;
+                    unlock();
+                    continue;
+                }
+
+                // Calculate results
+                float avg_hashrate, avg_power, avg_temp;
+                get_average_measurements(&avg_hashrate, &avg_power, &avg_temp);
+                float efficiency = calculate_efficiency(avg_hashrate, avg_power);
+                float hashrate_ratio = calculate_hashrate_ratio(avg_hashrate, expected_hr);
+
+                ESP_LOGI(TAG, "Results: %.2f GH/s (%.0f%% of expected), %.2f W, %.2f J/TH, %.1f°C",
+                         avg_hashrate, hashrate_ratio * 100, avg_power, efficiency, avg_temp);
+
+                // Balanced mode selection criteria:
+                // - Must achieve at least 90% of expected hashrate
+                // - Must be within temperature limit
+                // - Prefer best efficiency while meeting hashrate threshold
+                bool valid_hashrate = (hashrate_ratio >= HASHRATE_MIN_RATIO);
+                bool valid_temp = (avg_temp <= temp_limit);
+
+                if (valid_hashrate && valid_temp) {
+                    // For balanced mode, prefer lower efficiency (better J/TH) while meeting hashrate
+                    if (efficiency < best_eff) {
+                        best_eff = efficiency;
+                        best_f = test_freq;
+                        best_v = test_voltage;
+                        best_hr = avg_hashrate;
+                        best_t = avg_temp;
+
+                        lock();
+                        g_autotune.status.best_frequency = best_f;
+                        g_autotune.status.best_voltage = best_v;
+                        g_autotune.status.best_efficiency = best_eff;
+                        g_autotune.status.best_hashrate = best_hr;
+                        unlock();
+
+                        ESP_LOGI(TAG, "*** NEW BEST: %d MHz, %d mV (%.2f J/TH) ***",
+                                 best_f, best_v, best_eff);
+                    }
+                } else if (!valid_hashrate) {
+                    ESP_LOGW(TAG, "Hashrate ratio %.0f%% below threshold - voltage may be too low",
+                             hashrate_ratio * 100);
+                }
+
+                // Update progress
+                lock();
+                g_autotune.status.tests_completed++;
+                g_autotune.status.progress_percent =
+                    (g_autotune.status.tests_completed * 100) / g_autotune.status.tests_total;
+                unlock();
+            }  // end voltage loop
+        }  // end frequency loop
 
         // Apply best found settings
-        if (g_autotune.task_running && best_v > 0) {
+        if (g_autotune.task_running && best_f > 0 && best_v > 0) {
             ESP_LOGI(TAG, "========================================");
             ESP_LOGI(TAG, "BALANCED MODE COMPLETE!");
-            ESP_LOGI(TAG, "Best settings: %d MHz, %d mV", default_freq, best_v);
+            ESP_LOGI(TAG, "Best settings: %d MHz, %d mV", best_f, best_v);
             ESP_LOGI(TAG, "Performance: %.2f GH/s, %.2f J/TH @ %.1f°C",
                      best_hr, best_eff, best_t);
             ESP_LOGI(TAG, "========================================");
 
-            cluster_autotune_apply_settings(default_freq, best_v);
+            cluster_autotune_apply_settings(best_f, best_v);
 
             // Update final best values
-            best_freq = default_freq;
+            best_freq = best_f;
             best_voltage = best_v;
             best_efficiency = best_eff;
             best_hashrate = best_hr;
