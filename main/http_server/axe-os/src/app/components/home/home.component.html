@@ -177,12 +177,11 @@
         </div>
     </ng-container>
 
-    <!-- Auto-Timing Card (Master Mode Only) -->
-    <ng-container *ngIf="clusterStatus$ | async as clusterStatus">
-        <ng-container *ngIf="autoTimingStatus$ | async as autoTiming">
-            <div class="grid mb-3" *ngIf="clusterStatus.mode === 1 && autoTiming">
-                <div class="col-12">
-                    <div class="surface-card border-round p-3">
+    <!-- Auto-Timing Card -->
+    <ng-container *ngIf="autoTimingStatus$ | async as autoTiming">
+        <div class="grid mb-3" *ngIf="autoTiming">
+            <div class="col-12">
+                <div class="card p-3 mb-0">
                         <div class="flex align-items-center justify-content-between mb-3">
                             <div class="flex align-items-center gap-2">
                                 <i class="pi pi-clock text-primary text-xl"></i>
@@ -249,10 +248,9 @@
                             <button pButton pRipple type="button" label="Recalibrate" icon="pi pi-refresh"
                                 class="p-button-sm p-button-text" (click)="recalibrateAutoTiming()"></button>
                         </div>
-                    </div>
                 </div>
             </div>
-        </ng-container>
+        </div>
     </ng-container>
 
     <div class="grid">

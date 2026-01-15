@@ -69,7 +69,7 @@ static Settings settings[NVS_CONFIG_COUNT] = {
     [NVS_CONFIG_OVERCLOCK_ENABLED]                     = {.nvs_key_name = "oc_enabled",      .type = TYPE_BOOL,                                                                         .rest_name = "overclockEnabled",                   .min = 0,  .max = 1},
 
     // Auto-timing configuration
-    [NVS_CONFIG_AUTO_TIMING_ENABLED]                   = {.nvs_key_name = "autotiming",      .type = TYPE_BOOL,  .default_value = {.b   = false},                                       .rest_name = "autoTimingEnabled",                  .min = 0,  .max = 1},
+    [NVS_CONFIG_AUTO_TIMING_ENABLED]                   = {.nvs_key_name = "autotiming",      .type = TYPE_BOOL,  .default_value = {.b   = true},                                        .rest_name = "autoTimingEnabled",                  .min = 0,  .max = 1},
     [NVS_CONFIG_JOB_INTERVAL_MS]                       = {.nvs_key_name = "jobinterval",     .type = TYPE_U16,   .default_value = {.u16 = 700},                                         .rest_name = "jobIntervalMs",                      .min = 500, .max = 800},
     [NVS_CONFIG_AUTO_TIMING_MIN]                       = {.nvs_key_name = "autotiming_min",  .type = TYPE_U16,   .default_value = {.u16 = 500},                                         .rest_name = "autoTimingMin",                      .min = 400, .max = 800},
     [NVS_CONFIG_AUTO_TIMING_MAX]                       = {.nvs_key_name = "autotiming_max",  .type = TYPE_U16,   .default_value = {.u16 = 800},                                         .rest_name = "autoTimingMax",                      .min = 500, .max = 1000},
