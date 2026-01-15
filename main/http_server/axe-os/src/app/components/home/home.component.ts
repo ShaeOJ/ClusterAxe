@@ -1135,6 +1135,23 @@ export class HomeComponent implements OnInit, OnDestroy {
     return slavePower + devicePower;
   }
 
+  public getClusterAvgTemp(status: IClusterStatus | null, deviceTemp: number): number {
+    if (!status || !status.slaves || status.slaves.length === 0) return deviceTemp;
+    const slaveTemps = status.slaves.map(slave => slave.temperature || 0).filter(t => t > 0);
+    const allTemps = [deviceTemp, ...slaveTemps].filter(t => t > 0);
+    if (allTemps.length === 0) return 0;
+    return allTemps.reduce((sum, t) => sum + t, 0) / allTemps.length;
+  }
+
+  public getClusterEfficiency(status: IClusterStatus | null, info: ISystemInfo): number {
+    const totalHashrate = this.getClusterTotalHashrate(status, info.hashRate);
+    const totalPower = this.getTotalClusterPower(status, info.power);
+    if (totalHashrate <= 0 || totalPower <= 0) return 0;
+    // J/TH = (Watts * 1000) / (GH/s) = Watts / (TH/s)
+    const hashrateInTH = totalHashrate / 1000; // Convert GH/s to TH/s
+    return (totalPower / hashrateInTH);
+  }
+
   // Cluster Dual Pool methods
   public isClusterDualPoolActive(status: IClusterStatus | null): boolean {
     if (!status) return false;

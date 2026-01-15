@@ -74,7 +74,7 @@
                     </div>
                     <div class="grid">
                         <!-- Master Hashrate -->
-                        <div class="col-6 md:col-3">
+                        <div class="col-6 md:col-2">
                             <div class="text-center p-2 surface-ground border-round">
                                 <div class="flex align-items-center justify-content-center gap-1 mb-1">
                                     <i class="pi pi-desktop text-xs text-500"></i>
@@ -84,7 +84,7 @@
                             </div>
                         </div>
                         <!-- Total Cluster Hashrate -->
-                        <div class="col-6 md:col-3">
+                        <div class="col-6 md:col-2">
                             <div class="text-center p-2 surface-ground border-round">
                                 <div class="flex align-items-center justify-content-center gap-1 mb-1">
                                     <i class="pi pi-chart-line text-xs text-theme"></i>
@@ -94,7 +94,7 @@
                             </div>
                         </div>
                         <!-- Cluster Shares -->
-                        <div class="col-6 md:col-3">
+                        <div class="col-6 md:col-2">
                             <div class="text-center p-2 surface-ground border-round">
                                 <div class="flex align-items-center justify-content-center gap-1 mb-1">
                                     <i class="pi pi-check-circle text-xs text-theme"></i>
@@ -107,13 +107,37 @@
                             </div>
                         </div>
                         <!-- Cluster Power -->
-                        <div class="col-6 md:col-3">
+                        <div class="col-6 md:col-2">
                             <div class="text-center p-2 surface-ground border-round">
                                 <div class="flex align-items-center justify-content-center gap-1 mb-1">
                                     <i class="pi pi-bolt text-xs text-yellow-500"></i>
                                     <span class="text-500 text-xs">Total Power</span>
                                 </div>
                                 <div class="text-xl font-bold">{{getTotalClusterPower(clusterStatus, info.power) | number:'1.0-0'}} W</div>
+                            </div>
+                        </div>
+                        <!-- Cluster Avg Temp -->
+                        <div class="col-6 md:col-2">
+                            <div class="text-center p-2 surface-ground border-round">
+                                <div class="flex align-items-center justify-content-center gap-1 mb-1">
+                                    <i class="pi pi-sun text-xs text-orange-500"></i>
+                                    <span class="text-500 text-xs">Avg Temp</span>
+                                </div>
+                                <div class="text-xl font-bold" [ngClass]="{'text-red-500': getClusterAvgTemp(clusterStatus, info.temp) >= 65}">
+                                    {{getClusterAvgTemp(clusterStatus, info.temp) | number:'1.0-0'}}°C
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Cluster Efficiency -->
+                        <div class="col-6 md:col-2">
+                            <div class="text-center p-2 surface-ground border-round">
+                                <div class="flex align-items-center justify-content-center gap-1 mb-1">
+                                    <i class="pi pi-gauge text-xs text-green-500"></i>
+                                    <span class="text-500 text-xs">Efficiency</span>
+                                </div>
+                                <div class="text-xl font-bold text-green-500">
+                                    {{getClusterEfficiency(clusterStatus, info) | number:'1.1-1'}} J/TH
+                                </div>
                             </div>
                         </div>
                     </div>
