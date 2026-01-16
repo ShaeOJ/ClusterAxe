@@ -115,9 +115,8 @@
             <div class="grid">
                 <!-- Left: Oscilloscope -->
                 <div class="col-12 md:col-3 flex justify-content-center">
-                    <div class="oscilloscope-container" [class.active]="autotuneStatus?.running"
-                         style="width: 100%; max-width: 220px; border-radius: 8px; overflow: hidden;">
-                        <div class="oscilloscope-screen" style="height: 100px;">
+                    <div class="oscilloscope-container" [class.active]="autotuneStatus?.running">
+                        <div class="oscilloscope-screen">
                             <svg viewBox="0 0 200 100" class="oscilloscope-wave" preserveAspectRatio="none">
                                 <line x1="0" y1="50" x2="200" y2="50" class="grid-line"/>
                                 <line x1="100" y1="0" x2="100" y2="100" class="grid-line"/>
