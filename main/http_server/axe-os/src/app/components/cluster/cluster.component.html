@@ -219,6 +219,10 @@
                                 <span class="font-bold text-theme">{{autotuneStatus?.bestVoltage || 0}} mV</span>
                             </div>
                             <div class="flex justify-content-between">
+                                <span class="text-500">Hashrate</span>
+                                <span class="font-bold text-theme">{{autotuneStatus?.bestHashrate | number:'1.1-1'}} GH/s</span>
+                            </div>
+                            <div class="flex justify-content-between">
                                 <span class="text-500">Efficiency</span>
                                 <span class="font-bold text-theme">{{autotuneStatus?.bestEfficiency | number:'1.1-1'}} J/TH</span>
                             </div>
