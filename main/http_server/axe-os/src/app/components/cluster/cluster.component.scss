@@ -84,6 +84,8 @@
   font-family: 'Courier New', monospace;
   width: 100%;
   max-width: 220px;
+  // Ensure no extra space inside container
+  line-height: 0;
 
   &.active {
     border-color: #2ecc40;
@@ -163,6 +165,7 @@
   height: 100%;
   position: relative;
   z-index: 1;
+  display: block; // Remove inline SVG baseline gap
 
   .grid-line {
     stroke: #1a3a1a;
