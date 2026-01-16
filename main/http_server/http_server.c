@@ -1726,7 +1726,7 @@ static esp_err_t cluster_slave_api_handler(httpd_req_t *req)
         }
 
         // Map settingId to /api/system field name
-        // 0x20 = frequency, 0x21 = coreVoltage, 0x22 = fanspeed, 0x23 = autofanspeed, 0x24 = autofantemp
+        // 0x20 = frequency, 0x21 = coreVoltage, 0x22 = manualFanSpeed, 0x23 = autofanspeed, 0x24 = temptarget
         char patch_data[128];
         int sid = setting_id->valueint;
         int val = value->valueint;
@@ -1738,14 +1738,14 @@ static esp_err_t cluster_slave_api_handler(httpd_req_t *req)
             case 0x21:  // CORE_VOLTAGE
                 snprintf(patch_data, sizeof(patch_data), "{\"coreVoltage\":%d}", val);
                 break;
-            case 0x22:  // FAN_SPEED
-                snprintf(patch_data, sizeof(patch_data), "{\"fanspeed\":%d}", val);
+            case 0x22:  // FAN_SPEED - set manual fan speed and disable auto mode
+                snprintf(patch_data, sizeof(patch_data), "{\"manualFanSpeed\":%d,\"autofanspeed\":0}", val);
                 break;
             case 0x23:  // FAN_MODE (0 = auto, 1 = manual)
                 snprintf(patch_data, sizeof(patch_data), "{\"autofanspeed\":%d}", val == 0 ? 1 : 0);
                 break;
             case 0x24:  // TARGET_TEMP
-                snprintf(patch_data, sizeof(patch_data), "{\"autofantemp\":%d}", val);
+                snprintf(patch_data, sizeof(patch_data), "{\"temptarget\":%d}", val);
                 break;
             default:
                 cJSON_Delete(setting_req);

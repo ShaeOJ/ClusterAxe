@@ -99,11 +99,11 @@ export class ClusterComponent implements OnInit, OnDestroy {
   public slaveAutotuneTarget: number | null = null;
   public slaveAutotuneMode = 'efficiency';
 
-  // Autotune mode options with limits (temp target: 65°C)
+  // Autotune mode options - labels match backend limits
   public autotuneModeOptions = [
-    { label: 'Efficiency (max 625 MHz / 1175 mV)', value: 'efficiency', description: 'Best J/TH - lowest power consumption' },
-    { label: 'Max Hashrate (max 800 MHz / 1300 mV)', value: 'hashrate', description: 'Highest hashrate - pushes to temp limit' },
-    { label: 'Balanced (max 700 MHz / 1200 mV)', value: 'balanced', description: 'Good balance of power and performance' }
+    { label: 'Efficiency (max 625 MHz / 1200 mV)', value: 'efficiency', description: 'Best J/TH with validated hashrate' },
+    { label: 'Max Hashrate (max 900 MHz / 1350 mV)', value: 'hashrate', description: 'Push limits for highest hashrate' },
+    { label: 'Balanced (500-700 MHz / 1250 mV)', value: 'balanced', description: 'Conservative freq/voltage tuning' }
   ];
 
   // Oscilloscope wave points for animation
@@ -1205,9 +1205,11 @@ export class ClusterComponent implements OnInit, OnDestroy {
 
   saveMasterFanSpeed(): void {
     this.savingMasterConfig = true;
-    this.systemService.updateSystem('', { fanspeed: this.masterFanSpeed }).subscribe({
+    // Set manual fan speed and disable auto mode
+    this.systemService.updateSystem('', { manualFanSpeed: this.masterFanSpeed, autofanspeed: 0 }).subscribe({
       next: () => {
         this.savingMasterConfig = false;
+        this.masterFanMode = 1;  // Update local state to manual mode
         this.messageService.add({
           severity: 'success',
           summary: 'Success',
