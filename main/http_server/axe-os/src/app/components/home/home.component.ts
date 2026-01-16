@@ -11,7 +11,7 @@ import { ShareRejectionExplanationService } from 'src/app/services/share-rejecti
 import { LoadingService } from 'src/app/services/loading.service';
 import { SystemService } from 'src/app/services/system.service';
 import { ThemeService } from 'src/app/services/theme.service';
-import { ClusterService, IClusterStatus, IClusterSlave } from 'src/app/services/cluster.service';
+import { ClusterService, IClusterStatus, IClusterSlave, ISlaveConfig, ISlaveHashrateMonitor } from 'src/app/services/cluster.service';
 import { ISystemInfo } from 'src/models/ISystemInfo';
 import { ISystemStatistics } from 'src/models/ISystemStatistics';
 import { Title } from '@angular/platform-browser';
@@ -65,6 +65,10 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   // Auto-Timing
   public autoTimingStatus$!: Observable<any | null>;
+
+  // Slave hashrate registers
+  public slaveHashrateRegisters: Map<number, { hostname: string; hashrate: number; hashrateMonitor: ISlaveHashrateMonitor }> = new Map();
+  public loadingSlaveRegisters: boolean = false;
 
   public chartOptions: any;
   public dataLabel: number[] = [];
@@ -1195,5 +1199,86 @@ export class HomeComponent implements OnInit, OnDestroy {
     if (diff < 60000) return Math.floor(diff / 1000) + 's ago';
     if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
     return Math.floor(diff / 3600000) + 'h ago';
+  }
+
+  /**
+   * Fetch hashrate registers from all slaves
+   */
+  public refreshSlaveHashrateRegisters(status: IClusterStatus | null): void {
+    if (!status || !status.slaves || status.slaves.length === 0) {
+      return;
+    }
+
+    this.loadingSlaveRegisters = true;
+    const activeSlaves = status.slaves.filter(s => s.state === 2 && s.ipAddr && s.ipAddr !== 'N/A');
+
+    if (activeSlaves.length === 0) {
+      this.loadingSlaveRegisters = false;
+      return;
+    }
+
+    let completed = 0;
+    activeSlaves.forEach(slave => {
+      this.clusterService.getSlaveConfig('', slave.slot).subscribe({
+        next: (config) => {
+          if (config.hashrateMonitor && config.hashrateMonitor.asics && config.hashrateMonitor.asics.length > 0) {
+            this.slaveHashrateRegisters.set(slave.slot, {
+              hostname: config.hostname || slave.hostname,
+              hashrate: config.hashrate || slave.hashrate,
+              hashrateMonitor: config.hashrateMonitor
+            });
+          }
+          completed++;
+          if (completed >= activeSlaves.length) {
+            this.loadingSlaveRegisters = false;
+          }
+        },
+        error: () => {
+          completed++;
+          if (completed >= activeSlaves.length) {
+            this.loadingSlaveRegisters = false;
+          }
+        }
+      });
+    });
+  }
+
+  /**
+   * Get slave hashrate registers as array for iteration
+   */
+  public getSlaveHashrateRegistersList(): { slot: number; hostname: string; hashrate: number; hashrateMonitor: ISlaveHashrateMonitor }[] {
+    return Array.from(this.slaveHashrateRegisters.entries()).map(([slot, data]) => ({
+      slot,
+      ...data
+    }));
+  }
+
+  /**
+   * Get heatmap color for slave hashrate register display
+   */
+  public getSlaveRegisterHeatmapColor(domainHashrate: number, totalHashrate: number): string {
+    if (!totalHashrate || totalHashrate <= 0) {
+      return 'var(--surface-border)';
+    }
+
+    const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').trim();
+    const hex = primaryColor.replace('#', '');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+
+    // totalHashrate is in GH/s * 100
+    const expectedPerDomain = totalHashrate / 4;
+    const ratio = domainHashrate / expectedPerDomain;
+    const clampedRatio = Math.max(0, Math.min(2, ratio));
+    const deviation = Math.abs(clampedRatio - 1);
+    const t = 1 - Math.pow(1 - deviation, 3);
+    const target = clampedRatio > 1 ? 255 : 0;
+
+    const finalR = (r * (1 - t) + target * t) | 0;
+    const finalG = (g * (1 - t) + target * t) | 0;
+    const finalB = (b * (1 - t) + target * t) | 0;
+
+    return `rgb(${finalR}, ${finalG}, ${finalB})`;
   }
 }
