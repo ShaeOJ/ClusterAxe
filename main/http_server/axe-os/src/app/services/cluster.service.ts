@@ -25,6 +25,16 @@ export interface IClusterSlave {
   rssi?: number;
 }
 
+export interface ISlaveHashrateAsic {
+  total: number;
+  domains?: number[];
+  errorCount: number;
+}
+
+export interface ISlaveHashrateMonitor {
+  asics: ISlaveHashrateAsic[];
+}
+
 export interface ISlaveConfig {
   hostname: string;
   deviceModel: string;
@@ -41,6 +51,7 @@ export interface ISlaveConfig {
   efficiency: number;
   chipTemp: number;
   proxyDebug?: string;  // Debug info if HTTP proxy failed
+  hashrateMonitor?: ISlaveHashrateMonitor;  // Hashrate registers from slave
 }
 
 export interface ISlaveSettingRequest {

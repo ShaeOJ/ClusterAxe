@@ -1657,6 +1657,12 @@ static esp_err_t cluster_slave_api_handler(httpd_req_t *req)
             item = cJSON_GetObjectItem(slave_system, "temp");
             cJSON_AddFloatToObject(root, "chipTemp", item ? (float)item->valuedouble : slave_info.temperature);
 
+            // Include hashrateMonitor data if available (for hashrate registers display)
+            cJSON *hashrate_monitor = cJSON_GetObjectItem(slave_system, "hashrateMonitor");
+            if (hashrate_monitor) {
+                cJSON_AddItemToObject(root, "hashrateMonitor", cJSON_Duplicate(hashrate_monitor, 1));
+            }
+
             cJSON_Delete(slave_system);
         } else {
             // Fallback to cluster status data with placeholders for unknown fields

@@ -722,6 +722,41 @@
                                     </div>
                                 </div>
 
+                                <!-- Hashrate Registers Section -->
+                                <div class="mt-4 pt-3 border-top-1 surface-border" *ngIf="getSlaveConfig(slave.slot)?.hashrateMonitor?.asics?.length">
+                                    <div class="flex align-items-center gap-2 mb-3">
+                                        <i class="pi pi-chart-bar text-primary"></i>
+                                        <h4 class="m-0">Hashrate Registers</h4>
+                                    </div>
+                                    <ng-container *ngIf="getSlaveConfig(slave.slot) as config">
+                                        <table class="heatmap text-xs w-full" style="max-width: 400px;">
+                                            <thead>
+                                                <tr>
+                                                    <th *ngIf="config.hashrateMonitor!.asics.length > 1" class="text-left">ASIC</th>
+                                                    <th [attr.colspan]="config.hashrateMonitor!.asics[0]?.domains?.length || 1">
+                                                        {{ (config.hashrateMonitor!.asics[0]?.domains?.length || 1) == 1 ? "Domain" : "Domains" }}
+                                                    </th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr *ngFor="let asic of config.hashrateMonitor!.asics; let i = index"
+                                                    [pTooltip]="(config.hashrateMonitor!.asics.length > 1 ? 'ASIC ' + (i + 1) + ' - ' : '') + 'Error count: ' + asic.errorCount"
+                                                    tooltipPosition="bottom">
+                                                    <td *ngIf="config.hashrateMonitor!.asics.length > 1" class="text-500 text-left">
+                                                        {{ i + 1 }}
+                                                    </td>
+                                                    <td *ngFor="let domain of asic.domains"
+                                                        [style.background]="getSlaveHeatmapColor(domain, config.hashrate)"
+                                                        [style.height]="config.hashrateMonitor!.asics.length <= 2 ? '2rem' : null"
+                                                        class="text-center">
+                                                        <span class="text-xs">{{ domain | hashSuffix }}</span>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </ng-container>
+                                </div>
+
                                 <!-- Slave Auto-Tune Section -->
                                 <div class="mt-4 pt-3 border-top-1 surface-border">
                                     <div class="flex justify-content-between align-items-center mb-3">

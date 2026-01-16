@@ -1298,4 +1298,41 @@ export class ClusterComponent implements OnInit, OnDestroy {
       slaves.forEach(slave => this.slaveAutotuneIncluded.add(slave.slot));
     }
   }
+
+  /**
+   * Get heatmap color for slave hashrate register display
+   * Based on how the domain hashrate compares to expected (totalHashrate / numDomains)
+   */
+  getSlaveHeatmapColor(domainHashrate: number, totalHashrate: number): string {
+    if (!totalHashrate || totalHashrate <= 0) {
+      return 'var(--surface-border)';
+    }
+
+    // Get the primary color from CSS variable
+    const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').trim();
+
+    // Convert hex to RGB
+    const hex = primaryColor.replace('#', '');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+
+    // Calculate expected hashrate per domain (rough estimate)
+    // totalHashrate is in GH/s * 100, domain values are also scaled similarly
+    const expectedPerDomain = totalHashrate / 4;  // Assume 4 domains typically
+    const ratio = domainHashrate / expectedPerDomain;
+
+    // Clamp ratio to 0-2 range and calculate deviation from 1
+    const clampedRatio = Math.max(0, Math.min(2, ratio));
+    const deviation = Math.abs(clampedRatio - 1);
+    const t = 1 - Math.pow(1 - deviation, 3);
+    const target = clampedRatio > 1 ? 255 : 0;
+
+    // Interpolate color
+    const finalR = (r * (1 - t) + target * t) | 0;
+    const finalG = (g * (1 - t) + target * t) | 0;
+    const finalB = (b * (1 - t) + target * t) | 0;
+
+    return `rgb(${finalR}, ${finalG}, ${finalB})`;
+  }
 }
