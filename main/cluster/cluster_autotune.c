@@ -628,8 +628,20 @@ static esp_err_t autotune_slave_device(int slave_id, autotune_mode_t mode)
     vTaskDelay(pdMS_TO_TICKS(30000));  // 30 seconds for slave initial stabilization
 
     // Test frequency/voltage combinations
+    // For balanced mode, use specific frequency steps (500-700 MHz)
+    static const uint16_t BALANCED_FREQ_STEPS[] = {500, 550, 600, 650, 700};
+    const int NUM_BALANCED_FREQS = sizeof(BALANCED_FREQ_STEPS) / sizeof(BALANCED_FREQ_STEPS[0]);
+
+    // Determine which frequency array to use based on mode
+    const uint16_t *freq_array = (mode == AUTOTUNE_MODE_BALANCED) ? BALANCED_FREQ_STEPS : FREQ_STEPS;
+    int num_freqs = (mode == AUTOTUNE_MODE_BALANCED) ? NUM_BALANCED_FREQS : NUM_FREQ_STEPS;
+
     int test_num = 0;
-    int total_tests = get_freq_step_count(mode) * get_voltage_step_count(mode);
+    int freq_count = 0;
+    for (int i = 0; i < num_freqs; i++) {
+        if (freq_array[i] <= freq_max) freq_count++;
+    }
+    int total_tests = freq_count * get_voltage_step_count(mode);
 
     // Reset progress for this slave
     lock();
@@ -640,8 +652,12 @@ static esp_err_t autotune_slave_device(int slave_id, autotune_mode_t mode)
     g_autotune.status.current_voltage = VOLTAGE_BASE_MV;
     unlock();
 
-    for (int fi = 0; fi < NUM_FREQ_STEPS && g_autotune.task_running; fi++) {
-        uint16_t test_freq = FREQ_STEPS[fi];
+    ESP_LOGI(TAG, "Slave %d: Using %s frequency steps (%d freqs × %d voltages = %d tests)",
+             slave_id, (mode == AUTOTUNE_MODE_BALANCED) ? "balanced" : "standard",
+             freq_count, get_voltage_step_count(mode), total_tests);
+
+    for (int fi = 0; fi < num_freqs && g_autotune.task_running; fi++) {
+        uint16_t test_freq = freq_array[fi];
         if (test_freq > freq_max) continue;
 
         for (int vi = 0; vi < NUM_VOLTAGE_STEPS && g_autotune.task_running; vi++) {
