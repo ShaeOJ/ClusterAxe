@@ -2174,12 +2174,16 @@ static esp_err_t POST_autotune(httpd_req_t *req)
             autotune_mode_t mode = AUTOTUNE_MODE_EFFICIENCY;
             cJSON *mode_item = cJSON_GetObjectItem(root, "mode");
             if (mode_item && cJSON_IsString(mode_item)) {
+                ESP_LOGI(TAG, "Autotune start: received mode='%s'", mode_item->valuestring);
                 if (strcmp(mode_item->valuestring, "hashrate") == 0) {
                     mode = AUTOTUNE_MODE_HASHRATE;
                 } else if (strcmp(mode_item->valuestring, "balanced") == 0) {
                     mode = AUTOTUNE_MODE_BALANCED;
                 }
+            } else {
+                ESP_LOGW(TAG, "Autotune start: no mode specified, defaulting to efficiency");
             }
+            ESP_LOGI(TAG, "Autotune start: using mode=%d (0=eff, 1=hr, 2=bal)", mode);
 
             // Check for device inclusion options
             cJSON *include_master = cJSON_GetObjectItem(root, "includeMaster");
@@ -2214,7 +2218,18 @@ static esp_err_t POST_autotune(httpd_req_t *req)
             }
             ret = cluster_autotune_stop(should_apply);
         } else if (strcmp(action_str, "enableMaster") == 0) {
-            ret = cluster_autotune_start(AUTOTUNE_MODE_EFFICIENCY);
+            // Also parse mode for enableMaster (use same logic as start)
+            autotune_mode_t mode = AUTOTUNE_MODE_EFFICIENCY;
+            cJSON *mode_item = cJSON_GetObjectItem(root, "mode");
+            if (mode_item && cJSON_IsString(mode_item)) {
+                if (strcmp(mode_item->valuestring, "hashrate") == 0) {
+                    mode = AUTOTUNE_MODE_HASHRATE;
+                } else if (strcmp(mode_item->valuestring, "balanced") == 0) {
+                    mode = AUTOTUNE_MODE_BALANCED;
+                }
+            }
+            ESP_LOGI(TAG, "enableMaster: mode=%d", mode);
+            ret = cluster_autotune_start(mode);
         } else if (strcmp(action_str, "disableMaster") == 0) {
             ret = cluster_autotune_stop(true);
         } else if (strcmp(action_str, "enableWatchdog") == 0) {
