@@ -84,7 +84,7 @@ static const uint16_t VOLTAGE_STEPS[] = {1100, 1150, 1200, 1225, 1250, 1275, 130
 
 #define VOLTAGE_MAX_MV_EFFICIENCY 1200     // Slight increase for better hashrate validation
 #define VOLTAGE_MAX_MV_BALANCED   1250     // Voltage-only tuning, allow more headroom
-#define VOLTAGE_MAX_MV_HASHRATE   1350     // Extended: push limits in hashrate mode
+#define VOLTAGE_MAX_MV_HASHRATE   1300     // Push limits but cap at 1300 mV for safety
 
 // ============================================================================
 // State
@@ -686,6 +686,9 @@ static esp_err_t autotune_slave_device(int slave_id, autotune_mode_t mode)
             // Slaves need time to: receive HTTP, apply settings, stabilize ASIC, send heartbeat
             vTaskDelay(pdMS_TO_TICKS(AUTOTUNE_STABILIZE_TIME_MS));  // Full stabilization time
 
+            // Get mode-specific temperature limit
+            uint8_t temp_limit = get_temp_limit_for_mode(mode);
+
             // Collect samples from cluster status
             float hashrate_sum = 0, power_sum = 0, temp_sum = 0;
             int sample_count = 0;
@@ -701,8 +704,12 @@ static esp_err_t autotune_slave_device(int slave_id, autotune_mode_t mode)
                     temp_sum += t;
                     sample_count++;
 
-                    if (t > TEMP_TARGET_C) {
-                        ESP_LOGW(TAG, "Slave %d: Temp %.1f°C exceeded target", slave_id, t);
+                    if (t > temp_limit) {
+                        ESP_LOGW(TAG, "Slave %d: Temp %.1f°C exceeded %s limit %d°C",
+                                 slave_id, t,
+                                 mode == AUTOTUNE_MODE_BALANCED ? "balanced" :
+                                 mode == AUTOTUNE_MODE_HASHRATE ? "hashrate" : "efficiency",
+                                 temp_limit);
                         temp_exceeded = true;
                         break;
                     }
@@ -718,20 +725,52 @@ static esp_err_t autotune_slave_device(int slave_id, autotune_mode_t mode)
             float avg_temp = temp_sum / sample_count;
             float efficiency = calculate_efficiency(avg_hashrate, avg_power);
 
-            ESP_LOGI(TAG, "Slave %d: %.2f GH/s, %.2f W, %.2f J/TH, %.1f°C",
-                     slave_id, avg_hashrate, avg_power, efficiency, avg_temp);
+            // Calculate expected hashrate for validation
+            // For slaves, estimate based on frequency (assumes similar ASIC config)
+            float expected_hashrate = (float)test_freq * 672 * 1 / 1000.0f;  // Estimate for BM1370
+            float hashrate_ratio = (expected_hashrate > 0) ? (avg_hashrate / expected_hashrate) : 0;
 
-            // Check if better based on mode
+            ESP_LOGI(TAG, "Slave %d: %.2f GH/s (%.0f%% of ~%.1f expected), %.2f W, %.2f J/TH, %.1f°C",
+                     slave_id, avg_hashrate, hashrate_ratio * 100, expected_hashrate,
+                     avg_power, efficiency, avg_temp);
+
+            // Check if better based on mode with proper validation
             bool is_better = false;
+            bool valid_temp = (avg_temp <= temp_limit);
+
             if (mode == AUTOTUNE_MODE_EFFICIENCY) {
-                is_better = (efficiency < best_efficiency) && (avg_hashrate > 0) && (avg_temp <= TEMP_TARGET_C);
+                // Efficiency mode: Best J/TH with hashrate validation
+                // - Must achieve ≥90% of expected hashrate
+                // - Must be above 1 TH/s minimum
+                // - Temperature within limit
+                bool valid_hashrate = (hashrate_ratio >= HASHRATE_MIN_RATIO);
+                bool min_hashrate = (avg_hashrate >= 1.0f);  // At least 1 TH/s
+                bool better_efficiency = (efficiency < best_efficiency);
+
+                if (!valid_hashrate) {
+                    ESP_LOGW(TAG, "Slave %d: Hashrate ratio %.0f%% below 90%% threshold",
+                             slave_id, hashrate_ratio * 100);
+                }
+                if (!min_hashrate) {
+                    ESP_LOGW(TAG, "Slave %d: Hashrate %.2f GH/s below 1 TH/s minimum",
+                             slave_id, avg_hashrate);
+                }
+
+                is_better = valid_hashrate && min_hashrate && valid_temp && better_efficiency;
             } else if (mode == AUTOTUNE_MODE_HASHRATE) {
-                is_better = (avg_hashrate > best_hashrate) && (avg_temp <= TEMP_TARGET_C);
+                // Hashrate mode: Push for highest hashrate
+                // - Only needs 75% of expected (more lenient for OC)
+                // - Higher hashrate wins
+                bool reasonable_hashrate = (hashrate_ratio >= 0.75f);
+                bool better_hashrate = (avg_hashrate > best_hashrate);
+
+                is_better = valid_temp && better_hashrate && reasonable_hashrate;
             } else {
-                float score = (best_efficiency > 0) ? (avg_hashrate / efficiency) : 0;
-                float best_score = (best_efficiency > 0 && best_efficiency < 999999.0f) ?
-                                   (best_hashrate / best_efficiency) : 0;
-                is_better = (score > best_score) && (avg_temp <= TEMP_TARGET_C);
+                // Balanced mode: Best efficiency while meeting hashrate threshold
+                bool valid_hashrate = (hashrate_ratio >= HASHRATE_MIN_RATIO);
+                bool better_efficiency = (efficiency < best_efficiency);
+
+                is_better = valid_hashrate && valid_temp && better_efficiency;
             }
 
             if (is_better) {
@@ -1229,12 +1268,14 @@ void cluster_autotune_task(void *pvParameters)
 
                 // Balanced mode selection criteria:
                 // - Must achieve at least 90% of expected hashrate
+                // - Must be above 1 TH/s minimum
                 // - Must be within temperature limit
                 // - Prefer best efficiency while meeting hashrate threshold
                 bool valid_hashrate = (hashrate_ratio >= HASHRATE_MIN_RATIO);
+                bool min_hashrate = (avg_hashrate >= 1.0f);  // At least 1 TH/s
                 bool valid_temp = (avg_temp <= temp_limit);
 
-                if (valid_hashrate && valid_temp) {
+                if (valid_hashrate && min_hashrate && valid_temp) {
                     // For balanced mode, prefer lower efficiency (better J/TH) while meeting hashrate
                     if (efficiency < best_eff) {
                         best_eff = efficiency;
@@ -1256,6 +1297,8 @@ void cluster_autotune_task(void *pvParameters)
                 } else if (!valid_hashrate) {
                     ESP_LOGW(TAG, "Hashrate ratio %.0f%% below threshold - voltage may be too low",
                              hashrate_ratio * 100);
+                } else if (!min_hashrate) {
+                    ESP_LOGW(TAG, "Hashrate %.2f GH/s below 1 TH/s minimum", avg_hashrate);
                 }
 
                 // Update progress
@@ -1436,9 +1479,11 @@ void cluster_autotune_task(void *pvParameters)
                 // EFFICIENCY MODE: Best J/TH while maintaining good actual hashrate
                 // Requirements:
                 // - Must have hashrate ratio >= 90% (actual vs expected)
+                // - Must be above 1 TH/s minimum
                 // - Lower efficiency (J/TH) is better
                 // - Temperature must be within limit
                 bool valid_hashrate = (hashrate_ratio >= HASHRATE_MIN_RATIO);
+                bool min_hashrate = (avg_hashrate >= 1.0f);  // At least 1 TH/s
                 bool valid_temp = (avg_temp <= temp_limit);
                 bool better_efficiency = (efficiency < best_efficiency);
 
@@ -1446,8 +1491,11 @@ void cluster_autotune_task(void *pvParameters)
                     ESP_LOGW(TAG, "Hashrate ratio %.0f%% below threshold (%.0f%%) - may need more voltage",
                              hashrate_ratio * 100, HASHRATE_MIN_RATIO * 100);
                 }
+                if (!min_hashrate) {
+                    ESP_LOGW(TAG, "Hashrate %.2f GH/s below 1 TH/s minimum", avg_hashrate);
+                }
 
-                is_better = valid_hashrate && valid_temp && better_efficiency && (avg_hashrate > 0);
+                is_better = valid_hashrate && min_hashrate && valid_temp && better_efficiency;
             }
             else if (g_autotune.status.mode == AUTOTUNE_MODE_HASHRATE) {
                 // HASHRATE MODE: Push limits, maximize hashrate

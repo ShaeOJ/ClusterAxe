@@ -102,7 +102,7 @@ export class ClusterComponent implements OnInit, OnDestroy {
   // Autotune mode options - labels match backend limits
   public autotuneModeOptions = [
     { label: 'Efficiency (max 625 MHz / 1200 mV)', value: 'efficiency', description: 'Best J/TH with validated hashrate' },
-    { label: 'Max Hashrate (max 900 MHz / 1350 mV)', value: 'hashrate', description: 'Push limits for highest hashrate' },
+    { label: 'Max Hashrate (max 900 MHz / 1300 mV)', value: 'hashrate', description: 'Push limits for highest hashrate' },
     { label: 'Balanced (500-700 MHz / 1250 mV)', value: 'balanced', description: 'Conservative freq/voltage tuning' }
   ];
 
