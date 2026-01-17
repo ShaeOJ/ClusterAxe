@@ -1,5 +1,38 @@
 # ClusterAxe Release Notes
 
+## v1.1.2 (January 16, 2026)
+
+### New Features
+
+- **Enhanced Auto-Tuner Modes**: Improved auto-tuner with mode-specific temperature limits and extended ranges:
+  - **Efficiency Mode**: 625 MHz max, 1200 mV max, 65°C temp limit with hashrate validation (90% threshold)
+  - **Hashrate Mode**: 900 MHz max, 1350 mV max, 68°C temp limit - push limits for maximum performance
+  - **Balanced Mode**: Tests frequencies 500, 550, 600, 650, 700 MHz with voltage tuning at each, 60°C temp limit
+
+- **Hashrate Validation**: Auto-tuner now validates actual vs expected hashrate ratio to ensure ASICs achieve proper performance at each setting
+
+- **Slave Hashrate Registers on Cluster Page**: Expanded slave panels now show hashrate domain registers with heatmap coloring
+
+- **Slave Hashrate Registers on Master Dashboard**: Master dashboard can now display hashrate registers from all connected slaves alongside its own registers (click refresh to fetch)
+
+- **Best Found Hashrate**: Auto-tuner "Best Found" card now displays the hashrate achieved at the best settings
+
+### Bug Fixes
+
+- **Slave Fan Speed Setting**: Fixed fan speed not applying to slaves - was using read-only `fanspeed` field instead of `manualFanSpeed`
+
+- **Slave Target Temp Setting**: Fixed target temperature not applying to slaves - was using wrong field name `autofantemp` instead of `temptarget`
+
+- **Master Fan Speed Setting**: Fixed master fan speed setting on cluster page using wrong field
+
+- **Oscilloscope Animation**: Fixed black space appearing at bottom of oscilloscope when auto-tuner animation starts (SVG baseline gap issue)
+
+### UI Improvements
+
+- Updated auto-tune mode descriptions to match actual backend frequency/voltage/temperature limits
+
+---
+
 ## v1.1.1 (January 11, 2026)
 
 ### Bug Fixes
