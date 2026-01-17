@@ -399,13 +399,16 @@ export class ClusterService {
   }
 
   public startAutotune(uri: string = '', mode: string = 'efficiency', includeMaster: boolean = true, slaveMask: number = 0xFF): Observable<any> {
+    const requestBody = {
+      action: 'start',
+      mode,
+      includeMaster,
+      slaveMask
+    };
+    console.log('[CLUSTER SERVICE] startAutotune request body:', JSON.stringify(requestBody));
+
     if (environment.production) {
-      return this.httpClient.post(`${uri}/api/cluster/autotune`, {
-        action: 'start',
-        mode,
-        includeMaster,
-        slaveMask
-      }).pipe(timeout(5000));
+      return this.httpClient.post(`${uri}/api/cluster/autotune`, requestBody).pipe(timeout(5000));
     }
     return of({ success: true }).pipe(delay(500));
   }

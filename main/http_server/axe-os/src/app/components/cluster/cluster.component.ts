@@ -818,10 +818,12 @@ export class ClusterComponent implements OnInit, OnDestroy {
     const slaveMask = this.buildSlaveMask();
     const includeMaster = this.masterIncludeInAutotune;
 
-    // Log what we're autotuning
-    console.log(`Starting autotune: mode=${this.selectedAutotuneMode}, master=${includeMaster}, slaveMask=0x${slaveMask.toString(16)}`);
+    // Log what we're autotuning - DEBUG: show in console and as alert
+    const modeToSend = this.selectedAutotuneMode;
+    console.log(`[AUTOTUNE DEBUG] Sending mode: '${modeToSend}', master: ${includeMaster}, slaveMask: 0x${slaveMask.toString(16)}`);
+    console.log(`[AUTOTUNE DEBUG] selectedAutotuneMode variable value: '${this.selectedAutotuneMode}'`);
 
-    this.clusterService.startAutotune('', this.selectedAutotuneMode, includeMaster, slaveMask).subscribe({
+    this.clusterService.startAutotune('', modeToSend, includeMaster, slaveMask).subscribe({
       next: () => {
         this.autotuneLoading = false;
         const targets: string[] = [];
