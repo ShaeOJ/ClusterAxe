@@ -1,4 +1,5 @@
 import { NgModule } from '@angular/core';
+import { AccordionModule } from 'primeng/accordion';
 import { RadioButtonModule } from 'primeng/radiobutton';
 import { ButtonModule } from 'primeng/button';
 import { ChartModule } from 'primeng/chart';
@@ -19,6 +20,7 @@ import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 
 const primeNgModules = [
+    AccordionModule,
     SidebarModule,
     InputTextModule,
     InputNumberModule,

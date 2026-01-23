@@ -241,6 +241,12 @@
                             <span class="text-500">Efficiency:</span>
                             <span>{{masterInfo.power && masterInfo.hashRate ? ((masterInfo.power / (masterInfo.hashRate / 1000)) | number:'1.1-1') : 'N/A'}} J/TH</span>
                         </div>
+                        <!-- Benchmark Button -->
+                        <button pButton label="Benchmark"
+                                icon="pi pi-chart-line"
+                                class="p-button-outlined p-button-sm mt-2"
+                                (click)="openBenchmarkDialog('', 'Master'); $event.stopPropagation()">
+                        </button>
                     </div>
                 </div>
 
@@ -477,6 +483,14 @@
                                                 <span class="text-500">Efficiency:</span>
                                                 <span>{{config.efficiency | number:'1.1-1'}} J/TH</span>
                                             </div>
+                                            <!-- Benchmark Button -->
+                                            <button pButton label="Benchmark"
+                                                    icon="pi pi-chart-line"
+                                                    class="p-button-outlined p-button-sm mt-2"
+                                                    [disabled]="!slave.ipAddr"
+                                                    [pTooltip]="!slave.ipAddr ? 'Requires IP address (ESP-NOW only)' : 'Run hashrate benchmark'"
+                                                    (click)="openBenchmarkDialog(slave.ipAddr, slave.hostname || 'Slave ' + slave.slot); $event.stopPropagation()">
+                                            </button>
                                         </div>
                                     </div>
 
@@ -798,6 +812,159 @@
                 [label]="bulkActionType === 'restart' ? 'Restart All' : 'Apply to All'"
                 [class]="bulkActionType === 'restart' ? 'p-button-danger' : 'p-button-primary'"
                 (click)="executeBulkAction()"></button>
+    </ng-template>
+</p-dialog>
+
+<!-- Benchmark Dialog -->
+<p-dialog header="Hashrate Benchmark" [(visible)]="showBenchmarkDialog" [modal]="true"
+          [style]="{width: '90vw', maxWidth: '800px'}" [closable]="true"
+          (onHide)="closeBenchmarkDialog()">
+
+    <ng-container *ngIf="benchmarkState$ | async as state">
+        <!-- Target Info -->
+        <div class="surface-card border-round p-3 mb-3">
+            <div class="flex align-items-center gap-2">
+                <i class="pi pi-microchip text-primary text-xl"></i>
+                <span class="font-medium text-lg">{{benchmarkTargetName}}</span>
+                <span class="text-500" *ngIf="benchmarkTargetIp">({{benchmarkTargetIp}})</span>
+            </div>
+        </div>
+
+        <!-- Config Section (only when not running) -->
+        <div *ngIf="!state.running && state.phase !== 'complete'" class="grid">
+            <div class="col-12 md:col-6">
+                <h4 class="mt-0 mb-2">Voltage Range (mV)</h4>
+                <div class="flex gap-2 align-items-center">
+                    <p-inputNumber [(ngModel)]="benchmarkConfig.minVoltage" [min]="1000" [max]="1400" [step]="25" class="w-6rem"></p-inputNumber>
+                    <span class="text-500">to</span>
+                    <p-inputNumber [(ngModel)]="benchmarkConfig.maxVoltage" [min]="1000" [max]="1400" [step]="25" class="w-6rem"></p-inputNumber>
+                </div>
+            </div>
+            <div class="col-12 md:col-6">
+                <h4 class="mt-0 mb-2">Frequency Range (MHz)</h4>
+                <div class="flex gap-2 align-items-center">
+                    <p-inputNumber [(ngModel)]="benchmarkConfig.minFrequency" [min]="400" [max]="800" [step]="25" class="w-6rem"></p-inputNumber>
+                    <span class="text-500">to</span>
+                    <p-inputNumber [(ngModel)]="benchmarkConfig.maxFrequency" [min]="400" [max]="800" [step]="25" class="w-6rem"></p-inputNumber>
+                </div>
+            </div>
+            <div class="col-12 md:col-6">
+                <h4 class="mt-0 mb-2">Starting Values</h4>
+                <div class="flex gap-2 align-items-center">
+                    <span class="text-500 w-4rem">Voltage:</span>
+                    <p-inputNumber [(ngModel)]="benchmarkConfig.startVoltage" [min]="1000" [max]="1400" [step]="25" class="w-6rem"></p-inputNumber>
+                    <span class="text-500 w-4rem ml-3">Freq:</span>
+                    <p-inputNumber [(ngModel)]="benchmarkConfig.startFrequency" [min]="400" [max]="800" [step]="25" class="w-6rem"></p-inputNumber>
+                </div>
+            </div>
+            <div class="col-12 md:col-6">
+                <h4 class="mt-0 mb-2">Test Duration</h4>
+                <div class="flex gap-2 align-items-center">
+                    <p-dropdown [options]="[
+                        {label: '3 min (quick)', value: 180000},
+                        {label: '5 min (normal)', value: 300000},
+                        {label: '10 min (thorough)', value: 600000}
+                    ]" [(ngModel)]="benchmarkConfig.testDurationMs" optionLabel="label" optionValue="value"></p-dropdown>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress Section (when running) -->
+        <div *ngIf="state.running" class="surface-card border-round p-3 mb-3">
+            <div class="flex justify-content-between align-items-center mb-2">
+                <span class="font-medium">
+                    <span *ngIf="state.phase === 'starting'">Starting test...</span>
+                    <span *ngIf="state.phase === 'stabilizing'">Stabilizing ({{(state.timeRemainingMs / 1000) | number:'1.0-0'}}s)</span>
+                    <span *ngIf="state.phase === 'sampling'">Sampling: {{state.samplesCollected}}/{{state.samplesNeeded}}</span>
+                    <span *ngIf="state.phase === 'analyzing'">Analyzing results...</span>
+                </span>
+                <span class="text-500">Test {{state.testNumber}}</span>
+            </div>
+            <div class="flex gap-3 text-sm">
+                <span><i class="pi pi-bolt mr-1 text-primary"></i>{{state.currentFrequency}} MHz</span>
+                <span><i class="pi pi-bolt mr-1 text-orange-500"></i>{{state.currentVoltage}} mV</span>
+            </div>
+            <p-progressBar [value]="state.samplesNeeded ? (state.samplesCollected / state.samplesNeeded * 100) : 0"
+                           [showValue]="false" class="mt-2"></p-progressBar>
+        </div>
+
+        <!-- Results Table -->
+        <div *ngIf="state.results.length > 0" class="mb-3">
+            <h4 class="mt-0 mb-2">Results</h4>
+            <p-table [value]="state.results" [scrollable]="true" scrollHeight="200px" styleClass="p-datatable-sm">
+                <ng-template pTemplate="header">
+                    <tr>
+                        <th>Freq</th>
+                        <th>Voltage</th>
+                        <th>Hashrate</th>
+                        <th>Efficiency</th>
+                        <th>Temp</th>
+                        <th>Status</th>
+                    </tr>
+                </ng-template>
+                <ng-template pTemplate="body" let-result>
+                    <tr [ngClass]="{'bg-green-50': result === state.bestResult}">
+                        <td>{{result.frequency}} MHz</td>
+                        <td>{{result.voltage}} mV</td>
+                        <td>{{result.avgHashrate | number:'1.1-1'}} GH/s</td>
+                        <td>{{result.efficiency | number:'1.2-2'}} J/TH</td>
+                        <td>{{result.avgTemp | number:'1.1-1'}}°C</td>
+                        <td>
+                            <span *ngIf="result.passed" class="text-green-500"><i class="pi pi-check"></i> Pass</span>
+                            <span *ngIf="!result.passed" class="text-red-500" [pTooltip]="result.failReason"><i class="pi pi-times"></i> Fail</span>
+                        </td>
+                    </tr>
+                </ng-template>
+            </p-table>
+        </div>
+
+        <!-- Best Result -->
+        <div *ngIf="state.bestResult" class="surface-card border-round p-3 mb-3 border-1 border-green-500">
+            <div class="flex align-items-center gap-2 mb-2">
+                <i class="pi pi-star-fill text-yellow-500"></i>
+                <span class="font-medium">Best Configuration</span>
+            </div>
+            <div class="grid">
+                <div class="col-6 md:col-3">
+                    <div class="text-500 text-sm">Frequency</div>
+                    <div class="font-medium">{{state.bestResult.frequency}} MHz</div>
+                </div>
+                <div class="col-6 md:col-3">
+                    <div class="text-500 text-sm">Voltage</div>
+                    <div class="font-medium">{{state.bestResult.voltage}} mV</div>
+                </div>
+                <div class="col-6 md:col-3">
+                    <div class="text-500 text-sm">Hashrate</div>
+                    <div class="font-medium text-primary">{{state.bestResult.avgHashrate | number:'1.1-1'}} GH/s</div>
+                </div>
+                <div class="col-6 md:col-3">
+                    <div class="text-500 text-sm">Efficiency</div>
+                    <div class="font-medium text-green-500">{{state.bestResult.efficiency | number:'1.2-2'}} J/TH</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs -->
+        <p-accordion *ngIf="benchmarkLogs.length > 0">
+            <p-accordionTab header="Logs ({{benchmarkLogs.length}})">
+                <div class="surface-ground border-round p-2 text-xs font-mono" style="max-height: 150px; overflow-y: auto;">
+                    <div *ngFor="let log of benchmarkLogs">{{log}}</div>
+                </div>
+            </p-accordionTab>
+        </p-accordion>
+    </ng-container>
+
+    <ng-template pTemplate="footer">
+        <ng-container *ngIf="benchmarkState$ | async as state">
+            <button pButton label="Close" class="p-button-text" (click)="closeBenchmarkDialog()"
+                    *ngIf="!state.running"></button>
+            <button pButton label="Stop" class="p-button-danger" (click)="stopBenchmark()"
+                    *ngIf="state.running"></button>
+            <button pButton label="Start Benchmark" class="p-button-primary" (click)="startBenchmark()"
+                    *ngIf="!state.running && state.phase !== 'complete'"></button>
+            <button pButton label="Apply Best Settings" class="p-button-success" (click)="applyBenchmarkResult()"
+                    *ngIf="state.phase === 'complete' && state.bestResult"></button>
+        </ng-container>
     </ng-template>
 </p-dialog>
 

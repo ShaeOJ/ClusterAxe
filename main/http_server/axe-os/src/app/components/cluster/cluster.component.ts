@@ -2,6 +2,7 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import { Observable, interval, startWith, switchMap, catchError, of, BehaviorSubject, Subscription } from 'rxjs';
 import { ClusterService, IClusterStatus, IClusterSlave, ISlaveConfig, IWatchdogStatus, CLUSTER_SETTINGS } from '../../services/cluster.service';
 import { SystemService } from '../../services/system.service';
+import { BenchmarkService, BenchmarkConfig, BenchmarkState } from '../../services/benchmark.service';
 import { MessageService } from 'primeng/api';
 import { trigger, transition, style, animate } from '@angular/animations';
 
@@ -82,13 +83,25 @@ export class ClusterComponent implements OnInit, OnDestroy {
   public watchdogToggling = false;
   private watchdogSubscription: Subscription | null = null;
 
+  // Benchmark state
+  public showBenchmarkDialog = false;
+  public benchmarkState$: Observable<BenchmarkState>;
+  public benchmarkLogs: string[] = [];
+  public benchmarkConfig: BenchmarkConfig;
+  public benchmarkTargetIp: string = '';
+  public benchmarkTargetName: string = 'Master';
+  private benchmarkLogSubscription: Subscription | null = null;
+
   private refreshInterval = 3000; // 3 seconds
 
   constructor(
     public clusterService: ClusterService,
     private systemService: SystemService,
-    private messageService: MessageService
+    private messageService: MessageService,
+    public benchmarkService: BenchmarkService
   ) {
+    this.benchmarkState$ = this.benchmarkService.getState();
+    this.benchmarkConfig = this.benchmarkService.getDefaultConfig();
     this.clusterStatus$ = interval(this.refreshInterval).pipe(
       startWith(0),
       switchMap(() => this.clusterService.getStatus().pipe(
@@ -756,6 +769,68 @@ export class ClusterComponent implements OnInit, OnDestroy {
     if (reason & 1) reasons.push('High Temp');
     if (reason & 2) reasons.push('Low Vin');
     return reasons.length > 0 ? reasons.join(', ') : 'None';
+  }
+
+  // ========================================================================
+  // Benchmark Methods
+  // ========================================================================
+
+  openBenchmarkDialog(targetIp: string = '', targetName: string = 'Master'): void {
+    this.benchmarkTargetIp = targetIp;
+    this.benchmarkTargetName = targetName;
+    this.benchmarkConfig = {
+      ...this.benchmarkService.getDefaultConfig(),
+      targetIp,
+      targetName
+    };
+    this.benchmarkLogs = [];
+    this.showBenchmarkDialog = true;
+
+    // Subscribe to logs
+    if (this.benchmarkLogSubscription) {
+      this.benchmarkLogSubscription.unsubscribe();
+    }
+    this.benchmarkLogSubscription = this.benchmarkService.getLogs().subscribe(log => {
+      this.benchmarkLogs.push(log);
+      // Keep only last 100 logs
+      if (this.benchmarkLogs.length > 100) {
+        this.benchmarkLogs.shift();
+      }
+    });
+  }
+
+  closeBenchmarkDialog(): void {
+    this.showBenchmarkDialog = false;
+    if (this.benchmarkLogSubscription) {
+      this.benchmarkLogSubscription.unsubscribe();
+      this.benchmarkLogSubscription = null;
+    }
+  }
+
+  startBenchmark(): void {
+    this.benchmarkLogs = [];
+    this.benchmarkService.startBenchmark(this.benchmarkConfig);
+  }
+
+  stopBenchmark(): void {
+    this.benchmarkService.stopBenchmark();
+  }
+
+  async applyBenchmarkResult(): Promise<void> {
+    try {
+      await this.benchmarkService.applyBestResult(this.benchmarkTargetIp);
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Success',
+        detail: 'Best benchmark settings applied'
+      });
+    } catch (e: any) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Error',
+        detail: e.message || 'Failed to apply settings'
+      });
+    }
   }
 
   // ========================================================================
