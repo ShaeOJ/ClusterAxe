@@ -49,7 +49,7 @@ SRCS
     "./cluster/cluster_slave.c"
     "./cluster/cluster_integration.c"
     "./cluster/cluster_espnow.c"
-    "./cluster/cluster_autotune.c"
+    "./cluster/cluster_watchdog.c"
     "auto_timing.c"
 
 INCLUDE_DIRS

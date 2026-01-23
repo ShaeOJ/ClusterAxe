@@ -56,7 +56,6 @@
 #if CLUSTER_ENABLED
 #include "cluster.h"
 #include "cluster_integration.h"
-#include "cluster_autotune.h"
 #if defined(CONFIG_CLUSTER_TRANSPORT_ESPNOW) || defined(CONFIG_CLUSTER_TRANSPORT_BOTH)
 #include "cluster_espnow.h"
 #endif
@@ -1475,15 +1474,15 @@ static esp_err_t http_proxy_event_handler(esp_http_client_event_t *evt)
 /**
  * @brief Proxy an HTTP request to a slave device
  * @param slave_ip IP address of the slave
- * @param path API path (e.g., "/api/cluster/autotune/status")
+ * @param path API path (e.g., "/api/system/info")
  * @param method HTTP method (HTTP_METHOD_GET or HTTP_METHOD_POST)
  * @param post_data POST data (NULL for GET requests)
  * @param response Output buffer for response (caller must free)
  * @return ESP_OK on success
  */
-static esp_err_t http_proxy_to_slave(const char *slave_ip, const char *path,
-                                      esp_http_client_method_t method,
-                                      const char *post_data, char **response)
+esp_err_t http_proxy_to_slave(const char *slave_ip, const char *path,
+                              esp_http_client_method_t method,
+                              const char *post_data, char **response)
 {
     char url[128];
     snprintf(url, sizeof(url), "http://%s%s", slave_ip, path);
@@ -1783,53 +1782,6 @@ static esp_err_t cluster_slave_api_handler(httpd_req_t *req)
         ESP_LOGI(TAG, "Command to slave %d: %s", slave_id, buf);
         httpd_resp_sendstr(req, "{\"success\":true}");
         return ESP_OK;
-
-    } else if (strncmp(action, "autotune", 8) == 0) {
-        // Autotune actions - proxy to slave via HTTP
-        cluster_slave_t slave_info;
-        if (cluster_master_get_slave_info(slave_id, &slave_info) != ESP_OK) {
-            return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Slave not found");
-        }
-
-        if (strlen(slave_info.ip_addr) == 0) {
-            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Slave has no IP address");
-        }
-
-        char *response = NULL;
-
-        if (strcmp(action, "autotune/status") == 0 && req->method == HTTP_GET) {
-            // GET autotune status from slave
-            esp_err_t err = http_proxy_to_slave(slave_info.ip_addr,
-                                                 "/api/cluster/autotune/status",
-                                                 HTTP_METHOD_GET, NULL, &response);
-            if (err == ESP_OK && response) {
-                httpd_resp_set_type(req, "application/json");
-                httpd_resp_sendstr(req, response);
-                free(response);
-                return ESP_OK;
-            }
-            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to get slave autotune status");
-
-        } else if (strcmp(action, "autotune") == 0 && req->method == HTTP_POST) {
-            // POST autotune command to slave
-            char buf[256];
-            int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
-            if (received <= 0) {
-                return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No data");
-            }
-            buf[received] = '\0';
-
-            esp_err_t err = http_proxy_to_slave(slave_info.ip_addr,
-                                                 "/api/cluster/autotune",
-                                                 HTTP_METHOD_POST, buf, &response);
-            if (err == ESP_OK && response) {
-                httpd_resp_set_type(req, "application/json");
-                httpd_resp_sendstr(req, response);
-                free(response);
-                return ESP_OK;
-            }
-            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to control slave autotune");
-        }
     }
 
     return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Unknown action");
@@ -2050,8 +2002,15 @@ static esp_err_t POST_cluster_mode(httpd_req_t *req)
     return ret;
 }
 
-/* Handler for autotune status endpoint */
-static esp_err_t GET_autotune_status(httpd_req_t *req)
+// ============================================================================
+// Cluster Watchdog API
+// ============================================================================
+
+#if CLUSTER_ENABLED
+#include "cluster_watchdog.h"
+
+/* Handler for getting watchdog status */
+static esp_err_t GET_watchdog_status(httpd_req_t *req)
 {
     if (is_network_allowed(req) != ESP_OK) {
         return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Unauthorized");
@@ -2059,66 +2018,45 @@ static esp_err_t GET_autotune_status(httpd_req_t *req)
 
     httpd_resp_set_type(req, "application/json");
 
-    autotune_status_t status;
-    cluster_autotune_get_status(&status);
+    watchdog_status_t status;
+    cluster_watchdog_get_status(&status);
 
     cJSON *root = cJSON_CreateObject();
 
-    // State info
-    const char *state_str = "idle";
-    switch (status.state) {
-        case AUTOTUNE_STATE_IDLE: state_str = "idle"; break;
-        case AUTOTUNE_STATE_STARTING: state_str = "starting"; break;
-        case AUTOTUNE_STATE_TESTING: state_str = "testing"; break;
-        case AUTOTUNE_STATE_ADJUSTING: state_str = "adjusting"; break;
-        case AUTOTUNE_STATE_STABILIZING: state_str = "stabilizing"; break;
-        case AUTOTUNE_STATE_LOCKED: state_str = "locked"; break;
-        case AUTOTUNE_STATE_ERROR: state_str = "error"; break;
+    cJSON_AddBoolToObject(root, "enabled", status.enabled);
+    cJSON_AddBoolToObject(root, "running", status.running);
+    cJSON_AddNumberToObject(root, "throttledCount", status.throttled_count);
+
+    // Thresholds (for display)
+    cJSON_AddNumberToObject(root, "tempThreshold", WATCHDOG_TEMP_THRESHOLD);
+    cJSON_AddNumberToObject(root, "vinThreshold", WATCHDOG_VIN_THRESHOLD);
+
+    // Master status
+    cJSON *master = cJSON_CreateObject();
+    cJSON_AddBoolToObject(master, "throttled", status.master.is_throttled);
+    cJSON_AddNumberToObject(master, "throttleReason", status.master.throttle_reason);
+    cJSON_AddNumberToObject(master, "temp", status.master.last_temp);
+    cJSON_AddNumberToObject(master, "vin", status.master.last_vin);
+    cJSON_AddNumberToObject(master, "frequency", status.master.current_frequency);
+    cJSON_AddNumberToObject(master, "voltage", status.master.current_voltage);
+    cJSON_AddNumberToObject(master, "throttleCount", status.master.throttle_count);
+    cJSON_AddItemToObject(root, "master", master);
+
+    // Slaves status array
+    cJSON *slaves = cJSON_CreateArray();
+    for (int i = 0; i < CLUSTER_MAX_SLAVES; i++) {
+        cJSON *slave = cJSON_CreateObject();
+        cJSON_AddNumberToObject(slave, "slot", i);
+        cJSON_AddBoolToObject(slave, "throttled", status.slaves[i].is_throttled);
+        cJSON_AddNumberToObject(slave, "throttleReason", status.slaves[i].throttle_reason);
+        cJSON_AddNumberToObject(slave, "temp", status.slaves[i].last_temp);
+        cJSON_AddNumberToObject(slave, "vin", status.slaves[i].last_vin);
+        cJSON_AddNumberToObject(slave, "frequency", status.slaves[i].current_frequency);
+        cJSON_AddNumberToObject(slave, "voltage", status.slaves[i].current_voltage);
+        cJSON_AddNumberToObject(slave, "throttleCount", status.slaves[i].throttle_count);
+        cJSON_AddItemToArray(slaves, slave);
     }
-    cJSON_AddStringToObject(root, "state", state_str);
-    cJSON_AddNumberToObject(root, "stateCode", status.state);
-
-    // Mode
-    const char *mode_str = "efficiency";
-    switch (status.mode) {
-        case AUTOTUNE_MODE_EFFICIENCY: mode_str = "efficiency"; break;
-        case AUTOTUNE_MODE_HASHRATE: mode_str = "hashrate"; break;
-        case AUTOTUNE_MODE_BALANCED: mode_str = "balanced"; break;
-    }
-    cJSON_AddStringToObject(root, "mode", mode_str);
-
-    // Running status
-    cJSON_AddBoolToObject(root, "enabled", cluster_autotune_is_enabled());
-    cJSON_AddBoolToObject(root, "running", cluster_autotune_is_running());
-
-    // Current device being tuned (-1 = master, 0-7 = slave)
-    cJSON_AddNumberToObject(root, "currentDevice", cluster_autotune_get_current_device());
-
-    // Current values
-    cJSON_AddNumberToObject(root, "currentFrequency", status.current_frequency);
-    cJSON_AddNumberToObject(root, "currentVoltage", status.current_voltage);
-
-    // Best values
-    cJSON_AddNumberToObject(root, "bestFrequency", status.best_frequency);
-    cJSON_AddNumberToObject(root, "bestVoltage", status.best_voltage);
-    cJSON_AddFloatToObject(root, "bestEfficiency", status.best_efficiency);
-    cJSON_AddFloatToObject(root, "bestHashrate", status.best_hashrate);
-
-    // Progress
-    cJSON_AddNumberToObject(root, "progress", status.progress_percent);
-    cJSON_AddNumberToObject(root, "testsCompleted", status.tests_completed);
-    cJSON_AddNumberToObject(root, "testsTotal", status.tests_total);
-    cJSON_AddNumberToObject(root, "testDuration", status.test_duration_ms);
-    cJSON_AddNumberToObject(root, "totalDuration", status.total_duration_ms);
-
-    // Error
-    if (status.error_msg[0] != '\0') {
-        cJSON_AddStringToObject(root, "error", status.error_msg);
-    }
-
-    // Safety watchdog status
-    cJSON_AddBoolToObject(root, "watchdogEnabled", cluster_autotune_watchdog_is_enabled());
-    cJSON_AddBoolToObject(root, "watchdogRunning", cluster_autotune_watchdog_is_running());
+    cJSON_AddItemToObject(root, "slaves", slaves);
 
     char *json_str = cJSON_Print(root);
     httpd_resp_sendstr(req, json_str);
@@ -2128,8 +2066,8 @@ static esp_err_t GET_autotune_status(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* Handler for autotune control endpoint */
-static esp_err_t POST_autotune(httpd_req_t *req)
+/* Handler for watchdog control */
+static esp_err_t POST_watchdog(httpd_req_t *req)
 {
     if (is_network_allowed(req) != ESP_OK) {
         return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Unauthorized");
@@ -2137,112 +2075,33 @@ static esp_err_t POST_autotune(httpd_req_t *req)
 
     // Read request body
     int total_len = req->content_len;
-    int cur_len = 0;
-    char buf[256];
-    int received = 0;
+    char buf[128];
 
     if (total_len >= sizeof(buf)) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Request too large");
-        return ESP_FAIL;
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Request too large");
     }
 
+    int cur_len = 0;
     while (cur_len < total_len) {
-        received = httpd_req_recv(req, buf + cur_len, total_len - cur_len);
+        int received = httpd_req_recv(req, buf + cur_len, total_len - cur_len);
         if (received <= 0) {
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to receive request");
-            return ESP_FAIL;
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to receive");
         }
         cur_len += received;
     }
     buf[cur_len] = '\0';
 
-    // Parse JSON
     cJSON *root = cJSON_Parse(buf);
     if (!root) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
-        return ESP_FAIL;
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
     }
 
     esp_err_t ret = ESP_OK;
-    cJSON *action = cJSON_GetObjectItem(root, "action");
 
-    if (action && cJSON_IsString(action)) {
-        const char *action_str = action->valuestring;
-
-        if (strcmp(action_str, "start") == 0 || strcmp(action_str, "enable") == 0) {
-            // Get mode if specified
-            autotune_mode_t mode = AUTOTUNE_MODE_EFFICIENCY;
-            cJSON *mode_item = cJSON_GetObjectItem(root, "mode");
-            if (mode_item && cJSON_IsString(mode_item)) {
-                ESP_LOGI(TAG, "Autotune start: received mode='%s'", mode_item->valuestring);
-                if (strcmp(mode_item->valuestring, "hashrate") == 0) {
-                    mode = AUTOTUNE_MODE_HASHRATE;
-                } else if (strcmp(mode_item->valuestring, "balanced") == 0) {
-                    mode = AUTOTUNE_MODE_BALANCED;
-                }
-            } else {
-                ESP_LOGW(TAG, "Autotune start: no mode specified, defaulting to efficiency");
-            }
-            ESP_LOGI(TAG, "Autotune start: using mode=%d (0=eff, 1=hr, 2=bal)", mode);
-
-            // Check for device inclusion options
-            cJSON *include_master = cJSON_GetObjectItem(root, "includeMaster");
-            if (include_master && cJSON_IsBool(include_master)) {
-                cluster_autotune_set_include_master(cJSON_IsTrue(include_master));
-            }
-
-            cJSON *slave_mask = cJSON_GetObjectItem(root, "slaveMask");
-            if (slave_mask && cJSON_IsNumber(slave_mask)) {
-                cluster_autotune_set_slave_mask((uint8_t)slave_mask->valueint);
-            }
-
-            // Alternative: includeSlaves array [0, 1, 2, ...]
-            cJSON *include_slaves = cJSON_GetObjectItem(root, "includeSlaves");
-            if (include_slaves && cJSON_IsArray(include_slaves)) {
-                uint8_t mask = 0;
-                cJSON *item;
-                cJSON_ArrayForEach(item, include_slaves) {
-                    if (cJSON_IsNumber(item) && item->valueint >= 0 && item->valueint < 8) {
-                        mask |= (1 << item->valueint);
-                    }
-                }
-                cluster_autotune_set_slave_mask(mask);
-            }
-
-            ret = cluster_autotune_start(mode);
-        } else if (strcmp(action_str, "stop") == 0 || strcmp(action_str, "disable") == 0) {
-            cJSON *apply_best = cJSON_GetObjectItem(root, "applyBest");
-            bool should_apply = true;
-            if (apply_best && cJSON_IsBool(apply_best)) {
-                should_apply = cJSON_IsTrue(apply_best);
-            }
-            ret = cluster_autotune_stop(should_apply);
-        } else if (strcmp(action_str, "enableMaster") == 0) {
-            // Also parse mode for enableMaster (use same logic as start)
-            autotune_mode_t mode = AUTOTUNE_MODE_EFFICIENCY;
-            cJSON *mode_item = cJSON_GetObjectItem(root, "mode");
-            if (mode_item && cJSON_IsString(mode_item)) {
-                if (strcmp(mode_item->valuestring, "hashrate") == 0) {
-                    mode = AUTOTUNE_MODE_HASHRATE;
-                } else if (strcmp(mode_item->valuestring, "balanced") == 0) {
-                    mode = AUTOTUNE_MODE_BALANCED;
-                }
-            }
-            ESP_LOGI(TAG, "enableMaster: mode=%d", mode);
-            ret = cluster_autotune_start(mode);
-        } else if (strcmp(action_str, "disableMaster") == 0) {
-            ret = cluster_autotune_stop(true);
-        } else if (strcmp(action_str, "enableWatchdog") == 0) {
-            ret = cluster_autotune_watchdog_enable(true);
-        } else if (strcmp(action_str, "disableWatchdog") == 0) {
-            ret = cluster_autotune_watchdog_enable(false);
-        }
-    }
-
-    // Also check for direct watchdog flag (alternative syntax)
-    cJSON *watchdog = cJSON_GetObjectItem(root, "watchdog");
-    if (watchdog && cJSON_IsBool(watchdog)) {
-        ret = cluster_autotune_watchdog_enable(cJSON_IsTrue(watchdog));
+    // Handle enable/disable
+    cJSON *enabled = cJSON_GetObjectItem(root, "enabled");
+    if (enabled && cJSON_IsBool(enabled)) {
+        ret = cluster_watchdog_enable(cJSON_IsTrue(enabled));
     }
 
     cJSON_Delete(root);
@@ -2256,6 +2115,8 @@ static esp_err_t POST_autotune(httpd_req_t *req)
 
     return ret;
 }
+
+#endif // CLUSTER_ENABLED
 
 // ============================================================================
 // Auto-Timing API
@@ -2377,372 +2238,6 @@ static esp_err_t PATCH_autotiming(httpd_req_t *req)
 
 // ============================================================================
 // Autotune Profiles API
-// ============================================================================
-
-#define PROFILE_NVS_NAMESPACE "autoprofile"
-#define MAX_PROFILES 10
-#define PROFILE_NAME_MAX_LEN 32
-#define PROFILE_DATA_MAX_LEN 512
-
-/* Handler for getting all profiles */
-static esp_err_t GET_autotune_profiles(httpd_req_t *req)
-{
-    if (is_network_allowed(req) != ESP_OK) {
-        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Unauthorized");
-    }
-
-    httpd_resp_set_type(req, "application/json");
-
-    nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(PROFILE_NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
-
-    cJSON *root = cJSON_CreateObject();
-    cJSON *profiles = cJSON_CreateArray();
-
-    if (err == ESP_OK) {
-        // Iterate through profile slots
-        for (int i = 0; i < MAX_PROFILES; i++) {
-            char key[16];
-            snprintf(key, sizeof(key), "profile_%d", i);
-
-            size_t required_size = 0;
-            err = nvs_get_str(nvs_handle, key, NULL, &required_size);
-            if (err == ESP_OK && required_size > 0 && required_size < PROFILE_DATA_MAX_LEN) {
-                char *profile_data = malloc(required_size);
-                if (profile_data && nvs_get_str(nvs_handle, key, profile_data, &required_size) == ESP_OK) {
-                    cJSON *profile = cJSON_Parse(profile_data);
-                    if (profile) {
-                        cJSON_AddNumberToObject(profile, "slot", i);
-                        cJSON_AddItemToArray(profiles, profile);
-                    }
-                }
-                free(profile_data);
-            }
-        }
-        nvs_close(nvs_handle);
-    }
-
-    cJSON_AddItemToObject(root, "profiles", profiles);
-
-    char *json_str = cJSON_Print(root);
-    httpd_resp_sendstr(req, json_str);
-    free(json_str);
-    cJSON_Delete(root);
-
-    return ESP_OK;
-}
-
-/* Handler for saving a profile */
-static esp_err_t POST_autotune_profile(httpd_req_t *req)
-{
-    if (is_network_allowed(req) != ESP_OK) {
-        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Unauthorized");
-    }
-
-    int total_len = req->content_len;
-    char buf[PROFILE_DATA_MAX_LEN];
-
-    if (total_len >= sizeof(buf)) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Profile too large");
-    }
-
-    int cur_len = 0;
-    while (cur_len < total_len) {
-        int received = httpd_req_recv(req, buf + cur_len, total_len - cur_len);
-        if (received <= 0) {
-            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to receive");
-        }
-        cur_len += received;
-    }
-    buf[cur_len] = '\0';
-
-    cJSON *root = cJSON_Parse(buf);
-    if (!root) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
-    }
-
-    // Validate required fields
-    cJSON *name = cJSON_GetObjectItem(root, "name");
-    if (!name || !cJSON_IsString(name) || strlen(name->valuestring) == 0) {
-        cJSON_Delete(root);
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Profile name required");
-    }
-
-    // Find an empty slot or slot with same name
-    nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(PROFILE_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
-    if (err != ESP_OK) {
-        cJSON_Delete(root);
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open storage");
-    }
-
-    int target_slot = -1;
-    for (int i = 0; i < MAX_PROFILES; i++) {
-        char key[16];
-        snprintf(key, sizeof(key), "profile_%d", i);
-
-        size_t required_size = 0;
-        err = nvs_get_str(nvs_handle, key, NULL, &required_size);
-        if (err == ESP_ERR_NVS_NOT_FOUND) {
-            // Empty slot
-            if (target_slot == -1) target_slot = i;
-        } else if (err == ESP_OK && required_size < PROFILE_DATA_MAX_LEN) {
-            // Check if this profile has the same name
-            char *existing = malloc(required_size);
-            if (existing && nvs_get_str(nvs_handle, key, existing, &required_size) == ESP_OK) {
-                cJSON *existing_profile = cJSON_Parse(existing);
-                if (existing_profile) {
-                    cJSON *existing_name = cJSON_GetObjectItem(existing_profile, "name");
-                    if (existing_name && cJSON_IsString(existing_name) &&
-                        strcmp(existing_name->valuestring, name->valuestring) == 0) {
-                        target_slot = i; // Overwrite existing
-                    }
-                    cJSON_Delete(existing_profile);
-                }
-            }
-            free(existing);
-        }
-    }
-
-    if (target_slot == -1) {
-        nvs_close(nvs_handle);
-        cJSON_Delete(root);
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No free profile slots");
-    }
-
-    // Add timestamp
-    cJSON_AddNumberToObject(root, "savedAt", (double)time(NULL));
-
-    char *profile_str = cJSON_PrintUnformatted(root);
-    char key[16];
-    snprintf(key, sizeof(key), "profile_%d", target_slot);
-
-    err = nvs_set_str(nvs_handle, key, profile_str);
-    free(profile_str);
-
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs_handle);
-    }
-
-    nvs_close(nvs_handle);
-    cJSON_Delete(root);
-
-    if (err == ESP_OK) {
-        httpd_resp_set_type(req, "application/json");
-        char response[64];
-        snprintf(response, sizeof(response), "{\"success\":true,\"slot\":%d}", target_slot);
-        httpd_resp_sendstr(req, response);
-        return ESP_OK;
-    } else {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save profile");
-    }
-}
-
-/* Handler for deleting a profile */
-static esp_err_t DELETE_autotune_profile(httpd_req_t *req)
-{
-    if (is_network_allowed(req) != ESP_OK) {
-        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Unauthorized");
-    }
-
-    // Parse slot from URI: /api/cluster/profile/{slot}
-    const char *uri = req->uri;
-    const char *slot_str = strrchr(uri, '/');
-    if (!slot_str) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid URI");
-    }
-
-    int slot = atoi(slot_str + 1);
-    if (slot < 0 || slot >= MAX_PROFILES) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid slot");
-    }
-
-    nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(PROFILE_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
-    if (err != ESP_OK) {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open storage");
-    }
-
-    char key[16];
-    snprintf(key, sizeof(key), "profile_%d", slot);
-    err = nvs_erase_key(nvs_handle, key);
-
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs_handle);
-    }
-
-    nvs_close(nvs_handle);
-
-    if (err == ESP_OK || err == ESP_ERR_NVS_NOT_FOUND) {
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_sendstr(req, "{\"success\":true}");
-        return ESP_OK;
-    }
-    return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to delete profile");
-}
-
-/* Handler for applying a profile */
-static esp_err_t POST_apply_profile(httpd_req_t *req)
-{
-    if (is_network_allowed(req) != ESP_OK) {
-        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Unauthorized");
-    }
-
-    // Read request body for target (master, slave ID, or all)
-    int total_len = req->content_len;
-    char buf[256];
-
-    if (total_len >= sizeof(buf)) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Request too large");
-    }
-
-    if (total_len > 0) {
-        int cur_len = 0;
-        while (cur_len < total_len) {
-            int received = httpd_req_recv(req, buf + cur_len, total_len - cur_len);
-            if (received <= 0) {
-                return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to receive");
-            }
-            cur_len += received;
-        }
-        buf[cur_len] = '\0';
-    } else {
-        buf[0] = '\0';
-    }
-
-    // Parse slot from URI: /api/cluster/profile/{slot}/apply
-    const char *uri = req->uri;
-    const char *profile_part = strstr(uri, "/profile/");
-    if (!profile_part) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid URI");
-    }
-
-    int slot = atoi(profile_part + 9); // Skip "/profile/"
-    if (slot < 0 || slot >= MAX_PROFILES) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid slot");
-    }
-
-    // Load the profile
-    nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open(PROFILE_NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
-    if (err != ESP_OK) {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open storage");
-    }
-
-    char key[16];
-    snprintf(key, sizeof(key), "profile_%d", slot);
-
-    size_t required_size = 0;
-    err = nvs_get_str(nvs_handle, key, NULL, &required_size);
-    if (err != ESP_OK || required_size == 0) {
-        nvs_close(nvs_handle);
-        return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Profile not found");
-    }
-
-    char *profile_data = malloc(required_size);
-    if (!profile_data) {
-        nvs_close(nvs_handle);
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
-    }
-
-    err = nvs_get_str(nvs_handle, key, profile_data, &required_size);
-    nvs_close(nvs_handle);
-
-    if (err != ESP_OK) {
-        free(profile_data);
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to read profile");
-    }
-
-    cJSON *profile = cJSON_Parse(profile_data);
-    free(profile_data);
-
-    if (!profile) {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Invalid profile data");
-    }
-
-    // Extract settings from profile
-    cJSON *frequency = cJSON_GetObjectItem(profile, "frequency");
-    cJSON *voltage = cJSON_GetObjectItem(profile, "voltage");
-
-    // Parse target from request body
-    cJSON *request = buf[0] ? cJSON_Parse(buf) : NULL;
-    const char *target = "master";
-#if CLUSTER_IS_MASTER
-    int slave_id = -1;
-#endif
-
-    if (request) {
-        cJSON *target_item = cJSON_GetObjectItem(request, "target");
-        if (target_item && cJSON_IsString(target_item)) {
-            target = target_item->valuestring;
-        }
-#if CLUSTER_IS_MASTER
-        cJSON *slave_item = cJSON_GetObjectItem(request, "slaveId");
-        if (slave_item && cJSON_IsNumber(slave_item)) {
-            slave_id = slave_item->valueint;
-        }
-#endif
-    }
-
-    int applied_count = 0;
-
-    // Apply settings based on target
-    if (strcmp(target, "master") == 0) {
-        // Apply to master's own settings
-        if (frequency && cJSON_IsNumber(frequency)) {
-            // Apply frequency to local device
-            // This would call your NVS config functions
-            ESP_LOGI(TAG, "Profile: setting master frequency to %d", frequency->valueint);
-            applied_count++;
-        }
-        if (voltage && cJSON_IsNumber(voltage)) {
-            ESP_LOGI(TAG, "Profile: setting master voltage to %d", voltage->valueint);
-            applied_count++;
-        }
-    }
-#if CLUSTER_IS_MASTER
-    else if (strcmp(target, "slave") == 0 && slave_id >= 0) {
-        // Apply to specific slave via HTTP proxy
-        cluster_slave_t slave_info;
-        if (cluster_master_get_slave_info(slave_id, &slave_info) == ESP_OK) {
-            char post_data[128];
-            if (frequency && cJSON_IsNumber(frequency)) {
-                snprintf(post_data, sizeof(post_data),
-                         "{\"settingId\":32,\"value\":%d}", frequency->valueint);
-                char *response = NULL;
-                http_proxy_to_slave(slave_info.ip_addr, "/api/cluster/slave/0/setting",
-                                    HTTP_METHOD_POST, post_data, &response);
-                free(response);
-                applied_count++;
-            }
-            if (voltage && cJSON_IsNumber(voltage)) {
-                snprintf(post_data, sizeof(post_data),
-                         "{\"settingId\":33,\"value\":%d}", voltage->valueint);
-                char *response = NULL;
-                http_proxy_to_slave(slave_info.ip_addr, "/api/cluster/slave/0/setting",
-                                    HTTP_METHOD_POST, post_data, &response);
-                free(response);
-                applied_count++;
-            }
-        }
-    } else if (strcmp(target, "all") == 0) {
-        // Apply to all slaves
-        ESP_LOGI(TAG, "Profile: applying to all slaves (not yet implemented)");
-        applied_count = 1; // Placeholder
-    }
-#endif // CLUSTER_IS_MASTER
-
-    if (request) cJSON_Delete(request);
-    cJSON_Delete(profile);
-
-    httpd_resp_set_type(req, "application/json");
-    char response[64];
-    snprintf(response, sizeof(response), "{\"success\":true,\"appliedCount\":%d}", applied_count);
-    httpd_resp_sendstr(req, response);
-
-    return ESP_OK;
-}
-
 #endif // CLUSTER_ENABLED
 
 // HTTP Error (404) Handler - Redirects all requests to the root page
@@ -2917,55 +2412,22 @@ esp_err_t start_rest_server(void * pvParameters)
     };
     httpd_register_uri_handler(server, &cluster_mode_uri);
 
-    // Autotune API endpoints
-    httpd_uri_t autotune_status_uri = {
-        .uri = "/api/cluster/autotune/status",
+    // Watchdog API endpoints
+    httpd_uri_t watchdog_status_uri = {
+        .uri = "/api/cluster/watchdog/status",
         .method = HTTP_GET,
-        .handler = GET_autotune_status,
+        .handler = GET_watchdog_status,
         .user_ctx = rest_context
     };
-    httpd_register_uri_handler(server, &autotune_status_uri);
+    httpd_register_uri_handler(server, &watchdog_status_uri);
 
-    httpd_uri_t autotune_control_uri = {
-        .uri = "/api/cluster/autotune",
+    httpd_uri_t watchdog_control_uri = {
+        .uri = "/api/cluster/watchdog",
         .method = HTTP_POST,
-        .handler = POST_autotune,
+        .handler = POST_watchdog,
         .user_ctx = rest_context
     };
-    httpd_register_uri_handler(server, &autotune_control_uri);
-
-    // Profile API endpoints
-    httpd_uri_t profiles_get_uri = {
-        .uri = "/api/cluster/profiles",
-        .method = HTTP_GET,
-        .handler = GET_autotune_profiles,
-        .user_ctx = rest_context
-    };
-    httpd_register_uri_handler(server, &profiles_get_uri);
-
-    httpd_uri_t profile_post_uri = {
-        .uri = "/api/cluster/profile",
-        .method = HTTP_POST,
-        .handler = POST_autotune_profile,
-        .user_ctx = rest_context
-    };
-    httpd_register_uri_handler(server, &profile_post_uri);
-
-    httpd_uri_t profile_delete_uri = {
-        .uri = "/api/cluster/profile/*",
-        .method = HTTP_DELETE,
-        .handler = DELETE_autotune_profile,
-        .user_ctx = rest_context
-    };
-    httpd_register_uri_handler(server, &profile_delete_uri);
-
-    httpd_uri_t profile_apply_uri = {
-        .uri = "/api/cluster/profile/*/apply",
-        .method = HTTP_POST,
-        .handler = POST_apply_profile,
-        .user_ctx = rest_context
-    };
-    httpd_register_uri_handler(server, &profile_apply_uri);
+    httpd_register_uri_handler(server, &watchdog_control_uri);
 
 #if CLUSTER_IS_MASTER
     // Single slave API endpoint - handles /api/cluster/slave/{id}/{action}

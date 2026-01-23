@@ -13,6 +13,7 @@
 #include "cluster_protocol.h"
 #include "cluster_config.h"
 #include "cluster_espnow.h"
+#include "cluster_watchdog.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "string.h"
@@ -77,6 +78,9 @@ esp_err_t cluster_integration_init(GlobalState *GLOBAL_STATE)
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "Cluster integration initialized: %s",
                  CLUSTER_IS_MASTER ? "MASTER" : (CLUSTER_IS_SLAVE ? "SLAVE" : "DISABLED"));
+
+        // Initialize watchdog (monitors temp/voltage and auto-throttles)
+        cluster_watchdog_init();
     }
 
     return ret;

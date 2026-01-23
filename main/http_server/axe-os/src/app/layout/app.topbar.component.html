@@ -4,7 +4,13 @@
     </a>
 
     <ng-container *ngIf="info$ | async as info">
-        <span class="text-500 select-none absolute left-0 bottom-0 ml-6 md:ml-7 mb-1"
+        <a *ngIf="info.ipv4"
+           [href]="'http://' + info.ipv4"
+           class="text-500 select-none absolute left-0 bottom-0 ml-6 md:ml-7 mb-1 no-underline hover:underline"
+           tooltipPosition="bottom"
+           pTooltip="{{info.ipv4}} - Click to open"
+        >{{info.hostname}}</a>
+        <span *ngIf="!info.ipv4" class="text-500 select-none absolute left-0 bottom-0 ml-6 md:ml-7 mb-1"
             tooltipPosition="bottom"
             pTooltip="Hostname"
         >{{info.hostname}}</span>

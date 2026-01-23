@@ -73,45 +73,6 @@ export interface ITransportInfo {
   peerCount?: number;
 }
 
-export interface IAutotuneStatus {
-  state: string;
-  stateCode: number;
-  mode: string;
-  enabled: boolean;
-  running: boolean;
-  currentFrequency: number;
-  currentVoltage: number;
-  bestFrequency: number;
-  bestVoltage: number;
-  bestEfficiency: number;
-  bestHashrate: number;
-  progress: number;
-  testsCompleted: number;
-  testsTotal: number;
-  testDuration: number;
-  totalDuration: number;
-  error?: string;
-  // Safety watchdog
-  watchdogEnabled?: boolean;
-  watchdogRunning?: boolean;
-  // Current device being tuned (-1 = master, 0-7 = slave)
-  currentDevice?: number;
-}
-
-export interface IAutotuneProfile {
-  slot?: number;
-  name: string;
-  frequency: number;
-  voltage: number;
-  fanSpeed?: number;
-  targetTemp?: number;
-  savedAt?: number;
-}
-
-export interface IProfilesResponse {
-  profiles: IAutotuneProfile[];
-}
-
 export interface IAutoTimingStatus {
   enabled: boolean;
   state: string;
@@ -125,6 +86,26 @@ export interface IAutoTimingStatus {
   calibrationStep: number;
   bestInterval: number;
   bestRejectionRate: number;
+}
+
+export interface IWatchdogDeviceStatus {
+  throttled: boolean;
+  throttleReason: number;
+  temp: number;
+  vin: number;
+  frequency: number;
+  voltage: number;
+  throttleCount: number;
+}
+
+export interface IWatchdogStatus {
+  enabled: boolean;
+  running: boolean;
+  throttledCount: number;
+  tempThreshold: number;
+  vinThreshold: number;
+  master: IWatchdogDeviceStatus;
+  slaves: IWatchdogDeviceStatus[];
 }
 
 export interface IClusterStatus {
@@ -361,194 +342,6 @@ export class ClusterService {
     return this.sendSlaveCommand(uri, slaveId, { command: 'identify' });
   }
 
-  // ========================================================================
-  // Autotune API
-  // ========================================================================
-
-  public getAutotuneStatus(uri: string = ''): Observable<IAutotuneStatus> {
-    if (environment.production) {
-      return this.httpClient.get<IAutotuneStatus>(`${uri}/api/cluster/autotune/status`).pipe(timeout(5000));
-    }
-    // Mock data for development
-    return of({
-      state: 'testing',
-      stateCode: 2,
-      mode: 'efficiency',
-      enabled: true,
-      running: true,
-      currentFrequency: 525,
-      currentVoltage: 1200,
-      bestFrequency: 500,
-      bestVoltage: 1150,
-      bestEfficiency: 17.5,
-      bestHashrate: 1.2,
-      progress: 45,
-      testsCompleted: 9,
-      testsTotal: 20,
-      testDuration: 30000,
-      totalDuration: 120000
-    }).pipe(delay(500));
-  }
-
-  public enableMasterAutotune(uri: string = '', enable: boolean): Observable<any> {
-    if (environment.production) {
-      const action = enable ? 'enableMaster' : 'disableMaster';
-      return this.httpClient.post(`${uri}/api/cluster/autotune`, { action }).pipe(timeout(5000));
-    }
-    return of({ success: true }).pipe(delay(500));
-  }
-
-  public startAutotune(uri: string = '', mode: string = 'efficiency', includeMaster: boolean = true, slaveMask: number = 0xFF): Observable<any> {
-    const requestBody = {
-      action: 'start',
-      mode,
-      includeMaster,
-      slaveMask
-    };
-    console.log('[CLUSTER SERVICE] startAutotune request body:', JSON.stringify(requestBody));
-
-    if (environment.production) {
-      return this.httpClient.post(`${uri}/api/cluster/autotune`, requestBody).pipe(timeout(5000));
-    }
-    return of({ success: true }).pipe(delay(500));
-  }
-
-  public stopAutotune(uri: string = '', applyBest: boolean = true): Observable<any> {
-    if (environment.production) {
-      return this.httpClient.post(`${uri}/api/cluster/autotune`, { action: 'stop', applyBest }).pipe(timeout(5000));
-    }
-    return of({ success: true }).pipe(delay(500));
-  }
-
-  public setWatchdog(uri: string = '', enabled: boolean): Observable<any> {
-    if (environment.production) {
-      const action = enabled ? 'enableWatchdog' : 'disableWatchdog';
-      return this.httpClient.post(`${uri}/api/cluster/autotune`, { action }).pipe(timeout(5000));
-    }
-    return of({ success: true }).pipe(delay(500));
-  }
-
-  // ========================================================================
-  // Slave Autotune API (via HTTP proxy)
-  // ========================================================================
-
-  /**
-   * Get autotune status from a specific slave (proxied via master)
-   */
-  public getSlaveAutotuneStatus(uri: string = '', slaveId: number): Observable<IAutotuneStatus> {
-    if (environment.production) {
-      return this.httpClient.get<IAutotuneStatus>(`${uri}/api/cluster/slave/${slaveId}/autotune/status`).pipe(timeout(10000));
-    }
-    // Mock data for development
-    return of({
-      state: 'idle',
-      stateCode: 0,
-      mode: 'efficiency',
-      enabled: false,
-      running: false,
-      currentFrequency: 500,
-      currentVoltage: 1150,
-      bestFrequency: 0,
-      bestVoltage: 0,
-      bestEfficiency: 0,
-      bestHashrate: 0,
-      progress: 0,
-      testsCompleted: 0,
-      testsTotal: 0,
-      testDuration: 0,
-      totalDuration: 0
-    }).pipe(delay(500));
-  }
-
-  /**
-   * Start autotune on a specific slave
-   */
-  public startSlaveAutotune(uri: string = '', slaveId: number, mode: string = 'efficiency'): Observable<any> {
-    if (environment.production) {
-      return this.httpClient.post(`${uri}/api/cluster/slave/${slaveId}/autotune`, { action: 'start', mode }).pipe(timeout(10000));
-    }
-    return of({ success: true }).pipe(delay(500));
-  }
-
-  /**
-   * Stop autotune on a specific slave
-   */
-  public stopSlaveAutotune(uri: string = '', slaveId: number, applyBest: boolean = true): Observable<any> {
-    if (environment.production) {
-      return this.httpClient.post(`${uri}/api/cluster/slave/${slaveId}/autotune`, { action: 'stop', applyBest }).pipe(timeout(10000));
-    }
-    return of({ success: true }).pipe(delay(500));
-  }
-
-  /**
-   * Enable/disable autotune on a specific slave
-   */
-  public setSlaveAutotuneEnabled(uri: string = '', slaveId: number, enable: boolean): Observable<any> {
-    if (environment.production) {
-      const action = enable ? 'enable' : 'disable';
-      return this.httpClient.post(`${uri}/api/cluster/slave/${slaveId}/autotune`, { action }).pipe(timeout(10000));
-    }
-    return of({ success: true }).pipe(delay(500));
-  }
-
-  // ========================================================================
-  // Autotune Profiles API
-  // ========================================================================
-
-  public getProfiles(uri: string = ''): Observable<IProfilesResponse> {
-    if (environment.production) {
-      return this.httpClient.get<IProfilesResponse>(`${uri}/api/cluster/profiles`).pipe(timeout(5000));
-    }
-    // Mock data for development
-    return of({
-      profiles: [
-        {
-          slot: 0,
-          name: 'Efficiency Mode',
-          frequency: 500,
-          voltage: 1150,
-          fanSpeed: 50,
-          targetTemp: 55,
-          savedAt: Date.now() / 1000 - 86400
-        },
-        {
-          slot: 1,
-          name: 'Max Performance',
-          frequency: 600,
-          voltage: 1250,
-          fanSpeed: 80,
-          targetTemp: 60,
-          savedAt: Date.now() / 1000 - 3600
-        }
-      ]
-    }).pipe(delay(500));
-  }
-
-  public saveProfile(uri: string = '', profile: IAutotuneProfile): Observable<any> {
-    if (environment.production) {
-      return this.httpClient.post(`${uri}/api/cluster/profile`, profile).pipe(timeout(5000));
-    }
-    return of({ success: true, slot: 0 }).pipe(delay(500));
-  }
-
-  public deleteProfile(uri: string = '', slot: number): Observable<any> {
-    if (environment.production) {
-      return this.httpClient.delete(`${uri}/api/cluster/profile/${slot}`).pipe(timeout(5000));
-    }
-    return of({ success: true }).pipe(delay(500));
-  }
-
-  public applyProfile(uri: string = '', slot: number, target: string = 'master', slaveId?: number): Observable<any> {
-    if (environment.production) {
-      const body: any = { target };
-      if (slaveId !== undefined) {
-        body.slaveId = slaveId;
-      }
-      return this.httpClient.post(`${uri}/api/cluster/profile/${slot}/apply`, body).pipe(timeout(10000));
-    }
-    return of({ success: true, appliedCount: 2 }).pipe(delay(500));
-  }
-
   // RSSI helpers for ESP-NOW
   public rssiToPercent(rssi: number): number {
     // Convert RSSI (typically -100 to -30 dBm) to percentage
@@ -615,6 +408,41 @@ export class ClusterService {
   public recalibrateAutoTiming(uri: string = ''): Observable<any> {
     if (environment.production) {
       return this.httpClient.patch(`${uri}/api/system/autotiming`, { recalibrate: true }).pipe(timeout(5000));
+    }
+    return of({ success: true }).pipe(delay(500));
+  }
+
+  // ========================================================================
+  // Watchdog API
+  // ========================================================================
+
+  public getWatchdogStatus(uri: string = ''): Observable<IWatchdogStatus> {
+    if (environment.production) {
+      return this.httpClient.get<IWatchdogStatus>(`${uri}/api/cluster/watchdog/status`).pipe(timeout(5000));
+    }
+    // Mock data for development
+    return of({
+      enabled: true,
+      running: true,
+      throttledCount: 0,
+      tempThreshold: 68,
+      vinThreshold: 4.9,
+      master: {
+        throttled: false,
+        throttleReason: 0,
+        temp: 52.5,
+        vin: 5.1,
+        frequency: 500,
+        voltage: 1200,
+        throttleCount: 0
+      },
+      slaves: []
+    }).pipe(delay(500));
+  }
+
+  public setWatchdogEnabled(uri: string = '', enabled: boolean): Observable<any> {
+    if (environment.production) {
+      return this.httpClient.post(`${uri}/api/cluster/watchdog`, { enabled }).pipe(timeout(5000));
     }
     return of({ success: true }).pipe(delay(500));
   }
