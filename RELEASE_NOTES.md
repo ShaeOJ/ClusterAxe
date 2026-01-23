@@ -1,5 +1,50 @@
 # ClusterAxe Release Notes
 
+## v1.5.0 (January 23, 2026)
+
+### Breaking Changes
+
+- **Autotune Removed**: The cluster autotune feature has been removed due to instability issues. It was causing devices to crash and could leave settings in unsafe states. Use the new Benchmark feature instead for manual tuning.
+
+### New Features
+
+- **Safety Watchdog**: Standalone safety monitoring that runs continuously in the background
+  - Monitors chip temperature (threshold: 68°C) and input voltage (threshold: 4.9V)
+  - Automatically throttles frequency/voltage when limits exceeded
+  - Works on master and all connected slaves
+  - Toggle on/off from cluster page with status indicator
+  - Shows which devices are throttled and why
+
+- **Hashrate Benchmark Tool**: New frontend-driven benchmarking similar to mrv777/Bitaxe-Hashrate-Benchmark
+  - Test voltage/frequency combinations to find optimal efficiency
+  - Configurable ranges for voltage (1000-1400 mV) and frequency (400-800 MHz)
+  - Selectable test duration (3, 5, or 10 minutes per configuration)
+  - Statistical analysis with outlier trimming
+  - Safety checks for temperature, VR temp, and power limits
+  - Results show efficiency (J/TH), hashrate, and pass/fail status
+  - One-click "Apply Best Settings" to use optimal configuration
+  - Works on master device and any slave with an IP address
+
+### UI Improvements
+
+- **Inline Benchmark Panel**: Benchmark UI is now an expandable inline panel instead of a popup dialog
+  - No more dropdown clipping issues
+  - Touch-friendly button toggles for duration selection
+  - Full-width inputs with centered text
+  - Compact results list with best result highlighted
+  - Panel appears directly below the device card
+
+- **Topbar Fix**: Master now shows hostname under logo instead of IP address (IP shown in tooltip)
+
+### Technical Changes
+
+- Version bumped to v1.5.0 to reflect major feature changes
+- Removed `cluster_autotune.c` and related autotune code
+- Added `benchmark.service.ts` for frontend benchmark logic
+- Added AccordionModule to PrimeNG imports for collapsible logs
+
+---
+
 ## v1.1.2 (January 16, 2026)
 
 ### New Features
