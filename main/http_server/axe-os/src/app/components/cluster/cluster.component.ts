@@ -84,12 +84,13 @@ export class ClusterComponent implements OnInit, OnDestroy {
   private watchdogSubscription: Subscription | null = null;
 
   // Benchmark state
-  public showBenchmarkDialog = false;
+  public showBenchmarkPanel = false;
   public benchmarkState$: Observable<BenchmarkState>;
   public benchmarkLogs: string[] = [];
   public benchmarkConfig: BenchmarkConfig;
   public benchmarkTargetIp: string = '';
   public benchmarkTargetName: string = 'Master';
+  public benchmarkTargetSlot: number | null = null;  // null = master, number = slave slot
   private benchmarkLogSubscription: Subscription | null = null;
 
   private refreshInterval = 3000; // 3 seconds
@@ -775,16 +776,23 @@ export class ClusterComponent implements OnInit, OnDestroy {
   // Benchmark Methods
   // ========================================================================
 
-  openBenchmarkDialog(targetIp: string = '', targetName: string = 'Master'): void {
+  toggleBenchmarkPanel(targetIp: string = '', targetName: string = 'Master', slotNumber: number | null = null): void {
+    // If clicking same target, toggle off
+    if (this.showBenchmarkPanel && this.benchmarkTargetSlot === slotNumber) {
+      this.closeBenchmarkPanel();
+      return;
+    }
+
     this.benchmarkTargetIp = targetIp;
     this.benchmarkTargetName = targetName;
+    this.benchmarkTargetSlot = slotNumber;
     this.benchmarkConfig = {
       ...this.benchmarkService.getDefaultConfig(),
       targetIp,
       targetName
     };
     this.benchmarkLogs = [];
-    this.showBenchmarkDialog = true;
+    this.showBenchmarkPanel = true;
 
     // Subscribe to logs
     if (this.benchmarkLogSubscription) {
@@ -799,8 +807,9 @@ export class ClusterComponent implements OnInit, OnDestroy {
     });
   }
 
-  closeBenchmarkDialog(): void {
-    this.showBenchmarkDialog = false;
+  closeBenchmarkPanel(): void {
+    this.showBenchmarkPanel = false;
+    this.benchmarkTargetSlot = null;
     if (this.benchmarkLogSubscription) {
       this.benchmarkLogSubscription.unsubscribe();
       this.benchmarkLogSubscription = null;
@@ -824,6 +833,7 @@ export class ClusterComponent implements OnInit, OnDestroy {
         summary: 'Success',
         detail: 'Best benchmark settings applied'
       });
+      this.closeBenchmarkPanel();
     } catch (e: any) {
       this.messageService.add({
         severity: 'error',
