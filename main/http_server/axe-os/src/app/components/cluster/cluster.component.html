@@ -817,138 +817,152 @@
 
 <!-- Benchmark Dialog -->
 <p-dialog header="Hashrate Benchmark" [(visible)]="showBenchmarkDialog" [modal]="true"
-          [style]="{width: '90vw', maxWidth: '800px'}" [closable]="true"
+          [style]="{width: '95vw', maxWidth: '600px'}" [closable]="true"
+          [breakpoints]="{'640px': '100vw'}"
           (onHide)="closeBenchmarkDialog()">
 
     <ng-container *ngIf="benchmarkState$ | async as state">
         <!-- Target Info -->
-        <div class="surface-card border-round p-3 mb-3">
-            <div class="flex align-items-center gap-2">
-                <i class="pi pi-microchip text-primary text-xl"></i>
-                <span class="font-medium text-lg">{{benchmarkTargetName}}</span>
-                <span class="text-500" *ngIf="benchmarkTargetIp">({{benchmarkTargetIp}})</span>
-            </div>
+        <div class="surface-card border-round p-3 mb-3 text-center">
+            <i class="pi pi-microchip text-primary text-2xl mb-2"></i>
+            <div class="font-medium text-lg">{{benchmarkTargetName}}</div>
+            <div class="text-500 text-sm" *ngIf="benchmarkTargetIp">{{benchmarkTargetIp}}</div>
         </div>
 
         <!-- Config Section (only when not running) -->
-        <div *ngIf="!state.running && state.phase !== 'complete'" class="grid">
-            <div class="col-12 md:col-6">
-                <h4 class="mt-0 mb-2">Voltage Range (mV)</h4>
-                <div class="flex gap-2 align-items-center">
-                    <p-inputNumber [(ngModel)]="benchmarkConfig.minVoltage" [min]="1000" [max]="1400" [step]="25" class="w-6rem"></p-inputNumber>
-                    <span class="text-500">to</span>
-                    <p-inputNumber [(ngModel)]="benchmarkConfig.maxVoltage" [min]="1000" [max]="1400" [step]="25" class="w-6rem"></p-inputNumber>
+        <div *ngIf="!state.running && state.phase !== 'complete'">
+            <!-- Voltage Range -->
+            <div class="mb-3">
+                <label class="block text-500 text-sm mb-2">Voltage Range (mV)</label>
+                <div class="flex align-items-center gap-2">
+                    <p-inputNumber [(ngModel)]="benchmarkConfig.minVoltage" [min]="1000" [max]="1400" [step]="25"
+                                   styleClass="w-full" inputStyleClass="w-full text-center"></p-inputNumber>
+                    <span class="text-500 px-2">to</span>
+                    <p-inputNumber [(ngModel)]="benchmarkConfig.maxVoltage" [min]="1000" [max]="1400" [step]="25"
+                                   styleClass="w-full" inputStyleClass="w-full text-center"></p-inputNumber>
                 </div>
             </div>
-            <div class="col-12 md:col-6">
-                <h4 class="mt-0 mb-2">Frequency Range (MHz)</h4>
-                <div class="flex gap-2 align-items-center">
-                    <p-inputNumber [(ngModel)]="benchmarkConfig.minFrequency" [min]="400" [max]="800" [step]="25" class="w-6rem"></p-inputNumber>
-                    <span class="text-500">to</span>
-                    <p-inputNumber [(ngModel)]="benchmarkConfig.maxFrequency" [min]="400" [max]="800" [step]="25" class="w-6rem"></p-inputNumber>
+
+            <!-- Frequency Range -->
+            <div class="mb-3">
+                <label class="block text-500 text-sm mb-2">Frequency Range (MHz)</label>
+                <div class="flex align-items-center gap-2">
+                    <p-inputNumber [(ngModel)]="benchmarkConfig.minFrequency" [min]="400" [max]="800" [step]="25"
+                                   styleClass="w-full" inputStyleClass="w-full text-center"></p-inputNumber>
+                    <span class="text-500 px-2">to</span>
+                    <p-inputNumber [(ngModel)]="benchmarkConfig.maxFrequency" [min]="400" [max]="800" [step]="25"
+                                   styleClass="w-full" inputStyleClass="w-full text-center"></p-inputNumber>
                 </div>
             </div>
-            <div class="col-12 md:col-6">
-                <h4 class="mt-0 mb-2">Starting Values</h4>
-                <div class="flex gap-2 align-items-center">
-                    <span class="text-500 w-4rem">Voltage:</span>
-                    <p-inputNumber [(ngModel)]="benchmarkConfig.startVoltage" [min]="1000" [max]="1400" [step]="25" class="w-6rem"></p-inputNumber>
-                    <span class="text-500 w-4rem ml-3">Freq:</span>
-                    <p-inputNumber [(ngModel)]="benchmarkConfig.startFrequency" [min]="400" [max]="800" [step]="25" class="w-6rem"></p-inputNumber>
+
+            <!-- Starting Values -->
+            <div class="grid mb-3">
+                <div class="col-6">
+                    <label class="block text-500 text-sm mb-2">Start Voltage (mV)</label>
+                    <p-inputNumber [(ngModel)]="benchmarkConfig.startVoltage" [min]="1000" [max]="1400" [step]="25"
+                                   styleClass="w-full" inputStyleClass="w-full text-center"></p-inputNumber>
+                </div>
+                <div class="col-6">
+                    <label class="block text-500 text-sm mb-2">Start Freq (MHz)</label>
+                    <p-inputNumber [(ngModel)]="benchmarkConfig.startFrequency" [min]="400" [max]="800" [step]="25"
+                                   styleClass="w-full" inputStyleClass="w-full text-center"></p-inputNumber>
                 </div>
             </div>
-            <div class="col-12 md:col-6">
-                <h4 class="mt-0 mb-2">Test Duration</h4>
-                <div class="flex gap-2 align-items-center">
-                    <p-dropdown [options]="[
-                        {label: '3 min (quick)', value: 180000},
-                        {label: '5 min (normal)', value: 300000},
-                        {label: '10 min (thorough)', value: 600000}
-                    ]" [(ngModel)]="benchmarkConfig.testDurationMs" optionLabel="label" optionValue="value"></p-dropdown>
-                </div>
+
+            <!-- Test Duration -->
+            <div class="mb-3">
+                <label class="block text-500 text-sm mb-2">Test Duration</label>
+                <p-dropdown [options]="[
+                    {label: '3 min (quick)', value: 180000},
+                    {label: '5 min (normal)', value: 300000},
+                    {label: '10 min (thorough)', value: 600000}
+                ]" [(ngModel)]="benchmarkConfig.testDurationMs" optionLabel="label" optionValue="value"
+                styleClass="w-full"></p-dropdown>
             </div>
         </div>
 
         <!-- Progress Section (when running) -->
         <div *ngIf="state.running" class="surface-card border-round p-3 mb-3">
-            <div class="flex justify-content-between align-items-center mb-2">
-                <span class="font-medium">
+            <div class="text-center mb-3">
+                <div class="text-lg font-medium mb-1">
                     <span *ngIf="state.phase === 'starting'">Starting test...</span>
-                    <span *ngIf="state.phase === 'stabilizing'">Stabilizing ({{(state.timeRemainingMs / 1000) | number:'1.0-0'}}s)</span>
-                    <span *ngIf="state.phase === 'sampling'">Sampling: {{state.samplesCollected}}/{{state.samplesNeeded}}</span>
-                    <span *ngIf="state.phase === 'analyzing'">Analyzing results...</span>
-                </span>
-                <span class="text-500">Test {{state.testNumber}}</span>
+                    <span *ngIf="state.phase === 'stabilizing'">Stabilizing</span>
+                    <span *ngIf="state.phase === 'sampling'">Sampling</span>
+                    <span *ngIf="state.phase === 'analyzing'">Analyzing...</span>
+                </div>
+                <div class="text-500" *ngIf="state.phase === 'stabilizing'">{{(state.timeRemainingMs / 1000) | number:'1.0-0'}}s remaining</div>
+                <div class="text-500" *ngIf="state.phase === 'sampling'">{{state.samplesCollected}} / {{state.samplesNeeded}} samples</div>
             </div>
-            <div class="flex gap-3 text-sm">
-                <span><i class="pi pi-bolt mr-1 text-primary"></i>{{state.currentFrequency}} MHz</span>
-                <span><i class="pi pi-bolt mr-1 text-orange-500"></i>{{state.currentVoltage}} mV</span>
+            <div class="flex justify-content-center gap-4 mb-3">
+                <div class="text-center">
+                    <div class="text-500 text-xs">Frequency</div>
+                    <div class="font-bold text-primary">{{state.currentFrequency}} MHz</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-500 text-xs">Voltage</div>
+                    <div class="font-bold text-orange-500">{{state.currentVoltage}} mV</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-500 text-xs">Test #</div>
+                    <div class="font-bold">{{state.testNumber}}</div>
+                </div>
             </div>
             <p-progressBar [value]="state.samplesNeeded ? (state.samplesCollected / state.samplesNeeded * 100) : 0"
-                           [showValue]="false" class="mt-2"></p-progressBar>
+                           [showValue]="false"></p-progressBar>
         </div>
 
-        <!-- Results Table -->
+        <!-- Results Table (compact for mobile) -->
         <div *ngIf="state.results.length > 0" class="mb-3">
-            <h4 class="mt-0 mb-2">Results</h4>
-            <p-table [value]="state.results" [scrollable]="true" scrollHeight="200px" styleClass="p-datatable-sm">
-                <ng-template pTemplate="header">
-                    <tr>
-                        <th>Freq</th>
-                        <th>Voltage</th>
-                        <th>Hashrate</th>
-                        <th>Efficiency</th>
-                        <th>Temp</th>
-                        <th>Status</th>
-                    </tr>
-                </ng-template>
-                <ng-template pTemplate="body" let-result>
-                    <tr [ngClass]="{'bg-green-50': result === state.bestResult}">
-                        <td>{{result.frequency}} MHz</td>
-                        <td>{{result.voltage}} mV</td>
-                        <td>{{result.avgHashrate | number:'1.1-1'}} GH/s</td>
-                        <td>{{result.efficiency | number:'1.2-2'}} J/TH</td>
-                        <td>{{result.avgTemp | number:'1.1-1'}}°C</td>
-                        <td>
-                            <span *ngIf="result.passed" class="text-green-500"><i class="pi pi-check"></i> Pass</span>
-                            <span *ngIf="!result.passed" class="text-red-500" [pTooltip]="result.failReason"><i class="pi pi-times"></i> Fail</span>
-                        </td>
-                    </tr>
-                </ng-template>
-            </p-table>
+            <div class="text-500 text-sm mb-2">Results ({{state.results.length}})</div>
+            <div class="surface-card border-round" style="max-height: 200px; overflow-y: auto;">
+                <div *ngFor="let result of state.results; let i = index"
+                     class="flex justify-content-between align-items-center p-2 border-bottom-1 surface-border"
+                     [ngClass]="{'surface-ground': result === state.bestResult}">
+                    <div>
+                        <span class="font-medium">{{result.frequency}}</span><span class="text-500 text-xs">MHz</span>
+                        <span class="text-500 mx-1">&#64;</span>
+                        <span class="font-medium">{{result.voltage}}</span><span class="text-500 text-xs">mV</span>
+                    </div>
+                    <div class="text-right">
+                        <span class="font-medium">{{result.efficiency | number:'1.1-1'}}</span><span class="text-500 text-xs"> J/TH</span>
+                        <i *ngIf="result.passed" class="pi pi-check text-green-500 ml-2"></i>
+                        <i *ngIf="!result.passed" class="pi pi-times text-red-500 ml-2" [pTooltip]="result.failReason"></i>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Best Result -->
-        <div *ngIf="state.bestResult" class="surface-card border-round p-3 mb-3 border-1 border-green-500">
-            <div class="flex align-items-center gap-2 mb-2">
-                <i class="pi pi-star-fill text-yellow-500"></i>
-                <span class="font-medium">Best Configuration</span>
+        <div *ngIf="state.bestResult" class="surface-card border-round p-3 mb-3 border-2 border-green-500">
+            <div class="flex align-items-center justify-content-center gap-2 mb-3">
+                <i class="pi pi-star-fill text-yellow-500 text-xl"></i>
+                <span class="font-bold text-lg">Best Configuration</span>
             </div>
-            <div class="grid">
-                <div class="col-6 md:col-3">
-                    <div class="text-500 text-sm">Frequency</div>
-                    <div class="font-medium">{{state.bestResult.frequency}} MHz</div>
+            <div class="grid text-center">
+                <div class="col-6">
+                    <div class="text-500 text-xs">Frequency</div>
+                    <div class="font-bold text-lg">{{state.bestResult.frequency}} <span class="text-500 text-sm">MHz</span></div>
                 </div>
-                <div class="col-6 md:col-3">
-                    <div class="text-500 text-sm">Voltage</div>
-                    <div class="font-medium">{{state.bestResult.voltage}} mV</div>
+                <div class="col-6">
+                    <div class="text-500 text-xs">Voltage</div>
+                    <div class="font-bold text-lg">{{state.bestResult.voltage}} <span class="text-500 text-sm">mV</span></div>
                 </div>
-                <div class="col-6 md:col-3">
-                    <div class="text-500 text-sm">Hashrate</div>
-                    <div class="font-medium text-primary">{{state.bestResult.avgHashrate | number:'1.1-1'}} GH/s</div>
+                <div class="col-6">
+                    <div class="text-500 text-xs">Hashrate</div>
+                    <div class="font-bold text-lg text-primary">{{state.bestResult.avgHashrate | number:'1.1-1'}} <span class="text-500 text-sm">GH/s</span></div>
                 </div>
-                <div class="col-6 md:col-3">
-                    <div class="text-500 text-sm">Efficiency</div>
-                    <div class="font-medium text-green-500">{{state.bestResult.efficiency | number:'1.2-2'}} J/TH</div>
+                <div class="col-6">
+                    <div class="text-500 text-xs">Efficiency</div>
+                    <div class="font-bold text-lg text-green-500">{{state.bestResult.efficiency | number:'1.2-2'}} <span class="text-500 text-sm">J/TH</span></div>
                 </div>
             </div>
         </div>
 
-        <!-- Logs -->
+        <!-- Logs (collapsible) -->
         <p-accordion *ngIf="benchmarkLogs.length > 0">
             <p-accordionTab header="Logs ({{benchmarkLogs.length}})">
-                <div class="surface-ground border-round p-2 text-xs font-mono" style="max-height: 150px; overflow-y: auto;">
-                    <div *ngFor="let log of benchmarkLogs">{{log}}</div>
+                <div class="surface-ground border-round p-2 text-xs font-mono" style="max-height: 120px; overflow-y: auto;">
+                    <div *ngFor="let log of benchmarkLogs" class="py-1">{{log}}</div>
                 </div>
             </p-accordionTab>
         </p-accordion>
@@ -956,14 +970,16 @@
 
     <ng-template pTemplate="footer">
         <ng-container *ngIf="benchmarkState$ | async as state">
-            <button pButton label="Close" class="p-button-text" (click)="closeBenchmarkDialog()"
-                    *ngIf="!state.running"></button>
-            <button pButton label="Stop" class="p-button-danger" (click)="stopBenchmark()"
-                    *ngIf="state.running"></button>
-            <button pButton label="Start Benchmark" class="p-button-primary" (click)="startBenchmark()"
-                    *ngIf="!state.running && state.phase !== 'complete'"></button>
-            <button pButton label="Apply Best Settings" class="p-button-success" (click)="applyBenchmarkResult()"
-                    *ngIf="state.phase === 'complete' && state.bestResult"></button>
+            <div class="flex justify-content-between w-full gap-2">
+                <button pButton label="Close" class="p-button-text flex-1" (click)="closeBenchmarkDialog()"
+                        *ngIf="!state.running"></button>
+                <button pButton label="Stop" class="p-button-danger flex-1" icon="pi pi-stop" (click)="stopBenchmark()"
+                        *ngIf="state.running"></button>
+                <button pButton label="Start" class="p-button-primary flex-1" icon="pi pi-play" (click)="startBenchmark()"
+                        *ngIf="!state.running && state.phase !== 'complete'"></button>
+                <button pButton label="Apply Settings" class="p-button-success flex-1" icon="pi pi-check" (click)="applyBenchmarkResult()"
+                        *ngIf="state.phase === 'complete' && state.bestResult"></button>
+            </div>
         </ng-container>
     </ng-template>
 </p-dialog>
