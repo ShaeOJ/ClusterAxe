@@ -1,5 +1,83 @@
 # ClusterAxe Development Notes
 
+## v1.5.0 - Current Testing (January 23, 2026)
+
+### Status: IN TESTING
+
+### Changes Made
+
+#### Autotune Removed
+- Removed cluster autotune feature entirely due to instability
+- Was causing device crashes and unsafe settings states
+- Code removed from `cluster_autotune.c`
+
+#### Safety Watchdog (Standalone)
+- Runs independently as background FreeRTOS task
+- Monitors: chip temp >= 68°C, input voltage <= 4.9V
+- Auto-throttles frequency and voltage when limits exceeded
+- Works on master and all connected slaves (via HTTP proxy)
+- Toggle from cluster page UI
+- Shows throttled device count and reasons
+
+#### Hashrate Benchmark Tool (NEW)
+- Frontend-driven benchmarking (runs in browser)
+- Tests voltage/frequency combinations systematically
+- Configurable ranges:
+  - Voltage: 1000-1400 mV (step: 25)
+  - Frequency: 400-800 MHz (step: 25)
+- Test durations: 3 min (quick), 5 min (normal), 10 min (thorough)
+- Per-test flow:
+  1. Apply settings via PATCH /api/system
+  2. Restart device
+  3. Wait for stabilization (60s default)
+  4. Collect samples every 15s
+  5. Analyze with outlier trimming
+- Safety checks: max temp, max VR temp, max power
+- Finds best efficiency (J/TH) configuration
+- "Apply Best Settings" button to use optimal config
+- Works on master and slaves with IP addresses
+
+#### UI Changes
+- Benchmark uses inline expandable panel (not popup dialog)
+- Fixed dropdown clipping issues
+- Duration selector uses toggle buttons
+- Full-width touch-friendly inputs
+- Topbar shows hostname (IP in tooltip)
+
+#### Version Tag Fix
+- Renamed tag from `v1.5.0` to `ClusterAxe-v1.5.0`
+- Matches existing tag naming convention
+- Fixes version mismatch warning
+
+### Files Modified
+- `main/cluster/cluster_autotune.c` - removed autotune code
+- `main/cluster/cluster_watchdog.c` - standalone watchdog
+- `main/cluster/cluster_watchdog.h` - watchdog header
+- `main/http_server/http_server.c` - watchdog endpoints
+- `axe-os/src/app/services/benchmark.service.ts` - NEW
+- `axe-os/src/app/components/cluster/cluster.component.ts`
+- `axe-os/src/app/components/cluster/cluster.component.html`
+- `axe-os/src/app/prime-ng.module.ts` - AccordionModule
+- `version.txt` - updated to ClusterAxe-v1.5.0
+- `RELEASE_NOTES.md` - v1.5.0 notes added
+
+### Testing Checklist
+- [ ] Version mismatch warning gone
+- [ ] Watchdog toggle works
+- [ ] Watchdog detects high temp and throttles
+- [ ] Watchdog detects low voltage and throttles
+- [ ] Benchmark panel opens/closes for master
+- [ ] Benchmark panel opens/closes for slaves
+- [ ] Benchmark starts and shows progress
+- [ ] Benchmark stop button works
+- [ ] Benchmark results display correctly
+- [ ] Best result highlighted
+- [ ] Apply best settings works
+- [ ] Duration toggle buttons work
+- [ ] Input fields are touch-friendly on mobile
+
+---
+
 ## Recent Changes (v1.1.2)
 
 ### Dashboard Cluster Summary
