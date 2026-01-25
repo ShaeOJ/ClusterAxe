@@ -11,7 +11,7 @@ export interface BenchmarkConfig {
   minVoltage: number;        // Minimum voltage (default: 1000)
   maxVoltage: number;        // Maximum voltage (default: 1400)
   minFrequency: number;      // Minimum frequency (default: 400)
-  maxFrequency: number;      // Maximum frequency (default: 650)
+  maxFrequency: number;      // Maximum frequency (default: 625, max: 999)
   voltageStep: number;       // Voltage increment (default: 20)
   frequencyStep: number;     // Frequency increment (default: 25)
   testDurationMs: number;    // Test duration per config (default: 600000 = 10 min)

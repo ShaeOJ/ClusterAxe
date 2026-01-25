@@ -259,7 +259,7 @@
                         <div class="flex align-items-center gap-2">
                             <label class="w-6rem text-500">Frequency:</label>
                             <p-inputNumber [(ngModel)]="masterFrequency"
-                                           [min]="200" [max]="800"
+                                           [min]="200" [max]="999"
                                            suffix=" MHz"
                                            styleClass="w-8rem p-inputtext-sm"
                                            (click)="$event.stopPropagation()">
@@ -509,7 +509,7 @@
                                             <div class="flex align-items-center gap-2">
                                                 <label class="w-6rem text-500">Frequency:</label>
                                                 <p-inputNumber [(ngModel)]="editFrequency"
-                                                               [min]="200" [max]="800"
+                                                               [min]="200" [max]="999"
                                                                suffix=" MHz"
                                                                styleClass="w-8rem p-inputtext-sm">
                                                 </p-inputNumber>
@@ -764,7 +764,7 @@
         <div class="flex align-items-center gap-2">
             <label class="w-6rem">Frequency:</label>
             <p-inputNumber [(ngModel)]="bulkFrequency"
-                           [min]="200" [max]="800"
+                           [min]="200" [max]="999"
                            suffix=" MHz"
                            styleClass="flex-1">
             </p-inputNumber>
@@ -863,11 +863,11 @@
                     <div class="col-12 sm:col-6">
                         <label class="block text-500 text-sm mb-2">Frequency Range (MHz)</label>
                         <div class="flex align-items-center gap-2">
-                            <p-inputNumber [(ngModel)]="benchmarkConfig.minFrequency" [min]="400" [max]="800" [step]="25"
+                            <p-inputNumber [(ngModel)]="benchmarkConfig.minFrequency" [min]="400" [max]="999" [step]="25"
                                            styleClass="flex-1" inputStyleClass="w-full text-center"
                                            (click)="$event.stopPropagation()"></p-inputNumber>
                             <span class="text-500">-</span>
-                            <p-inputNumber [(ngModel)]="benchmarkConfig.maxFrequency" [min]="400" [max]="800" [step]="25"
+                            <p-inputNumber [(ngModel)]="benchmarkConfig.maxFrequency" [min]="400" [max]="999" [step]="25"
                                            styleClass="flex-1" inputStyleClass="w-full text-center"
                                            (click)="$event.stopPropagation()"></p-inputNumber>
                         </div>
@@ -881,7 +881,7 @@
                     </div>
                     <div class="col-6">
                         <label class="block text-500 text-sm mb-2">Start Frequency</label>
-                        <p-inputNumber [(ngModel)]="benchmarkConfig.startFrequency" [min]="400" [max]="800" [step]="25"
+                        <p-inputNumber [(ngModel)]="benchmarkConfig.startFrequency" [min]="400" [max]="999" [step]="25"
                                        suffix=" MHz" styleClass="w-full" inputStyleClass="w-full text-center"
                                        (click)="$event.stopPropagation()"></p-inputNumber>
                     </div>
