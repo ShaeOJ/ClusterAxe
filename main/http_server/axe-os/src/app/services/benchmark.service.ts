@@ -158,39 +158,51 @@ export class BenchmarkService {
       const calcExpectedHashrate = (freq: number) =>
         freq * deviceInfo.smallCoreCount * deviceInfo.asicCount / 1000;
 
-      // Generate test configurations
+      // Generate test configurations - systematic grid search
       const tests = this.generateTestConfigs(config);
       this.updateState({ totalTests: tests.length });
-      this.log(`Generated ${tests.length} test configurations`);
+      this.log(`Testing ${tests.length} voltage/frequency combinations`);
 
-      let voltage = config.startVoltage;
-      let frequency = config.startFrequency;
+      const maxTests = 50; // Safety limit to prevent runaway
       let testNum = 0;
-      let consecutiveFails = 0;
-      const maxConsecutiveFails = 3;
 
-      while (!this.stopRequested && voltage <= config.maxVoltage) {
+      // Systematic search: try each combination
+      for (const test of tests) {
+        if (this.stopRequested) break;
+        if (testNum >= maxTests) {
+          this.log(`Reached max test limit (${maxTests}), stopping`);
+          break;
+        }
+
         testNum++;
+        const { voltage, frequency } = test;
+
         this.updateState({
           testNumber: testNum,
+          totalTests: Math.min(tests.length, maxTests),
           currentVoltage: voltage,
           currentFrequency: frequency,
           phase: 'starting'
         });
 
-        this.log(`Test ${testNum}: ${frequency} MHz @ ${voltage} mV`);
+        this.log(`Test ${testNum}/${Math.min(tests.length, maxTests)}: ${frequency} MHz @ ${voltage} mV`);
 
         // Apply settings
-        await this.applySettings(config.targetIp, voltage, frequency);
+        try {
+          await this.applySettings(config.targetIp, voltage, frequency);
+        } catch (e: any) {
+          this.log(`Failed to apply settings: ${e.message}, skipping`);
+          continue;
+        }
 
-        // Wait for restart and stabilization
+        // Wait for stabilization
         this.updateState({ phase: 'stabilizing' });
-        this.log(`Waiting ${config.stabilizationMs / 1000}s for stabilization...`);
+        this.log(`Stabilizing for ${config.stabilizationMs / 1000}s...`);
         await this.waitWithProgress(config.stabilizationMs);
 
         if (this.stopRequested) break;
 
-        // Run benchmark
+        // Collect samples
         this.updateState({ phase: 'sampling', samplesCollected: 0 });
         const samplesNeeded = Math.floor(config.testDurationMs / config.sampleIntervalMs);
         this.updateState({ samplesNeeded });
@@ -204,37 +216,14 @@ export class BenchmarkService {
         const result = this.analyzeResults(samples, voltage, frequency, calcExpectedHashrate(frequency), config);
         this.state.results.push(result);
 
-        this.log(`Result: ${result.avgHashrate.toFixed(1)} GH/s, ${result.efficiency.toFixed(2)} J/TH, ${result.avgTemp.toFixed(1)}°C - ${result.passed ? 'PASS' : 'FAIL: ' + result.failReason}`);
+        const status = result.passed ? 'PASS' : `FAIL: ${result.failReason}`;
+        this.log(`Result: ${result.avgHashrate.toFixed(1)} GH/s, ${result.efficiency.toFixed(2)} J/TH, ${result.avgTemp.toFixed(1)}°C - ${status}`);
 
-        // Update best result
+        // Update best result (best efficiency among passing tests)
         if (result.passed) {
           if (!this.state.bestResult || result.efficiency < this.state.bestResult.efficiency) {
             this.updateState({ bestResult: result });
-            this.log(`New best: ${frequency} MHz @ ${voltage} mV (${result.efficiency.toFixed(2)} J/TH)`);
-          }
-          consecutiveFails = 0;
-
-          // Increase frequency for next test
-          frequency += config.frequencyStep;
-          if (frequency > config.maxFrequency) {
-            this.log(`Reached max frequency ${config.maxFrequency} MHz`);
-            break;
-          }
-        } else {
-          consecutiveFails++;
-
-          if (consecutiveFails >= maxConsecutiveFails) {
-            this.log(`${maxConsecutiveFails} consecutive failures, increasing voltage`);
-            voltage += config.voltageStep;
-            frequency = config.startFrequency; // Reset frequency
-            consecutiveFails = 0;
-          } else {
-            // Try lower frequency at same voltage
-            frequency -= config.frequencyStep;
-            if (frequency < config.minFrequency) {
-              voltage += config.voltageStep;
-              frequency = config.startFrequency;
-            }
+            this.log(`New best efficiency: ${frequency} MHz @ ${voltage} mV (${result.efficiency.toFixed(2)} J/TH)`);
           }
         }
 
