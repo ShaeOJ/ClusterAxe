@@ -1,6 +1,6 @@
 # ClusterAxe Development Notes
 
-## v1.5.0 - Current Testing (January 23, 2026)
+## v1.5.0 - Current Testing (January 24, 2026)
 
 ### Status: IN TESTING
 
@@ -21,33 +21,47 @@
 
 #### Hashrate Benchmark Tool (NEW)
 - Frontend-driven benchmarking (runs in browser)
+- **Two modes available:**
+  - **Benchmark** (blue): Finds best efficiency (lowest J/TH)
+  - **Overclock** (orange): Finds max hashrate (ignores efficiency)
 - Tests voltage/frequency combinations systematically
 - Configurable ranges:
   - Voltage: 1000-1400 mV (step: 25)
-  - Frequency: 400-800 MHz (step: 25)
+  - Frequency: 400-999 MHz (step: 25)
 - Test durations: 3 min (quick), 5 min (normal), 10 min (thorough)
 - Per-test flow:
-  1. Apply settings via PATCH /api/system
-  2. Restart device
-  3. Wait for stabilization (60s default)
-  4. Collect samples every 15s
-  5. Analyze with outlier trimming
+  1. Apply settings via PATCH /api/system (no restart needed)
+  2. Wait for stabilization (15s)
+  3. Collect samples every 15s
+  4. Analyze with outlier trimming
 - Safety checks: max temp, max VR temp, max power
-- Finds best efficiency (J/TH) configuration
-- "Apply Best Settings" button to use optimal config
+- **Auto-applies best settings when complete**
+- 50 test safety limit prevents runaway
 - Works on master and slaves with IP addresses
+
+#### Mode Comparison
+| Feature | Benchmark | Overclock |
+|---------|-----------|-----------|
+| Goal | Best J/TH | Max hashrate |
+| Max Freq | 625 MHz | 800 MHz |
+| Max Voltage | 1300 mV | 1400 mV |
+| Max Temp | 66°C | 70°C |
+| Max Power | 40W | 50W |
+| Selection | Lowest J/TH | Highest GH/s |
 
 #### UI Changes
 - Benchmark uses inline expandable panel (not popup dialog)
 - Fixed dropdown clipping issues
 - Duration selector uses toggle buttons
 - Full-width touch-friendly inputs
+- Max frequency limit raised to 999 MHz
 - Topbar shows hostname (IP in tooltip)
 
-#### Version Tag Fix
+#### Bug Fixes
+- Fixed version.txt CRLF causing version mismatch
 - Renamed tag from `v1.5.0` to `ClusterAxe-v1.5.0`
-- Matches existing tag naming convention
-- Fixes version mismatch warning
+- Removed device restart (Bitaxe applies settings immediately)
+- Reduced stabilization from 60s to 15s
 
 ### Files Modified
 - `main/cluster/cluster_autotune.c` - removed autotune code
@@ -58,7 +72,7 @@
 - `axe-os/src/app/components/cluster/cluster.component.ts`
 - `axe-os/src/app/components/cluster/cluster.component.html`
 - `axe-os/src/app/prime-ng.module.ts` - AccordionModule
-- `version.txt` - updated to ClusterAxe-v1.5.0
+- `version.txt` - updated to ClusterAxe-v1.5.0 (no CRLF)
 - `RELEASE_NOTES.md` - v1.5.0 notes added
 
 ### Testing Checklist
@@ -68,13 +82,14 @@
 - [ ] Watchdog detects low voltage and throttles
 - [ ] Benchmark panel opens/closes for master
 - [ ] Benchmark panel opens/closes for slaves
-- [ ] Benchmark starts and shows progress
+- [ ] Benchmark mode starts and finds best efficiency
+- [ ] Overclock mode starts and finds max hashrate
 - [ ] Benchmark stop button works
-- [ ] Benchmark results display correctly
-- [ ] Best result highlighted
-- [ ] Apply best settings works
+- [ ] Results display correctly (mode-specific selection)
+- [ ] Best result highlighted and auto-applied
 - [ ] Duration toggle buttons work
-- [ ] Input fields are touch-friendly on mobile
+- [ ] Settings apply without device restart
+- [ ] Input fields allow up to 999 MHz
 
 ---
 
