@@ -230,15 +230,25 @@ export class BenchmarkService {
         this.updateState({ results: [...this.state.results] });
       }
 
-      // Complete
-      this.updateState({ phase: 'complete', running: false });
+      // Complete - auto-apply best result if found
+      if (this.state.bestResult && !this.stopRequested) {
+        this.log(`Benchmark complete! Applying best settings...`);
+        this.log(`Best: ${this.state.bestResult.frequency} MHz @ ${this.state.bestResult.voltage} mV`);
+        this.log(`Hashrate: ${this.state.bestResult.avgHashrate.toFixed(1)} GH/s, Efficiency: ${this.state.bestResult.efficiency.toFixed(2)} J/TH`);
 
-      if (this.state.bestResult) {
-        this.log(`Benchmark complete! Best: ${this.state.bestResult.frequency} MHz @ ${this.state.bestResult.voltage} mV`);
-        this.log(`Efficiency: ${this.state.bestResult.efficiency.toFixed(2)} J/TH, Hashrate: ${this.state.bestResult.avgHashrate.toFixed(1)} GH/s`);
-      } else {
+        try {
+          await this.applySettings(config.targetIp, this.state.bestResult.voltage, this.state.bestResult.frequency);
+          this.log(`Applied best settings successfully!`);
+        } catch (e: any) {
+          this.log(`Failed to apply best settings: ${e.message}`);
+        }
+      } else if (!this.state.bestResult) {
         this.log('Benchmark complete - no valid configurations found');
+      } else {
+        this.log('Benchmark stopped by user');
       }
+
+      this.updateState({ phase: 'complete', running: false });
 
     } catch (error: any) {
       this.log(`Error: ${error.message}`);
