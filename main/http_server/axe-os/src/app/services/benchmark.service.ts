@@ -126,7 +126,7 @@ export class BenchmarkService {
       frequencyStep: 25,
       testDurationMs: 300000,      // 5 minutes for faster testing
       sampleIntervalMs: 15000,     // 15 seconds
-      stabilizationMs: 60000,      // 60 seconds
+      stabilizationMs: 15000,      // 15 seconds (no restart needed)
       maxTemp: 66,
       maxVrTemp: 86,
       maxPower: 40,
@@ -315,15 +315,7 @@ export class BenchmarkService {
       this.http.patch(url, { coreVoltage: voltage, frequency: frequency }).pipe(timeout(10000))
     );
 
-    // Restart device
-    const restartUrl = targetIp ? `http://${targetIp}/api/system/restart` : '/api/system/restart';
-    try {
-      await firstValueFrom(
-        this.http.post(restartUrl, {}).pipe(timeout(5000))
-      );
-    } catch (e) {
-      // Restart may not respond, that's OK
-    }
+    // No restart needed - Bitaxe applies settings immediately
   }
 
   private async waitWithProgress(ms: number): Promise<void> {
