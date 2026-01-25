@@ -3,7 +3,10 @@ import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, Subject, firstValueFrom, timer } from 'rxjs';
 import { timeout } from 'rxjs/operators';
 
+export type BenchmarkMode = 'efficiency' | 'overclock';
+
 export interface BenchmarkConfig {
+  mode: BenchmarkMode;       // 'efficiency' = best J/TH, 'overclock' = highest hashrate
   targetIp: string;          // IP address of device to benchmark (empty for master)
   targetName: string;        // Display name
   startVoltage: number;      // Starting voltage in mV (default: 1200)
@@ -112,8 +115,33 @@ export class BenchmarkService {
     console.log(`[Benchmark] ${message}`);
   }
 
-  getDefaultConfig(): BenchmarkConfig {
+  getDefaultConfig(mode: BenchmarkMode = 'efficiency'): BenchmarkConfig {
+    if (mode === 'overclock') {
+      // Overclock mode: higher limits, find max hashrate
+      return {
+        mode: 'overclock',
+        targetIp: '',
+        targetName: 'Master',
+        startVoltage: 1200,
+        startFrequency: 550,
+        minVoltage: 1150,
+        maxVoltage: 1400,
+        minFrequency: 500,
+        maxFrequency: 800,
+        voltageStep: 25,
+        frequencyStep: 25,
+        testDurationMs: 300000,
+        sampleIntervalMs: 15000,
+        stabilizationMs: 15000,
+        maxTemp: 70,             // Higher temp tolerance
+        maxVrTemp: 90,
+        maxPower: 50,            // Higher power tolerance
+        minHashratePercent: 90   // Lower hashrate threshold
+      };
+    }
+    // Efficiency mode: conservative limits, find best J/TH
     return {
+      mode: 'efficiency',
       targetIp: '',
       targetName: 'Master',
       startVoltage: 1200,
@@ -124,9 +152,9 @@ export class BenchmarkService {
       maxFrequency: 625,
       voltageStep: 25,
       frequencyStep: 25,
-      testDurationMs: 300000,      // 5 minutes for faster testing
-      sampleIntervalMs: 15000,     // 15 seconds
-      stabilizationMs: 15000,      // 15 seconds (no restart needed)
+      testDurationMs: 300000,
+      sampleIntervalMs: 15000,
+      stabilizationMs: 15000,
       maxTemp: 66,
       maxVrTemp: 86,
       maxPower: 40,
@@ -147,7 +175,8 @@ export class BenchmarkService {
       targetName: config.targetName
     });
 
-    this.log(`Starting benchmark for ${config.targetName}`);
+    const modeLabel = config.mode === 'overclock' ? 'OVERCLOCK (max hashrate)' : 'EFFICIENCY (best J/TH)';
+    this.log(`Starting ${modeLabel} benchmark for ${config.targetName}`);
 
     try {
       // Get device info
@@ -219,11 +248,24 @@ export class BenchmarkService {
         const status = result.passed ? 'PASS' : `FAIL: ${result.failReason}`;
         this.log(`Result: ${result.avgHashrate.toFixed(1)} GH/s, ${result.efficiency.toFixed(2)} J/TH, ${result.avgTemp.toFixed(1)}°C - ${status}`);
 
-        // Update best result (best efficiency among passing tests)
+        // Update best result based on mode
         if (result.passed) {
-          if (!this.state.bestResult || result.efficiency < this.state.bestResult.efficiency) {
+          let isBetter = false;
+          if (config.mode === 'overclock') {
+            // Overclock mode: highest hashrate wins
+            isBetter = !this.state.bestResult || result.avgHashrate > this.state.bestResult.avgHashrate;
+          } else {
+            // Efficiency mode: lowest J/TH wins
+            isBetter = !this.state.bestResult || result.efficiency < this.state.bestResult.efficiency;
+          }
+
+          if (isBetter) {
             this.updateState({ bestResult: result });
-            this.log(`New best efficiency: ${frequency} MHz @ ${voltage} mV (${result.efficiency.toFixed(2)} J/TH)`);
+            if (config.mode === 'overclock') {
+              this.log(`New best hashrate: ${frequency} MHz @ ${voltage} mV (${result.avgHashrate.toFixed(1)} GH/s)`);
+            } else {
+              this.log(`New best efficiency: ${frequency} MHz @ ${voltage} mV (${result.efficiency.toFixed(2)} J/TH)`);
+            }
           }
         }
 

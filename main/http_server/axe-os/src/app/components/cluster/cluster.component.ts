@@ -776,9 +776,9 @@ export class ClusterComponent implements OnInit, OnDestroy {
   // Benchmark Methods
   // ========================================================================
 
-  toggleBenchmarkPanel(targetIp: string = '', targetName: string = 'Master', slotNumber: number | null = null): void {
-    // If clicking same target, toggle off
-    if (this.showBenchmarkPanel && this.benchmarkTargetSlot === slotNumber) {
+  toggleBenchmarkPanel(targetIp: string = '', targetName: string = 'Master', slotNumber: number | null = null, mode: 'efficiency' | 'overclock' = 'efficiency'): void {
+    // If clicking same target with same mode, toggle off
+    if (this.showBenchmarkPanel && this.benchmarkTargetSlot === slotNumber && this.benchmarkConfig?.mode === mode) {
       this.closeBenchmarkPanel();
       return;
     }
@@ -787,7 +787,7 @@ export class ClusterComponent implements OnInit, OnDestroy {
     this.benchmarkTargetName = targetName;
     this.benchmarkTargetSlot = slotNumber;
     this.benchmarkConfig = {
-      ...this.benchmarkService.getDefaultConfig(),
+      ...this.benchmarkService.getDefaultConfig(mode),
       targetIp,
       targetName
     };

@@ -241,13 +241,23 @@
                             <span class="text-500">Efficiency:</span>
                             <span>{{masterInfo.power && masterInfo.hashRate ? ((masterInfo.power / (masterInfo.hashRate / 1000)) | number:'1.1-1') : 'N/A'}} J/TH</span>
                         </div>
-                        <!-- Benchmark Button -->
-                        <button pButton label="Benchmark"
-                                icon="pi pi-chart-line"
-                                class="p-button-outlined p-button-sm mt-2"
-                                [ngClass]="{'p-button-primary': showBenchmarkPanel && benchmarkTargetSlot === null}"
-                                (click)="toggleBenchmarkPanel('', 'Master', null); $event.stopPropagation()">
-                        </button>
+                        <!-- Benchmark Buttons -->
+                        <div class="flex gap-2 mt-2">
+                            <button pButton label="Benchmark"
+                                    icon="pi pi-chart-line"
+                                    class="p-button-outlined p-button-sm"
+                                    [ngClass]="{'p-button-primary': showBenchmarkPanel && benchmarkTargetSlot === null && benchmarkConfig?.mode === 'efficiency'}"
+                                    pTooltip="Find best efficiency (J/TH)"
+                                    (click)="toggleBenchmarkPanel('', 'Master', null, 'efficiency'); $event.stopPropagation()">
+                            </button>
+                            <button pButton label="Overclock"
+                                    icon="pi pi-bolt"
+                                    class="p-button-outlined p-button-sm p-button-warning"
+                                    [ngClass]="{'p-button-warning': showBenchmarkPanel && benchmarkTargetSlot === null && benchmarkConfig?.mode === 'overclock'}"
+                                    pTooltip="Find max hashrate (ignores efficiency)"
+                                    (click)="toggleBenchmarkPanel('', 'Master', null, 'overclock'); $event.stopPropagation()">
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -489,15 +499,25 @@
                                                 <span class="text-500">Efficiency:</span>
                                                 <span>{{config.efficiency | number:'1.1-1'}} J/TH</span>
                                             </div>
-                                            <!-- Benchmark Button -->
-                                            <button pButton label="Benchmark"
-                                                    icon="pi pi-chart-line"
-                                                    class="p-button-outlined p-button-sm mt-2"
-                                                    [disabled]="!slave.ipAddr"
-                                                    [ngClass]="{'p-button-primary': showBenchmarkPanel && benchmarkTargetSlot === slave.slot}"
-                                                    [pTooltip]="!slave.ipAddr ? 'Requires IP address (ESP-NOW only)' : 'Run hashrate benchmark'"
-                                                    (click)="toggleBenchmarkPanel(slave.ipAddr, slave.hostname || 'Slave ' + slave.slot, slave.slot); $event.stopPropagation()">
-                                            </button>
+                                            <!-- Benchmark Buttons -->
+                                            <div class="flex gap-2 mt-2">
+                                                <button pButton label="Benchmark"
+                                                        icon="pi pi-chart-line"
+                                                        class="p-button-outlined p-button-sm"
+                                                        [disabled]="!slave.ipAddr"
+                                                        [ngClass]="{'p-button-primary': showBenchmarkPanel && benchmarkTargetSlot === slave.slot && benchmarkConfig?.mode === 'efficiency'}"
+                                                        [pTooltip]="!slave.ipAddr ? 'Requires IP address' : 'Find best efficiency'"
+                                                        (click)="toggleBenchmarkPanel(slave.ipAddr, slave.hostname || 'Slave ' + slave.slot, slave.slot, 'efficiency'); $event.stopPropagation()">
+                                                </button>
+                                                <button pButton label="Overclock"
+                                                        icon="pi pi-bolt"
+                                                        class="p-button-outlined p-button-sm p-button-warning"
+                                                        [disabled]="!slave.ipAddr"
+                                                        [ngClass]="{'p-button-warning': showBenchmarkPanel && benchmarkTargetSlot === slave.slot && benchmarkConfig?.mode === 'overclock'}"
+                                                        [pTooltip]="!slave.ipAddr ? 'Requires IP address' : 'Find max hashrate'"
+                                                        (click)="toggleBenchmarkPanel(slave.ipAddr, slave.hostname || 'Slave ' + slave.slot, slave.slot, 'overclock'); $event.stopPropagation()">
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -829,13 +849,18 @@
 
 <!-- Benchmark Panel Template (reusable inline panel) -->
 <ng-template #benchmarkPanelTemplate>
-    <div class="surface-card border-round p-3 mb-3 border-left-3 border-primary" @fadeInOut>
+    <div class="surface-card border-round p-3 mb-3 border-left-3"
+         [ngClass]="benchmarkConfig?.mode === 'overclock' ? 'border-orange-500' : 'border-primary'" @fadeInOut>
         <ng-container *ngIf="benchmarkState$ | async as state">
             <!-- Header -->
             <div class="flex justify-content-between align-items-center mb-3">
                 <div class="flex align-items-center gap-2">
-                    <i class="pi pi-chart-line text-primary text-xl"></i>
-                    <span class="font-bold">Benchmark: {{benchmarkTargetName}}</span>
+                    <i [ngClass]="benchmarkConfig?.mode === 'overclock' ? 'pi pi-bolt text-orange-500' : 'pi pi-chart-line text-primary'" class="text-xl"></i>
+                    <span class="font-bold">
+                        <span *ngIf="benchmarkConfig?.mode === 'overclock'">Overclock</span>
+                        <span *ngIf="benchmarkConfig?.mode !== 'overclock'">Benchmark</span>
+                        : {{benchmarkTargetName}}
+                    </span>
                     <span class="text-500 text-sm" *ngIf="benchmarkTargetIp">({{benchmarkTargetIp}})</span>
                 </div>
                 <button pButton icon="pi pi-times" class="p-button-text p-button-rounded p-button-sm"
