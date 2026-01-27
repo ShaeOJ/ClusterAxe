@@ -195,6 +195,13 @@ export class BenchmarkService {
       const maxTests = 50; // Safety limit to prevent runaway
       let testNum = 0;
 
+      // Smart skip tracking: skip remaining frequencies at a voltage if hashrate drops
+      let prevVoltage: number | null = null;
+      let prevHashrate: number | null = null;
+      let prevPassed = false;
+      let skipRemainingAtVoltage = false;
+      let skippedCount = 0;
+
       // Systematic search: try each combination
       for (const test of tests) {
         if (this.stopRequested) break;
@@ -203,8 +210,24 @@ export class BenchmarkService {
           break;
         }
 
-        testNum++;
         const { voltage, frequency } = test;
+
+        // Reset tracking when voltage changes
+        if (prevVoltage !== null && voltage !== prevVoltage) {
+          prevHashrate = null;
+          prevPassed = false;
+          skipRemainingAtVoltage = false;
+        }
+
+        // Skip remaining frequencies at this voltage if hashrate already dropped
+        if (skipRemainingAtVoltage && voltage === prevVoltage) {
+          skippedCount++;
+          this.log(`Skipping ${frequency} MHz @ ${voltage} mV (hashrate dropped at previous frequency)`);
+          prevVoltage = voltage;
+          continue;
+        }
+
+        testNum++;
 
         this.updateState({
           testNumber: testNum,
@@ -269,7 +292,20 @@ export class BenchmarkService {
           }
         }
 
+        // Smart skip: check if hashrate dropped from previous test at same voltage
+        if (prevHashrate !== null && prevPassed && result.avgHashrate < prevHashrate) {
+          skipRemainingAtVoltage = true;
+          this.log(`Hashrate dropped (${result.avgHashrate.toFixed(1)} < ${prevHashrate.toFixed(1)} GH/s) — skipping remaining frequencies at ${voltage} mV`);
+        }
+        prevVoltage = voltage;
+        prevHashrate = result.avgHashrate;
+        prevPassed = result.passed;
+
         this.updateState({ results: [...this.state.results] });
+      }
+
+      if (skippedCount > 0) {
+        this.log(`Smart skip: skipped ${skippedCount} test(s) where hashrate was declining`);
       }
 
       // Complete - auto-apply best result if found

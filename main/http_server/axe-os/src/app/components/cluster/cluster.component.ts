@@ -2,9 +2,17 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import { Observable, interval, startWith, switchMap, catchError, of, BehaviorSubject, Subscription } from 'rxjs';
 import { ClusterService, IClusterStatus, IClusterSlave, ISlaveConfig, IWatchdogStatus, CLUSTER_SETTINGS } from '../../services/cluster.service';
 import { SystemService } from '../../services/system.service';
-import { BenchmarkService, BenchmarkConfig, BenchmarkState } from '../../services/benchmark.service';
+import { BenchmarkService, BenchmarkConfig, BenchmarkState, BenchmarkMode } from '../../services/benchmark.service';
 import { MessageService } from 'primeng/api';
 import { trigger, transition, style, animate } from '@angular/animations';
+
+export interface BenchmarkBadgeInfo {
+  mode: BenchmarkMode;
+  frequency: number;
+  voltage: number;
+  avgHashrate: number;
+  efficiency: number;
+}
 
 @Component({
   selector: 'app-cluster',
@@ -92,6 +100,10 @@ export class ClusterComponent implements OnInit, OnDestroy {
   public benchmarkTargetName: string = 'Master';
   public benchmarkTargetSlot: number | null = null;  // null = master, number = slave slot
   private benchmarkLogSubscription: Subscription | null = null;
+  private benchmarkStateSubscription: Subscription | null = null;
+
+  // Benchmark lock-in badges: key = device IP (empty string for master)
+  public benchmarkBadges: Map<string, BenchmarkBadgeInfo> = new Map();
 
   private refreshInterval = 3000; // 3 seconds
 
@@ -138,10 +150,28 @@ export class ClusterComponent implements OnInit, OnDestroy {
         }
       }
     });
+
+    // Subscribe to benchmark state for lock-in badges
+    this.benchmarkStateSubscription = this.benchmarkState$.subscribe(state => {
+      if (state.phase === 'complete' && state.bestResult) {
+        const key = this.benchmarkTargetIp;
+        this.benchmarkBadges.set(key, {
+          mode: this.benchmarkConfig.mode,
+          frequency: state.bestResult.frequency,
+          voltage: state.bestResult.voltage,
+          avgHashrate: state.bestResult.avgHashrate,
+          efficiency: state.bestResult.efficiency
+        });
+      }
+    });
   }
 
   ngOnDestroy(): void {
     this.stopWatchdogPolling();
+    if (this.benchmarkStateSubscription) {
+      this.benchmarkStateSubscription.unsubscribe();
+      this.benchmarkStateSubscription = null;
+    }
   }
 
   onModeChange(event: any): void {

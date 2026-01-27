@@ -141,11 +141,20 @@
              [ngClass]="{'border-primary border-2': masterExpanded}"
              (click)="toggleMasterExpanded()">
             <div class="grid align-items-center">
-                <!-- Left: Icon + Name + Autotune Badge -->
+                <!-- Left: Icon + Name + Benchmark Badge -->
                 <div class="col-12 md:col-3 flex align-items-center gap-2">
                     <i class="pi pi-desktop text-lg text-primary"></i>
                     <div>
-                        <div class="font-bold">Master Device</div>
+                        <div class="font-bold flex align-items-center gap-2">
+                            Master Device
+                            <p-tag *ngIf="benchmarkBadges.has('')"
+                                   [severity]="benchmarkBadges.get('')!.mode === 'overclock' ? 'warning' : 'info'"
+                                   [icon]="benchmarkBadges.get('')!.mode === 'overclock' ? 'pi pi-bolt' : 'pi pi-chart-line'"
+                                   [value]="benchmarkBadges.get('')!.mode === 'overclock'
+                                       ? benchmarkBadges.get('')!.frequency + ' MHz'
+                                       : benchmarkBadges.get('')!.efficiency.toFixed(1) + ' J/TH'">
+                            </p-tag>
+                        </div>
                         <div class="text-xs text-400">This device</div>
                     </div>
                 </div>
@@ -366,13 +375,20 @@
                              }"
                              (click)="toggleSlaveConfig(slave)">
                             <div class="grid align-items-center">
-                                <!-- Left: Status + Name -->
+                                <!-- Left: Status + Name + Benchmark Badge -->
                                 <div class="col-12 md:col-3 flex align-items-center gap-2">
                                     <i class="pi {{getSlaveStateIcon(slave.state)}} text-lg"
                                        [ngClass]="clusterService.getSlaveStateClass(slave.state)"></i>
                                     <div>
-                                        <div class="font-bold">
+                                        <div class="font-bold flex align-items-center gap-2">
                                             {{slave.hostname}} <span class="text-400 text-xs">(Slot {{slave.slot}})</span>
+                                            <p-tag *ngIf="slave.ipAddr && benchmarkBadges.has(slave.ipAddr)"
+                                                   [severity]="benchmarkBadges.get(slave.ipAddr)!.mode === 'overclock' ? 'warning' : 'info'"
+                                                   [icon]="benchmarkBadges.get(slave.ipAddr)!.mode === 'overclock' ? 'pi pi-bolt' : 'pi pi-chart-line'"
+                                                   [value]="benchmarkBadges.get(slave.ipAddr)!.mode === 'overclock'
+                                                       ? benchmarkBadges.get(slave.ipAddr)!.frequency + ' MHz'
+                                                       : benchmarkBadges.get(slave.ipAddr)!.efficiency.toFixed(1) + ' J/TH'">
+                                            </p-tag>
                                         </div>
                                         <div class="text-xs text-400">
                                             <a *ngIf="slave.ipAddr"
