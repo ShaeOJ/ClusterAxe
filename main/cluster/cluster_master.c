@@ -189,12 +189,13 @@ static esp_err_t send_work_to_slave(uint8_t slave_id, const cluster_work_t *work
             } else {
                 ESP_LOGI(TAG, "ESP-NOW broadcast SUCCESS for slave %d (attempt %d)", slave_id, attempt + 1);
             }
+            break;  // No need to retry on success
         } else {
             ESP_LOGW(TAG, "ESP-NOW broadcast attempt %d FAILED for slave %d: %s",
                      attempt + 1, slave_id, esp_err_to_name(ret));
         }
         // Small delay between retries
-        vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 #else
     // Fall back to BAP UART broadcast
@@ -229,6 +230,11 @@ esp_err_t cluster_master_distribute_work(const cluster_work_t *work)
     memcpy(&g_master->current_work, work, sizeof(cluster_work_t));
     g_master->work_valid = true;
     xSemaphoreGive(g_master->work_mutex);
+
+    // Wake coordinator immediately so it can rebroadcast to any slaves that missed work
+    if (g_master->coordinator_task) {
+        xTaskNotifyGive(g_master->coordinator_task);
+    }
 
     // Recalculate nonce ranges if needed
     calculate_nonce_ranges();
@@ -332,7 +338,7 @@ esp_err_t cluster_master_receive_share(const cluster_share_t *share)
     xSemaphoreGive(g_master->slaves_mutex);
 
     // Queue for submission to pool
-    if (xQueueSend(g_master->share_queue, share, pdMS_TO_TICKS(100)) != pdTRUE) {
+    if (xQueueSend(g_master->share_queue, share, pdMS_TO_TICKS(20)) != pdTRUE) {
         ESP_LOGW(TAG, "Share queue full, dropping share from slave %d",
                  share->slave_id);
         return ESP_ERR_NO_MEM;
@@ -708,7 +714,7 @@ static void coordinator_task(void *pvParameters)
             ESP_LOGI(TAG, "Re-broadcasting work to slave %d (periodic refresh)", slave_id);
             send_work_to_slave(slave_id, &g_master->current_work);
             // Small delay between broadcasts to avoid flooding
-            vTaskDelay(pdMS_TO_TICKS(50));
+            vTaskDelay(pdMS_TO_TICKS(20));
         }
 
         // Add master's own hashrate AFTER releasing mutex to avoid potential deadlock
@@ -716,7 +722,8 @@ static void coordinator_task(void *pvParameters)
         uint32_t master_hashrate = cluster_get_asic_hashrate();
         g_master->total_hashrate = total_hashrate + master_hashrate;
 
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        // Wait for notification (new work arrived) or timeout after 1s for periodic health checks
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
     }
 }
 

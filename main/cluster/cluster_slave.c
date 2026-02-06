@@ -267,7 +267,7 @@ esp_err_t cluster_slave_submit_share(const cluster_share_t *share)
                 break;
             }
             ESP_LOGD(TAG, "ESP-NOW share attempt %d failed: %s", attempt + 1, esp_err_to_name(ret));
-            vTaskDelay(pdMS_TO_TICKS(30));  // Small delay before retry
+            vTaskDelay(pdMS_TO_TICKS(10));  // Small delay before retry
         }
 
         if (ret != ESP_OK) {
@@ -541,7 +541,7 @@ static void share_sender_task(void *pvParameters)
             cluster_slave_submit_share(&share);
 
             // Small delay between share submissions
-            vTaskDelay(pdMS_TO_TICKS(50));
+            vTaskDelay(pdMS_TO_TICKS(10));
         }
     }
 }
