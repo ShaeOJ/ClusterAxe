@@ -47,11 +47,6 @@ static void espnow_rx_wrapper(const char *msg_type, const char *payload, size_t 
 }
 #endif
 
-GlobalState* cluster_get_global_state(void)
-{
-    return g_global_state;
-}
-
 esp_err_t cluster_integration_init(GlobalState *GLOBAL_STATE)
 {
     if (!GLOBAL_STATE) {
