@@ -229,6 +229,23 @@ void SYSTEM_notify_found_nonce(GlobalState * GLOBAL_STATE, double diff, uint8_t 
     ESP_LOGI(TAG, "Network diff: %f", network_diff);
 }
 
+void SYSTEM_update_best_diff(GlobalState * GLOBAL_STATE, double diff)
+{
+    SystemModule * module = &GLOBAL_STATE->SYSTEM_MODULE;
+
+    if ((uint64_t) diff > module->best_session_nonce_diff) {
+        module->best_session_nonce_diff = (uint64_t) diff;
+        suffixString((uint64_t) diff, module->best_session_diff_string, DIFF_STRING_SIZE, 0);
+    }
+
+    if ((uint64_t) diff <= module->best_nonce_diff) {
+        return;
+    }
+    module->best_nonce_diff = (uint64_t) diff;
+    nvs_config_set_u64(NVS_CONFIG_BEST_DIFF, module->best_nonce_diff);
+    suffixString((uint64_t) diff, module->best_diff_string, DIFF_STRING_SIZE, 0);
+}
+
 static esp_err_t ensure_overheat_mode_config() {
     bool overheat_mode = nvs_config_get_bool(NVS_CONFIG_OVERHEAT_MODE);
 

@@ -802,6 +802,12 @@ export class ClusterComponent implements OnInit, OnDestroy {
     return reasons.length > 0 ? reasons.join(', ') : 'None';
   }
 
+  isAnyDeviceRecovering(): boolean {
+    if (!this.watchdogStatus) return false;
+    if (this.watchdogStatus.master?.recovering) return true;
+    return this.watchdogStatus.slaves?.some(s => s?.recovering) || false;
+  }
+
   // ========================================================================
   // Benchmark Methods
   // ========================================================================

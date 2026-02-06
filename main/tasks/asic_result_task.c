@@ -72,7 +72,8 @@ void ASIC_result_task(void *pvParameters)
                                                asic_result->nonce,
                                                active_job->ntime,
                                                asic_result->rolled_version ^ active_job->version,
-                                               active_job->extranonce2);
+                                               active_job->extranonce2,
+                                               nonce_diff);
                 ESP_LOGI(TAG, "Share routed to cluster master: job=%s, nonce=0x%08lX",
                          active_job->jobid, (unsigned long)asic_result->nonce);
             } else

@@ -211,9 +211,9 @@ int cluster_protocol_encode_share(const cluster_share_t *share,
     char en2_hex[17];
     cluster_protocol_bytes_to_hex(share->extranonce2, share->extranonce2_len, en2_hex);
 
-    // Format: $CLSHR,slave_id,job_id,nonce,ntime,version,en2,en2_len,pool_id
+    // Format: $CLSHR,slave_id,job_id,nonce,ntime,version,en2,en2_len,pool_id,difficulty
     int len = snprintf(buffer, buffer_len,
-                       "$%s,%u,%lu,%lu,%lu,%lu,%s,%u,%u",
+                       "$%s,%u,%lu,%lu,%lu,%lu,%s,%u,%u,%.1f",
                        BAP_MSG_SHARE,
                        share->slave_id,
                        (unsigned long)share->job_id,
@@ -222,7 +222,8 @@ int cluster_protocol_encode_share(const cluster_share_t *share,
                        (unsigned long)share->version,
                        en2_hex,
                        share->extranonce2_len,
-                       share->pool_id);
+                       share->pool_id,
+                       share->difficulty);
 
     if (len < 0 || (size_t)len >= buffer_len - 10) {
         return -1;
@@ -580,10 +581,18 @@ esp_err_t cluster_protocol_decode_share(const char *payload,
 
     // pool_id (may not be present in legacy messages - default to primary pool)
     if (p) {
-        get_next_field(p, field, sizeof(field));
+        p = get_next_field(p, field, sizeof(field));
         share->pool_id = (uint8_t)strtoul(field, NULL, 10);
     } else {
         share->pool_id = 0;  // Default to primary pool
+    }
+
+    // difficulty (may not be present in legacy messages)
+    if (p) {
+        get_next_field(p, field, sizeof(field));
+        share->difficulty = strtod(field, NULL);
+    } else {
+        share->difficulty = 0;
     }
 
     share->timestamp = esp_timer_get_time() / 1000;

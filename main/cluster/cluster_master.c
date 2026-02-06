@@ -17,6 +17,8 @@
 #include "esp_timer.h"
 #include "string.h"
 #include "stdio.h"
+#include "system.h"
+#include "cluster_integration.h"
 
 #if CLUSTER_ENABLED && CLUSTER_IS_MASTER
 
@@ -336,6 +338,14 @@ esp_err_t cluster_master_receive_share(const cluster_share_t *share)
     g_master->slaves[share->slave_id].shares_submitted++;
     g_master->slaves[share->slave_id].last_seen = esp_timer_get_time() / 1000;
     xSemaphoreGive(g_master->slaves_mutex);
+
+    // Update cluster-wide best difficulty from slave share
+    if (share->difficulty > 0) {
+        GlobalState *gs = cluster_get_global_state();
+        if (gs) {
+            SYSTEM_update_best_diff(gs, share->difficulty);
+        }
+    }
 
     // Queue for submission to pool
     if (xQueueSend(g_master->share_queue, share, pdMS_TO_TICKS(20)) != pdTRUE) {

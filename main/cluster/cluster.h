@@ -123,6 +123,7 @@ typedef struct {
     uint8_t  slave_id;                  // Which slave found it
     int64_t  timestamp;                 // When share was found
     uint8_t  pool_id;                   // Pool ID: 0=primary, 1=secondary (for dual pool mode)
+    double   difficulty;                // Share difficulty (for cluster-wide best diff tracking)
 } cluster_share_t;
 
 /**
@@ -392,7 +393,7 @@ esp_err_t cluster_slave_handle_ack(uint8_t assigned_id, const char *hostname);
  * @param ntime The ntime value (may be rolled)
  * @param extranonce2_hex The extranonce2 as hex string from the ASIC job
  */
-void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t version, uint32_t ntime, const char *extranonce2_hex);
+void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t version, uint32_t ntime, const char *extranonce2_hex, double difficulty);
 
 /**
  * @brief Get slave share statistics

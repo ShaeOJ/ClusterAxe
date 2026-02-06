@@ -90,11 +90,14 @@ export interface IAutoTimingStatus {
 
 export interface IWatchdogDeviceStatus {
   throttled: boolean;
+  recovering: boolean;
   throttleReason: number;
   temp: number;
   vin: number;
   frequency: number;
   voltage: number;
+  originalFrequency: number;
+  originalVoltage: number;
   throttleCount: number;
 }
 
@@ -104,6 +107,9 @@ export interface IWatchdogStatus {
   throttledCount: number;
   tempThreshold: number;
   vinThreshold: number;
+  tempRecoveryThreshold: number;
+  vinRecoveryThreshold: number;
+  recoveryStabilityMs: number;
   master: IWatchdogDeviceStatus;
   slaves: IWatchdogDeviceStatus[];
 }
@@ -427,13 +433,19 @@ export class ClusterService {
       throttledCount: 0,
       tempThreshold: 68,
       vinThreshold: 4.9,
+      tempRecoveryThreshold: 62,
+      vinRecoveryThreshold: 5.1,
+      recoveryStabilityMs: 30000,
       master: {
         throttled: false,
+        recovering: false,
         throttleReason: 0,
         temp: 52.5,
         vin: 5.1,
         frequency: 500,
         voltage: 1200,
+        originalFrequency: 500,
+        originalVoltage: 1200,
         throttleCount: 0
       },
       slaves: []

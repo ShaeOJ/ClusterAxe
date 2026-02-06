@@ -37,6 +37,12 @@ extern "C" {
 #define WATCHDOG_MIN_FREQUENCY          400     // Minimum frequency (MHz)
 #define WATCHDOG_MIN_VOLTAGE            1100    // Minimum voltage (mV)
 
+// Recovery thresholds (with hysteresis to prevent oscillation)
+#define WATCHDOG_TEMP_RECOVERY_THRESHOLD    62.0f   // Recover when temp <= 62°C
+#define WATCHDOG_VIN_RECOVERY_THRESHOLD     5.1f    // Recover when Vin >= 5.1V
+#define WATCHDOG_RECOVERY_STABILITY_MS      30000   // Must be safe for 30s before recovery
+#define WATCHDOG_RECOVERY_INTERVAL_MS       10000   // Time between recovery steps
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -55,6 +61,7 @@ typedef enum {
  */
 typedef struct {
     bool        is_throttled;           // Currently throttled
+    bool        is_recovering;          // Currently in recovery process
     uint8_t     throttle_reason;        // Bitmask of throttle reasons
     float       last_temp;              // Last measured temperature
     float       last_vin;               // Last measured input voltage
@@ -64,6 +71,8 @@ typedef struct {
     uint16_t    current_voltage;        // Current voltage (may be reduced)
     uint32_t    throttle_count;         // Number of times throttled
     int64_t     last_throttle_time;     // When last throttled (ms since boot)
+    int64_t     safe_since;             // When conditions became safe (0 if unsafe)
+    int64_t     last_recovery_time;     // When last recovery step occurred
 } watchdog_device_status_t;
 
 /**

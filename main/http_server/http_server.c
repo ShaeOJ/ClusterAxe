@@ -2030,15 +2030,21 @@ static esp_err_t GET_watchdog_status(httpd_req_t *req)
     // Thresholds (for display)
     cJSON_AddNumberToObject(root, "tempThreshold", WATCHDOG_TEMP_THRESHOLD);
     cJSON_AddNumberToObject(root, "vinThreshold", WATCHDOG_VIN_THRESHOLD);
+    cJSON_AddNumberToObject(root, "tempRecoveryThreshold", WATCHDOG_TEMP_RECOVERY_THRESHOLD);
+    cJSON_AddNumberToObject(root, "vinRecoveryThreshold", WATCHDOG_VIN_RECOVERY_THRESHOLD);
+    cJSON_AddNumberToObject(root, "recoveryStabilityMs", WATCHDOG_RECOVERY_STABILITY_MS);
 
     // Master status
     cJSON *master = cJSON_CreateObject();
     cJSON_AddBoolToObject(master, "throttled", status.master.is_throttled);
+    cJSON_AddBoolToObject(master, "recovering", status.master.is_recovering);
     cJSON_AddNumberToObject(master, "throttleReason", status.master.throttle_reason);
     cJSON_AddNumberToObject(master, "temp", status.master.last_temp);
     cJSON_AddNumberToObject(master, "vin", status.master.last_vin);
     cJSON_AddNumberToObject(master, "frequency", status.master.current_frequency);
     cJSON_AddNumberToObject(master, "voltage", status.master.current_voltage);
+    cJSON_AddNumberToObject(master, "originalFrequency", status.master.original_frequency);
+    cJSON_AddNumberToObject(master, "originalVoltage", status.master.original_voltage);
     cJSON_AddNumberToObject(master, "throttleCount", status.master.throttle_count);
     cJSON_AddItemToObject(root, "master", master);
 
@@ -2048,11 +2054,14 @@ static esp_err_t GET_watchdog_status(httpd_req_t *req)
         cJSON *slave = cJSON_CreateObject();
         cJSON_AddNumberToObject(slave, "slot", i);
         cJSON_AddBoolToObject(slave, "throttled", status.slaves[i].is_throttled);
+        cJSON_AddBoolToObject(slave, "recovering", status.slaves[i].is_recovering);
         cJSON_AddNumberToObject(slave, "throttleReason", status.slaves[i].throttle_reason);
         cJSON_AddNumberToObject(slave, "temp", status.slaves[i].last_temp);
         cJSON_AddNumberToObject(slave, "vin", status.slaves[i].last_vin);
         cJSON_AddNumberToObject(slave, "frequency", status.slaves[i].current_frequency);
         cJSON_AddNumberToObject(slave, "voltage", status.slaves[i].current_voltage);
+        cJSON_AddNumberToObject(slave, "originalFrequency", status.slaves[i].original_frequency);
+        cJSON_AddNumberToObject(slave, "originalVoltage", status.slaves[i].original_voltage);
         cJSON_AddNumberToObject(slave, "throttleCount", status.slaves[i].throttle_count);
         cJSON_AddItemToArray(slaves, slave);
     }

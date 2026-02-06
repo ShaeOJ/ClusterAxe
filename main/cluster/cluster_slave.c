@@ -334,7 +334,7 @@ static void slave_record_share(uint32_t nonce, uint32_t job_id)
  * @param version The actual rolled version bits from the ASIC (not base version)
  * @param ntime The ntime value (may be rolled)
  */
-void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t version, uint32_t ntime, const char *extranonce2_hex)
+void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t version, uint32_t ntime, const char *extranonce2_hex, double difficulty)
 {
     ESP_LOGD(TAG, "on_share_found: nonce=0x%08lX, job=%lu, ver=0x%08lX",
              (unsigned long)nonce, (unsigned long)job_id, (unsigned long)version);
@@ -370,7 +370,8 @@ void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t vers
         .version = version,    // Use actual rolled version from ASIC
         .ntime = ntime,        // Use actual ntime (may be rolled)
         .timestamp = esp_timer_get_time() / 1000,
-        .pool_id = pool_id     // For dual pool routing on master
+        .pool_id = pool_id,    // For dual pool routing on master
+        .difficulty = difficulty
     };
 
     // Use the extranonce2 from the ASIC job (passed in from intercept_share)

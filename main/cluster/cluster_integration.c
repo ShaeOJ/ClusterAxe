@@ -47,6 +47,11 @@ static void espnow_rx_wrapper(const char *msg_type, const char *payload, size_t 
 }
 #endif
 
+GlobalState* cluster_get_global_state(void)
+{
+    return g_global_state;
+}
+
 esp_err_t cluster_integration_init(GlobalState *GLOBAL_STATE)
 {
     if (!GLOBAL_STATE) {
@@ -715,7 +720,8 @@ void cluster_slave_intercept_share(GlobalState *GLOBAL_STATE,
                                     uint32_t nonce,
                                     uint32_t ntime,
                                     uint32_t version,
-                                    const char *extranonce2)
+                                    const char *extranonce2,
+                                    double nonce_diff)
 {
     if (!cluster_is_active() || cluster_get_mode() != CLUSTER_MODE_SLAVE) {
         return;
@@ -740,7 +746,7 @@ void cluster_slave_intercept_share(GlobalState *GLOBAL_STATE,
 
     // Route to cluster slave share handler with actual ASIC version bits
     // Pass the extranonce2 from the job so we use the correct one
-    cluster_slave_on_share_found(nonce, numeric_job_id, version, ntime, job_en2);
+    cluster_slave_on_share_found(nonce, numeric_job_id, version, ntime, job_en2, nonce_diff);
 }
 
 bool cluster_slave_should_skip_stratum(void)

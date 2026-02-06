@@ -120,7 +120,8 @@ void cluster_slave_intercept_share(GlobalState *GLOBAL_STATE,
                                     uint32_t nonce,
                                     uint32_t ntime,
                                     uint32_t version,
-                                    const char *extranonce2);
+                                    const char *extranonce2,
+                                    double nonce_diff);
 
 /**
  * @brief Check if slave should process work from stratum
@@ -151,6 +152,8 @@ esp_err_t cluster_integration_init(GlobalState *GLOBAL_STATE);
  * @brief Get ASIC hashrate for cluster reporting
  * @return Hashrate in GH/s * 100
  */
+GlobalState* cluster_get_global_state(void);
+
 uint32_t cluster_get_asic_hashrate(void);
 
 /**

@@ -56,21 +56,28 @@
                 <div class="flex align-items-center gap-2">
                     <i class="pi pi-shield text-lg"
                        [ngClass]="{'text-green-500': watchdogStatus.enabled && watchdogStatus.throttledCount === 0,
-                                   'text-orange-500': watchdogStatus.enabled && watchdogStatus.throttledCount > 0,
+                                   'text-cyan-500': watchdogStatus.enabled && watchdogStatus.throttledCount > 0 && isAnyDeviceRecovering(),
+                                   'text-orange-500': watchdogStatus.enabled && watchdogStatus.throttledCount > 0 && !isAnyDeviceRecovering(),
                                    'text-500': !watchdogStatus.enabled}"></i>
                     <div>
                         <span class="font-medium">Safety Watchdog</span>
                         <span class="text-xs text-500 ml-2">
-                            Temp &ge; 68°C or Vin &le; 4.9V triggers throttle
+                            Temp &ge; {{watchdogStatus.tempThreshold}}°C or Vin &le; {{watchdogStatus.vinThreshold}}V triggers throttle
                         </span>
                     </div>
                 </div>
                 <div class="flex align-items-center gap-3">
-                    <!-- Throttle Status -->
+                    <!-- Throttle/Recovery Status -->
                     <div *ngIf="watchdogStatus.enabled && watchdogStatus.throttledCount > 0"
                          class="flex align-items-center gap-1">
-                        <i class="pi pi-exclamation-triangle text-orange-500"></i>
-                        <span class="text-orange-500 font-medium">{{watchdogStatus.throttledCount}} throttled</span>
+                        <ng-container *ngIf="isAnyDeviceRecovering(); else throttledOnly">
+                            <i class="pi pi-spin pi-sync text-cyan-500"></i>
+                            <span class="text-cyan-500 font-medium">{{watchdogStatus.throttledCount}} recovering</span>
+                        </ng-container>
+                        <ng-template #throttledOnly>
+                            <i class="pi pi-exclamation-triangle text-orange-500"></i>
+                            <span class="text-orange-500 font-medium">{{watchdogStatus.throttledCount}} throttled</span>
+                        </ng-template>
                     </div>
                     <!-- Toggle -->
                     <p-inputSwitch [ngModel]="watchdogStatus?.enabled || false"
@@ -83,24 +90,48 @@
             <!-- Expanded details when throttled -->
             <div *ngIf="watchdogStatus.enabled && watchdogStatus.throttledCount > 0" class="mt-3 pt-3 border-top-1 surface-border">
                 <!-- Master throttle status -->
-                <div *ngIf="watchdogStatus.master?.throttled" class="flex align-items-center gap-2 mb-2 p-2 border-round" style="background: rgba(var(--orange-500-rgb), 0.1);">
-                    <i class="pi pi-desktop text-orange-500"></i>
+                <div *ngIf="watchdogStatus.master?.throttled" class="flex align-items-center gap-2 mb-2 p-2 border-round"
+                     [style.background]="watchdogStatus.master.recovering ? 'rgba(var(--cyan-500-rgb), 0.1)' : 'rgba(var(--orange-500-rgb), 0.1)'">
+                    <i class="pi pi-desktop" [ngClass]="watchdogStatus.master.recovering ? 'pi-spin pi-sync text-cyan-500' : 'text-orange-500'"></i>
                     <span class="font-medium">Master Device</span>
                     <span class="text-500">-</span>
-                    <span class="text-orange-500">{{getThrottleReasonLabel(watchdogStatus.master.throttleReason)}}</span>
+                    <span *ngIf="watchdogStatus.master.recovering" class="text-cyan-500">
+                        Recovering
+                    </span>
+                    <span *ngIf="!watchdogStatus.master.recovering" class="text-orange-500">
+                        {{getThrottleReasonLabel(watchdogStatus.master.throttleReason)}}
+                    </span>
                     <span class="text-500 ml-auto">
-                        Freq: {{watchdogStatus.master.frequency}} MHz, Voltage: {{watchdogStatus.master.voltage}} mV
+                        <ng-container *ngIf="watchdogStatus.master.recovering">
+                            {{watchdogStatus.master.frequency}} &rarr; {{watchdogStatus.master.originalFrequency}} MHz,
+                            {{watchdogStatus.master.voltage}} &rarr; {{watchdogStatus.master.originalVoltage}} mV
+                        </ng-container>
+                        <ng-container *ngIf="!watchdogStatus.master.recovering">
+                            Freq: {{watchdogStatus.master.frequency}} MHz, Voltage: {{watchdogStatus.master.voltage}} mV
+                        </ng-container>
                     </span>
                 </div>
                 <!-- Slave throttle statuses -->
                 <ng-container *ngFor="let slave of watchdogStatus.slaves; let i = index">
-                    <div *ngIf="slave?.throttled" class="flex align-items-center gap-2 mb-2 p-2 border-round" style="background: rgba(var(--orange-500-rgb), 0.1);">
-                        <i class="pi pi-server text-orange-500"></i>
+                    <div *ngIf="slave?.throttled" class="flex align-items-center gap-2 mb-2 p-2 border-round"
+                         [style.background]="slave.recovering ? 'rgba(var(--cyan-500-rgb), 0.1)' : 'rgba(var(--orange-500-rgb), 0.1)'">
+                        <i class="pi pi-server" [ngClass]="slave.recovering ? 'pi-spin pi-sync text-cyan-500' : 'text-orange-500'"></i>
                         <span class="font-medium">Slave {{i}}</span>
                         <span class="text-500">-</span>
-                        <span class="text-orange-500">{{getThrottleReasonLabel(slave.throttleReason)}}</span>
+                        <span *ngIf="slave.recovering" class="text-cyan-500">
+                            Recovering
+                        </span>
+                        <span *ngIf="!slave.recovering" class="text-orange-500">
+                            {{getThrottleReasonLabel(slave.throttleReason)}}
+                        </span>
                         <span class="text-500 ml-auto">
-                            Temp: {{slave.temp | number:'1.0-0'}}°C, Vin: {{slave.vin | number:'1.2-2'}}V
+                            <ng-container *ngIf="slave.recovering">
+                                {{slave.frequency}} &rarr; {{slave.originalFrequency}} MHz,
+                                {{slave.voltage}} &rarr; {{slave.originalVoltage}} mV
+                            </ng-container>
+                            <ng-container *ngIf="!slave.recovering">
+                                Temp: {{slave.temp | number:'1.0-0'}}°C, Vin: {{slave.vin | number:'1.2-2'}}V
+                            </ng-container>
                         </span>
                     </div>
                 </ng-container>
