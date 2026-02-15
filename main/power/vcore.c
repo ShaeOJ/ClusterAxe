@@ -15,6 +15,7 @@
 static const char *TAG = "vcore";
 
 static TPS546_CONFIG TPS546_CONFIG_DEFAULT = {
+    .TPS546_INIT_PHASE = TPS546_INIT_PHASE_SINGLE,
     /* vin voltage */
     .TPS546_INIT_VIN_ON = 4.8,
     .TPS546_INIT_VIN_OFF = 4.5,
@@ -27,10 +28,14 @@ static TPS546_CONFIG TPS546_CONFIG_DEFAULT = {
     .TPS546_INIT_VOUT_COMMAND = 1.2,
     /* iout current */
     .TPS546_INIT_IOUT_OC_WARN_LIMIT = 25.00, /* A */
-    .TPS546_INIT_IOUT_OC_FAULT_LIMIT = 30.00 /* A */
+    .TPS546_INIT_IOUT_OC_FAULT_LIMIT = 30.00, /* A */
+    /* Single-phase configuration */
+    .TPS546_INIT_STACK_CONFIG = 0x0000,
+    .TPS546_INIT_SYNC_CONFIG = 0x10, /* Disable SYNC */
 };
 
 static TPS546_CONFIG TPS546_CONFIG_GAMMATURBO = {
+    .TPS546_INIT_PHASE = TPS546_INIT_PHASE_MULTI,
     /* vin voltage */
     .TPS546_INIT_VIN_ON = 11.0,
     .TPS546_INIT_VIN_OFF = 10.5,
@@ -43,10 +48,15 @@ static TPS546_CONFIG TPS546_CONFIG_GAMMATURBO = {
     .TPS546_INIT_VOUT_COMMAND = 1.2,
     /* iout current */
     .TPS546_INIT_IOUT_OC_WARN_LIMIT = 50.00, /* A */
-    .TPS546_INIT_IOUT_OC_FAULT_LIMIT = 55.00 /* A */
+    .TPS546_INIT_IOUT_OC_FAULT_LIMIT = 55.00, /* A */
+    /* Multi-phase stacking configuration for 2 TPS modules */
+    .TPS546_INIT_STACK_CONFIG = 0x0001, /* 2 modules (One-Slave, 2-phase) */
+    .TPS546_INIT_SYNC_CONFIG = 0xD0,    /* Enable Auto Detect SYNC */
+    .TPS546_INIT_COMPENSATION_CONFIG = {0x12, 0x34, 0x42, 0x21, 0x04},
 };
 
 static TPS546_CONFIG TPS546_CONFIG_HEX = {
+    .TPS546_INIT_PHASE = TPS546_INIT_PHASE_SINGLE,
     /* vin voltage */
     .TPS546_INIT_VIN_ON = 11.5,
     .TPS546_INIT_VIN_OFF = 11.0,
@@ -59,7 +69,10 @@ static TPS546_CONFIG TPS546_CONFIG_HEX = {
     .TPS546_INIT_VOUT_COMMAND = 3.6,
     /* iout current */
     .TPS546_INIT_IOUT_OC_WARN_LIMIT = 25.00, /* A */
-    .TPS546_INIT_IOUT_OC_FAULT_LIMIT = 30.00 /* A */
+    .TPS546_INIT_IOUT_OC_FAULT_LIMIT = 30.00, /* A */
+    /* Single-phase configuration */
+    .TPS546_INIT_STACK_CONFIG = 0x0000,
+    .TPS546_INIT_SYNC_CONFIG = 0x10, /* Disable SYNC */
 };
 
 esp_err_t VCORE_init(GlobalState * GLOBAL_STATE)
