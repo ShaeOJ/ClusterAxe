@@ -129,11 +129,13 @@ esp_err_t SYSTEM_init_peripherals(GlobalState * GLOBAL_STATE) {
     // Ensure overheat_mode config exists
     ESP_RETURN_ON_ERROR(ensure_overheat_mode_config(), TAG, "Failed to ensure overheat_mode config");
 
-    ESP_RETURN_ON_ERROR(display_init(GLOBAL_STATE), TAG, "Display init failed!");
-
-    ESP_RETURN_ON_ERROR(input_init(screen_button_press, toggle_wifi_softap), TAG, "Input init failed!");
-
-    ESP_RETURN_ON_ERROR(screen_start(GLOBAL_STATE), TAG, "Screen start failed!");
+    if (!GLOBAL_STATE->DEVICE_CONFIG.no_display) {
+        ESP_RETURN_ON_ERROR(display_init(GLOBAL_STATE), TAG, "Display init failed!");
+        ESP_RETURN_ON_ERROR(input_init(screen_button_press, toggle_wifi_softap), TAG, "Input init failed!");
+        ESP_RETURN_ON_ERROR(screen_start(GLOBAL_STATE), TAG, "Screen start failed!");
+    } else {
+        ESP_LOGI(TAG, "No display on this board, skipping display/input init");
+    }
 
     return ESP_OK;
 }

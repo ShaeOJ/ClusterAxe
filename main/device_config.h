@@ -60,6 +60,7 @@ typedef struct {
     FamilyConfig family;
     bool plug_sense;
     bool asic_enable;
+    bool no_display : 1;
     bool EMC2101 : 1;
     bool EMC2103 : 1;
     bool EMC2302 : 1;
@@ -138,6 +139,8 @@ static const DeviceConfig default_configs[] = {
     { .board_version = "702",  .family = FAMILY_SUPRA_HEX,   .EMC2302 = true, .TMP1075 = true,                                            .temp_offset = 10,  .TPS546 = true,                                                           .power_consumption_target = 90, },
     { .board_version = "800",  .family = FAMILY_GAMMA_TURBO, .EMC2103 = true,                                                             .temp_offset = -10, .TPS546 = true,                                                           .power_consumption_target = 12, },
     { .board_version = "801",  .family = FAMILY_GAMMA_TURBO, .EMC2103 = true,                                                             .temp_offset = 0,   .TPS546 = true,                                                           .power_consumption_target = 36, },
+    // Disruptor: Gamma (BM1370) with TMP1075 temp sensor, no fan, no display
+    { .board_version = "100",  .family = FAMILY_GAMMA,       .TMP1075 = true,                                                                                  .TPS546 = true, .no_display = true,                                        .power_consumption_target = 20, },
 };
 
 esp_err_t device_config_init(void * pvParameters);

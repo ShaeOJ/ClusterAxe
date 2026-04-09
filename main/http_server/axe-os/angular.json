@@ -17,9 +17,7 @@
         "build": {
           "builder": "@angular-devkit/build-angular:browser",
           "options": {
-            "allowedCommonJsDependencies": [
-              "moment"
-            ],
+            "allowedCommonJsDependencies": [],
             "outputPath": "dist/axe-os",
             "index": "src/index.html",
             "main": "src/main.ts",
@@ -50,7 +48,7 @@
               "budgets": [
                 {
                   "type": "initial",
-                  "maximumWarning": "2mb",
+                  "maximumWarning": "2.25mb",
                   "maximumError": "3mb"
                 },
                 {

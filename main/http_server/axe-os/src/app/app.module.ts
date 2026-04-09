@@ -1,4 +1,4 @@
-import 'chartjs-adapter-moment';
+import 'chartjs-adapter-date-fns';
 
 import { CommonModule, HashLocationStrategy, LocationStrategy } from '@angular/common';
 import { provideHttpClient } from '@angular/common/http';

@@ -1056,8 +1056,8 @@
                                     <thead>
                                         <tr>
                                             <th *ngIf="slave.hashrateMonitor.asics.length > 1" class="text-left">ASIC</th>
-                                            <th *ngIf="slave.hashrateMonitor.asics[0]?.domains?.length"
-                                                [attr.colspan]="slave.hashrateMonitor.asics[0]?.domains?.length || 1">
+                                            <th *ngIf="slave.hashrateMonitor.asics[0].domains?.length"
+                                                [attr.colspan]="slave.hashrateMonitor.asics[0].domains?.length || 1">
                                                 Domains
                                             </th>
                                         </tr>

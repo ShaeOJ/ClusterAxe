@@ -50,6 +50,16 @@ menu "Bitaxe Configuration"
             
     endmenu
     
+    config DEFAULT_BOARD_VERSION
+        string "Default board version"
+        default "601"
+        help
+            Board version used when NVS has no board version set (factory fresh flash).
+            "601" = Bitaxe Gamma (BM1370, EMC2101, TPS546, 19W).
+            "602" = Bitaxe Gamma rev2 (BM1370, EMC2101, TPS546, 22W).
+            "100" = Disruptor (BM1370, TMP1075, TPS546, no display, 20W).
+            Set to match the hardware being flashed.
+
     config ASIC_VOLTAGE
         int "ASIC Core Voltage (mV)"
         range 1000 1800
