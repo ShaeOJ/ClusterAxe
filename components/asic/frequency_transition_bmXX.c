@@ -11,16 +11,18 @@ static const char * TAG = "frequency_transition";
 
 static float current_frequency = 50; // Mhz
 
-void do_frequency_transition(float target_frequency, set_hash_frequency_fn set_frequency_fn)
+float do_frequency_transition(float target_frequency, set_hash_frequency_fn set_frequency_fn)
 {
+    float actual = current_frequency;
+
     if (fabs(current_frequency - target_frequency) < EPSILON) {
-        return;
+        return actual;
     }
 
     if (fabs(target_frequency - current_frequency) < STEP_SIZE) {
         current_frequency = target_frequency;
-        set_frequency_fn(current_frequency);
-        return;
+        actual = set_frequency_fn(current_frequency);
+        return actual;
     }
 
     ESP_LOGI(TAG, "Ramping up frequency from %g MHz to %g MHz", current_frequency, target_frequency);
@@ -30,22 +32,23 @@ void do_frequency_transition(float target_frequency, set_hash_frequency_fn set_f
 
     if (current_step != target_step) {
         int signum = (target_frequency > current_frequency) ? 1 : -1;
-        
+
         while ((signum > 0 && current_step < target_step) ||
                (signum < 0 && current_step > target_step)) {
             current_step += signum;
 
             current_frequency = current_step * STEP_SIZE;
-            set_frequency_fn(current_frequency);
-            
+            actual = set_frequency_fn(current_frequency);
+
             vTaskDelay(15 / portTICK_PERIOD_MS);  // Reduced from 50ms for faster frequency ramp
         }
     }
-    
+
     if (fabs(current_frequency - target_frequency) > EPSILON) {
         current_frequency = target_frequency;
-        set_frequency_fn(current_frequency);
+        actual = set_frequency_fn(current_frequency);
     }
-    
+
     ESP_LOGI(TAG, "Successfully transitioned to %g MHz", target_frequency);
+    return actual;
 }

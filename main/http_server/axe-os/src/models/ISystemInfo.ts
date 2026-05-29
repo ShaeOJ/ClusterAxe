@@ -74,6 +74,7 @@ export interface ISystemInfo {
     isUsingFallbackStratum: boolean,
     poolAddrFamily: number,
     frequency: number,
+    actualFrequency?: number,
     version: string,
     axeOSVersion: string,
     idfVersion: string,

@@ -582,7 +582,12 @@
 
                 <div class="mb-3">
                     <h6 class="flex justify-content-between mb-1">
-                        ASIC Frequency<span>{{info.frequency}} MHz</span>
+                        ASIC Frequency
+                        <span>
+                            {{info.frequency}} MHz
+                            <span *ngIf="info.actualFrequency && info.actualFrequency !== info.frequency"
+                                  class="text-400 font-normal">&nbsp;({{info.actualFrequency | number:'1.1-1'}} actual)</span>
+                        </span>
                     </h6>
                     <p-progressBar [value]="(info.frequency / maxFrequency) * 100" [styleClass]="'p-progressbar--thin'">
                         <ng-template pTemplate="content" let-value></ng-template>
@@ -1078,6 +1083,116 @@
                                         </tr>
                                     </tbody>
                                 </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </ng-container>
+
+    <!-- FirePool Stats (shown when connected to firepool.ca) -->
+    <ng-container *ngIf="isFirePool">
+        <div class="grid mt-3" *ngIf="firepoolPoolStats$ | async as poolStats">
+            <!-- Pool Stats Card -->
+            <div class="col-12 md:col-6">
+                <div class="card mb-0">
+                    <div class="flex align-items-center justify-content-between mb-3">
+                        <div class="flex align-items-center gap-2">
+                            <i class="pi pi-server text-primary text-xl"></i>
+                            <span class="text-lg font-bold">FirePool</span>
+                            <span class="px-2 py-1 bg-primary text-white border-round text-xs">{{poolStats.coinSymbol}} Pool</span>
+                        </div>
+                        <a href="https://firepool.ca" target="_blank" rel="noopener" class="text-primary text-sm">
+                            <i class="pi pi-external-link mr-1"></i>Dashboard
+                        </a>
+                    </div>
+                    <div class="grid">
+                        <div class="col-6 md:col-3">
+                            <div class="text-center p-2 surface-ground border-round">
+                                <div class="text-500 text-xs mb-1">Pool Hashrate</div>
+                                <div class="text-xl font-bold text-primary">{{formatFirePoolHashrate(poolStats.poolHashrate)}}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 md:col-3">
+                            <div class="text-center p-2 surface-ground border-round">
+                                <div class="text-500 text-xs mb-1">Miners</div>
+                                <div class="text-xl font-bold">{{poolStats.connectedMiners}}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 md:col-3">
+                            <div class="text-center p-2 surface-ground border-round">
+                                <div class="text-500 text-xs mb-1">Net Difficulty</div>
+                                <div class="text-xl font-bold">{{formatFirePoolDifficulty(poolStats.networkDifficulty)}}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 md:col-3">
+                            <div class="text-center p-2 surface-ground border-round">
+                                <div class="text-500 text-xs mb-1">Block Height</div>
+                                <div class="text-xl font-bold">{{poolStats.blockHeight | number:'1.0-0'}}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-2 pt-2 border-top-1 surface-border">
+                        <div class="flex justify-content-between text-xs text-500">
+                            <span>Net Hashrate: {{formatFirePoolHashrate(poolStats.networkHashrate)}}</span>
+                            <span>Shares/s: {{poolStats.sharesPerSecond | number:'1.1-1'}}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Miner Stats Card -->
+            <div class="col-12 md:col-6" *ngIf="firepoolMinerStats$ | async as minerStats">
+                <div class="card mb-0">
+                    <div class="flex align-items-center justify-content-between mb-3">
+                        <div class="flex align-items-center gap-2">
+                            <i class="pi pi-user text-primary text-xl"></i>
+                            <span class="text-lg font-bold">Your Stats</span>
+                            <span class="px-2 py-1 border-round text-xs font-medium"
+                                [ngClass]="minerStats.totalSharesSubmitted > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'">
+                                {{minerStats.totalSharesSubmitted > 0 ? 'Active' : 'No Shares'}}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="grid">
+                        <div class="col-6 md:col-3">
+                            <div class="text-center p-2 surface-ground border-round">
+                                <div class="text-500 text-xs mb-1">Pending</div>
+                                <div class="text-xl font-bold text-primary">{{minerStats.pendingBalance | number:'1.4-4'}}</div>
+                                <div class="text-xs text-500">{{poolStats.coinSymbol}}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 md:col-3">
+                            <div class="text-center p-2 surface-ground border-round">
+                                <div class="text-500 text-xs mb-1">Total Paid</div>
+                                <div class="text-xl font-bold">{{minerStats.totalPaid | number:'1.4-4'}}</div>
+                                <div class="text-xs text-500">{{poolStats.coinSymbol}}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 md:col-3">
+                            <div class="text-center p-2 surface-ground border-round">
+                                <div class="text-500 text-xs mb-1">Best Share</div>
+                                <div class="text-xl font-bold text-green-500">{{formatFirePoolDifficulty(minerStats.bestShareDifficulty)}}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 md:col-3">
+                            <div class="text-center p-2 surface-ground border-round">
+                                <div class="text-500 text-xs mb-1">Shares</div>
+                                <div class="text-xl font-bold">{{minerStats.totalSharesSubmitted | number:'1.0-0'}}</div>
+                                <div class="text-xs text-red-500" *ngIf="minerStats.invalidShares > 0">{{minerStats.invalidShares}} invalid</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Workers -->
+                    <div class="mt-2 pt-2 border-top-1 surface-border" *ngIf="getFirePoolWorkerList(minerStats.workers).length > 0">
+                        <div class="text-500 text-xs mb-2">Workers</div>
+                        <div class="flex flex-wrap gap-2">
+                            <div *ngFor="let w of getFirePoolWorkerList(minerStats.workers)"
+                                class="flex align-items-center gap-1 px-2 py-1 surface-ground border-round text-xs">
+                                <i class="pi pi-circle-fill text-green-500" style="font-size: 0.5rem"></i>
+                                <span class="font-medium">{{w.name}}</span>
+                                <span class="text-500">{{formatFirePoolHashrate(w.hashrate)}}</span>
                             </div>
                         </div>
                     </div>

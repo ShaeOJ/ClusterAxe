@@ -81,6 +81,7 @@ export class SystemService {
         isUsingFallbackStratum: false,
         poolAddrFamily: 2,
         frequency: 485,
+        actualFrequency: 484.4,
         version: "ESP-Miner-Dual-Ba-V4",
         axeOSVersion: "ESP-Miner-Dual-Ba-V4",
         idfVersion: "v5.5.1",

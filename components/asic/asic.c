@@ -98,23 +98,19 @@ void ASIC_set_version_mask(GlobalState * GLOBAL_STATE, uint32_t mask)
     }
 }
 
-bool ASIC_set_frequency(GlobalState * GLOBAL_STATE, float frequency)
+float ASIC_set_frequency(GlobalState * GLOBAL_STATE, float frequency)
 {
     switch (GLOBAL_STATE->DEVICE_CONFIG.family.asic.id) {
         case BM1397:
-            do_frequency_transition(frequency, BM1397_send_hash_frequency);
-            return true;
+            return do_frequency_transition(frequency, BM1397_send_hash_frequency);
         case BM1366:
-            do_frequency_transition(frequency, BM1366_send_hash_frequency);
-            return true;
+            return do_frequency_transition(frequency, BM1366_send_hash_frequency);
         case BM1368:
-            do_frequency_transition(frequency, BM1368_send_hash_frequency);
-            return true;
+            return do_frequency_transition(frequency, BM1368_send_hash_frequency);
         case BM1370:
-            do_frequency_transition(frequency, BM1370_send_hash_frequency);
-            return true;
+            return do_frequency_transition(frequency, BM1370_send_hash_frequency);
     }
-    return false;
+    return 0.0f;
 }
 
 double ASIC_get_asic_job_frequency_ms(GlobalState * GLOBAL_STATE)

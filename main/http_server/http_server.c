@@ -50,6 +50,7 @@
 #include "system.h"
 #include "websocket.h"
 #include "auto_timing.h"
+#include "cluster_watchdog.h"
 
 // Clusteraxe integration
 #include "cluster_config.h"
@@ -895,6 +896,7 @@ static esp_err_t GET_system_info(httpd_req_t * req)
     cJSON_AddNumberToObject(root, "coreVoltage", nvs_config_get_u16(NVS_CONFIG_ASIC_VOLTAGE));
     cJSON_AddNumberToObject(root, "coreVoltageActual", VCORE_get_voltage_mv(GLOBAL_STATE));
     cJSON_AddNumberToObject(root, "frequency", frequency);
+    cJSON_AddFloatToObject(root, "actualFrequency", GLOBAL_STATE->POWER_MANAGEMENT_MODULE.actual_frequency);
     cJSON_AddStringToObject(root, "ssid", ssid);
     cJSON_AddStringToObject(root, "macAddr", formattedMac);
     cJSON_AddStringToObject(root, "hostname", hostname);
@@ -918,6 +920,7 @@ static esp_err_t GET_system_info(httpd_req_t * req)
 
     cJSON_AddNumberToObject(root, "uptimeSeconds", (esp_timer_get_time() - GLOBAL_STATE->SYSTEM_MODULE.start_time) / 1000000);
     cJSON_AddNumberToObject(root, "smallCoreCount", GLOBAL_STATE->DEVICE_CONFIG.family.asic.small_core_count);
+    cJSON_AddNumberToObject(root, "asicCount", GLOBAL_STATE->DEVICE_CONFIG.family.asic_count);
     cJSON_AddStringToObject(root, "ASICModel", GLOBAL_STATE->DEVICE_CONFIG.family.asic.name);
     cJSON_AddStringToObject(root, "stratumURL", stratumURL);
     cJSON_AddNumberToObject(root, "stratumPort", nvs_config_get_u16(NVS_CONFIG_STRATUM_PORT));
@@ -2002,12 +2005,11 @@ static esp_err_t POST_cluster_mode(httpd_req_t *req)
     return ret;
 }
 
+#endif // CLUSTER_ENABLED
+
 // ============================================================================
 // Cluster Watchdog API
 // ============================================================================
-
-#if CLUSTER_ENABLED
-#include "cluster_watchdog.h"
 
 /* Handler for getting watchdog status */
 static esp_err_t GET_watchdog_status(httpd_req_t *req)
@@ -2027,11 +2029,11 @@ static esp_err_t GET_watchdog_status(httpd_req_t *req)
     cJSON_AddBoolToObject(root, "running", status.running);
     cJSON_AddNumberToObject(root, "throttledCount", status.throttled_count);
 
-    // Thresholds (for display)
+    // Thresholds (for display) — vin values are board-voltage-aware
     cJSON_AddNumberToObject(root, "tempThreshold", WATCHDOG_TEMP_THRESHOLD);
-    cJSON_AddNumberToObject(root, "vinThreshold", WATCHDOG_VIN_THRESHOLD);
+    cJSON_AddNumberToObject(root, "vinThreshold", cluster_watchdog_get_vin_throttle_threshold());
     cJSON_AddNumberToObject(root, "tempRecoveryThreshold", WATCHDOG_TEMP_RECOVERY_THRESHOLD);
-    cJSON_AddNumberToObject(root, "vinRecoveryThreshold", WATCHDOG_VIN_RECOVERY_THRESHOLD);
+    cJSON_AddNumberToObject(root, "vinRecoveryThreshold", cluster_watchdog_get_vin_recovery_threshold());
     cJSON_AddNumberToObject(root, "recoveryStabilityMs", WATCHDOG_RECOVERY_STABILITY_MS);
 
     // Master status
@@ -2050,7 +2052,7 @@ static esp_err_t GET_watchdog_status(httpd_req_t *req)
 
     // Slaves status array
     cJSON *slaves = cJSON_CreateArray();
-    for (int i = 0; i < CLUSTER_MAX_SLAVES; i++) {
+    for (int i = 0; i < CONFIG_CLUSTER_MAX_SLAVES; i++) {
         cJSON *slave = cJSON_CreateObject();
         cJSON_AddNumberToObject(slave, "slot", i);
         cJSON_AddBoolToObject(slave, "throttled", status.slaves[i].is_throttled);
@@ -2125,13 +2127,10 @@ static esp_err_t POST_watchdog(httpd_req_t *req)
     return ret;
 }
 
-#endif // CLUSTER_ENABLED
-
 // ============================================================================
 // Auto-Timing API
 // ============================================================================
 
-#if CLUSTER_ENABLED && CLUSTER_IS_MASTER
 /* Handler for getting auto-timing status */
 static esp_err_t GET_autotiming_status(httpd_req_t *req)
 {
@@ -2243,11 +2242,6 @@ static esp_err_t PATCH_autotiming(httpd_req_t *req)
 
     return ESP_OK;
 }
-#endif // CLUSTER_ENABLED && CLUSTER_IS_MASTER
-
-// ============================================================================
-// Autotune Profiles API
-#endif // CLUSTER_ENABLED
 
 // HTTP Error (404) Handler - Redirects all requests to the root page
 esp_err_t http_404_error_handler(httpd_req_t * req, httpd_err_code_t err)
@@ -2403,7 +2397,7 @@ esp_err_t start_rest_server(void * pvParameters)
     };
     httpd_register_uri_handler(server, &update_post_ota_www);
 
-    // Clusteraxe API endpoints
+    // Clusteraxe cluster API endpoints (master/slave modes only)
 #if CLUSTER_ENABLED
     httpd_uri_t cluster_status_uri = {
         .uri = "/api/cluster/status",
@@ -2420,23 +2414,6 @@ esp_err_t start_rest_server(void * pvParameters)
         .user_ctx = rest_context
     };
     httpd_register_uri_handler(server, &cluster_mode_uri);
-
-    // Watchdog API endpoints
-    httpd_uri_t watchdog_status_uri = {
-        .uri = "/api/cluster/watchdog/status",
-        .method = HTTP_GET,
-        .handler = GET_watchdog_status,
-        .user_ctx = rest_context
-    };
-    httpd_register_uri_handler(server, &watchdog_status_uri);
-
-    httpd_uri_t watchdog_control_uri = {
-        .uri = "/api/cluster/watchdog",
-        .method = HTTP_POST,
-        .handler = POST_watchdog,
-        .user_ctx = rest_context
-    };
-    httpd_register_uri_handler(server, &watchdog_control_uri);
 
 #if CLUSTER_IS_MASTER
     // Single slave API endpoint - handles /api/cluster/slave/{id}/{action}
@@ -2456,8 +2433,26 @@ esp_err_t start_rest_server(void * pvParameters)
         .user_ctx = rest_context
     };
     httpd_register_uri_handler(server, &cluster_slaves_api_uri);
+#endif // CLUSTER_IS_MASTER
+#endif // CLUSTER_ENABLED
 
-    // Auto-Timing API endpoints
+    // Watchdog and auto-timing endpoints (all modes: standalone + cluster)
+    httpd_uri_t watchdog_status_uri = {
+        .uri = "/api/cluster/watchdog/status",
+        .method = HTTP_GET,
+        .handler = GET_watchdog_status,
+        .user_ctx = rest_context
+    };
+    httpd_register_uri_handler(server, &watchdog_status_uri);
+
+    httpd_uri_t watchdog_control_uri = {
+        .uri = "/api/cluster/watchdog",
+        .method = HTTP_POST,
+        .handler = POST_watchdog,
+        .user_ctx = rest_context
+    };
+    httpd_register_uri_handler(server, &watchdog_control_uri);
+
     httpd_uri_t autotiming_status_uri = {
         .uri = "/api/system/autotiming",
         .method = HTTP_GET,
@@ -2473,8 +2468,6 @@ esp_err_t start_rest_server(void * pvParameters)
         .user_ctx = rest_context
     };
     httpd_register_uri_handler(server, &autotiming_update_uri);
-#endif // CLUSTER_IS_MASTER
-#endif // CLUSTER_ENABLED
 
     httpd_uri_t ws = {
         .uri = "/api/ws", 

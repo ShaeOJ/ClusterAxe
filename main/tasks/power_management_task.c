@@ -68,6 +68,7 @@ void POWER_MANAGEMENT_init_frequency(void * pvParameters)
     float frequency = nvs_config_get_float(NVS_CONFIG_ASIC_FREQUENCY);
 
     GLOBAL_STATE->POWER_MANAGEMENT_MODULE.frequency_value = frequency;
+    GLOBAL_STATE->POWER_MANAGEMENT_MODULE.actual_frequency = frequency;
     GLOBAL_STATE->POWER_MANAGEMENT_MODULE.expected_hashrate = expected_hashrate(GLOBAL_STATE, frequency);
     
     char expected_hashrate_str[16] = {0};
@@ -309,10 +310,11 @@ void POWER_MANAGEMENT_task(void * pvParameters)
         if (asic_frequency != last_asic_frequency) {
             ESP_LOGI(TAG, "New ASIC frequency requested: %g MHz (current: %g MHz)", asic_frequency, last_asic_frequency);
             
-            bool success = ASIC_set_frequency(GLOBAL_STATE, asic_frequency);
-            
-            if (success) {
+            float achieved = ASIC_set_frequency(GLOBAL_STATE, asic_frequency);
+
+            if (achieved > 0.0f) {
                 power_management->frequency_value = asic_frequency;
+                power_management->actual_frequency = achieved;
                 power_management->expected_hashrate = expected_hashrate(GLOBAL_STATE, asic_frequency);
             }
             

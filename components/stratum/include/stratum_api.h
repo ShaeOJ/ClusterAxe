@@ -25,7 +25,8 @@ typedef enum
     STRATUM_RESULT_SETUP,
     STRATUM_RESULT_VERSION_MASK,
     STRATUM_RESULT_SUBSCRIBE,
-    CLIENT_RECONNECT
+    CLIENT_RECONNECT,
+    MINING_PING
 } stratum_method;
 
 static const int  STRATUM_ID_CONFIGURE    = 1;
@@ -108,5 +109,7 @@ int STRATUM_V1_submit_share(int socket, int send_uid, const char *username, cons
 
 double STRATUM_V1_get_response_time_ms(int request_id);
 double STRATUM_V1_get_response_time_ms_secondary(int request_id);
+
+int STRATUM_V1_pong(int socket, int64_t request_id);
 
 #endif // STRATUM_API_H

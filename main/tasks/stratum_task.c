@@ -604,6 +604,8 @@ void stratum_task(void * pvParameters)
                 GLOBAL_STATE->extranonce_str = stratum_api_v1_message.extranonce_str;
                 GLOBAL_STATE->extranonce_2_len = stratum_api_v1_message.extranonce_2_len;
                 free(old_extranonce_str);
+            } else if (stratum_api_v1_message.method == MINING_PING) {
+                STRATUM_V1_pong(GLOBAL_STATE->sock, stratum_api_v1_message.message_id);
             } else if (stratum_api_v1_message.method == CLIENT_RECONNECT) {
                 ESP_LOGE(TAG, "Pool requested client reconnect...");
                 stratum_close_connection(GLOBAL_STATE);
@@ -934,6 +936,8 @@ void stratum_secondary_task(void * pvParameters)
                 GLOBAL_STATE->extranonce_str_secondary = stratum_api_v1_message_secondary.extranonce_str;
                 GLOBAL_STATE->extranonce_2_len_secondary = stratum_api_v1_message_secondary.extranonce_2_len;
                 free(old);
+            } else if (stratum_api_v1_message_secondary.method == MINING_PING) {
+                STRATUM_V1_pong(GLOBAL_STATE->sock_secondary, stratum_api_v1_message_secondary.message_id);
             } else if (stratum_api_v1_message_secondary.method == CLIENT_RECONNECT) {
                 ESP_LOGE(TAG_SECONDARY, "Secondary pool requested reconnect...");
                 stratum_close_secondary_connection(GLOBAL_STATE);

@@ -333,12 +333,13 @@ void BAP_handle_settings(const char *parameter, const char *value) {
                     return;
                 }
 
-                bool success = ASIC_set_frequency(bap_global_state, target_frequency);
+                float achieved = ASIC_set_frequency(bap_global_state, target_frequency);
 
-                if (success) {
+                if (achieved > 0.0f) {
                     //ESP_LOGI(TAG, "Frequency successfully set to %.2f MHz", target_frequency);
 
                     bap_global_state->POWER_MANAGEMENT_MODULE.frequency_value = target_frequency;
+                    bap_global_state->POWER_MANAGEMENT_MODULE.actual_frequency = achieved;
                     nvs_config_set_float(NVS_CONFIG_ASIC_FREQUENCY, target_frequency);
 
                     char freq_str[32];

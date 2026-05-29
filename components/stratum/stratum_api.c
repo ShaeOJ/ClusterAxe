@@ -15,6 +15,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <inttypes.h>
 
 #define BUFFER_SIZE 1024
 #define MAX_EXTRANONCE_2_LEN 32
@@ -310,6 +311,14 @@ void STRATUM_V1_parse(StratumApiV1Message * message, const char * stratum_json)
             result = MINING_SET_EXTRANONCE;
         } else if (strcmp("client.reconnect", method_json->valuestring) == 0) {
             result = CLIENT_RECONNECT;
+        } else if (strcmp("mining.ping", method_json->valuestring) == 0) {
+            result = MINING_PING;
+        } else if (strcmp("client.show_message", method_json->valuestring) == 0) {
+            cJSON * params = cJSON_GetObjectItem(json, "params");
+            cJSON * msg = params ? cJSON_GetArrayItem(params, 0) : NULL;
+            if (msg && cJSON_IsString(msg)) {
+                ESP_LOGI(TAG, "Pool message: %s", msg->valuestring);
+            }
         } else {
             ESP_LOGI(TAG, "unhandled method in stratum message: %s", stratum_json);
         }
@@ -702,6 +711,14 @@ int STRATUM_V1_configure_version_rolling(int socket, int send_uid, uint32_t * ve
     debug_stratum_tx(configure_msg);
 
     return write(socket, configure_msg, strlen(configure_msg));
+}
+
+int STRATUM_V1_pong(int socket, int64_t request_id)
+{
+    char pong_msg[64];
+    snprintf(pong_msg, sizeof(pong_msg), "{\"id\": %" PRId64 ", \"result\": true, \"error\": null}\n", request_id);
+    debug_stratum_tx(pong_msg);
+    return write(socket, pong_msg, strlen(pong_msg));
 }
 
 static void debug_stratum_tx(const char * msg)
