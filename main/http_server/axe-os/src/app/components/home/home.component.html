@@ -281,7 +281,8 @@
         <div class="col-12 md:col-6 xl:col-3">
             <div class="card mb-0">
                 <div class="flex flex-column justify-content-between">
-                    <span class="block text-lg font-medium mb-3">
+                    <span class="flex align-items-center gap-2 text-lg font-medium mb-3">
+                        <i class="pi pi-chart-line stat-card-icon stat-card-icon--hashrate"></i>
                         <ng-container *ngIf="isMasterMode">Device Hashrate</ng-container>
                         <ng-container *ngIf="!isMasterMode">Hashrate</ng-container>
                     </span>
@@ -357,7 +358,10 @@
         <div class="col-12 md:col-6 xl:col-3">
             <div class="card mb-0">
                 <div class="flex flex-column justify-content-between">
-                    <span class="block text-lg font-medium mb-3">Efficiency</span>
+                    <span class="flex align-items-center gap-2 text-lg font-medium mb-3">
+                        <i class="pi pi-gauge stat-card-icon stat-card-icon--efficiency"></i>
+                        Efficiency
+                    </span>
 
                     <ng-container *ngIf="!info.power_fault; else powerFault">
                         <div class="flex align-items-center justify-content-between gap-2 mb-3">
@@ -401,7 +405,10 @@
                         <!-- Slave Mode: Show shares found/submitted to master -->
                         <ng-container *ngIf="isSlaveMode; else normalSharesDisplay">
                             <ng-container *ngIf="clusterStatus$ | async as clusterStatus">
-                                <span class="block text-lg font-medium mb-3">Shares</span>
+                                <span class="flex align-items-center gap-2 text-lg font-medium mb-3">
+                                    <i class="pi pi-check-circle stat-card-icon stat-card-icon--shares"></i>
+                                    Shares
+                                </span>
                                 <div class="text-900 font-medium text-2xl">
                                     <span class="text-theme">{{clusterStatus.sharesFound || 0 | number: '1.0-0'}}</span>
                                     <span class="text-500 text-base"> found</span>
@@ -410,7 +417,8 @@
                         </ng-container>
                         <!-- Normal/Master Mode: Show shares -->
                         <ng-template #normalSharesDisplay>
-                            <span class="block text-lg font-medium mb-3">
+                            <span class="flex align-items-center gap-2 text-lg font-medium mb-3">
+                                <i class="pi pi-check-circle stat-card-icon stat-card-icon--shares"></i>
                                 <ng-container *ngIf="isMasterMode">Device Shares</ng-container>
                                 <ng-container *ngIf="!isMasterMode">Shares</ng-container>
                             </span>
@@ -492,7 +500,10 @@
             <div class="card mb-0">
                 <div class="flex justify-content-between mb-3">
                     <div>
-                        <span class="block text-lg font-medium mb-3">Best Difficulty</span>
+                        <span class="flex align-items-center gap-2 text-lg font-medium mb-3">
+                            <i class="pi pi-trophy stat-card-icon stat-card-icon--best"></i>
+                            Best Difficulty
+                        </span>
                         <div class="text-900 font-medium text-2xl">
                             <span class="cursor-pointer" pTooltip="{{info.bestDiff | number:'1.0-0'}}" tooltipPosition="bottom">
                                 {{info.bestDiff | diffSuffix}}
@@ -544,11 +555,11 @@
 
         <div class="col-12 md:col-4">
             <div class="card">
-                <h4 class="text-center">Power</h4>
+                <h4 class="text-center"><i class="pi pi-bolt mr-2"></i>Power</h4>
 
                 <div class="mb-3">
-                    <h6 class="flex justify-content-between mb-1">
-                        Power<span>{{info.power}} W</span>
+                    <h6 class="flex justify-content-between align-items-center mb-1">
+                        <span class="flex align-items-center gap-2"><i class="pi pi-bolt text-yellow-500 text-sm"></i>Power</span><span>{{info.power}} W</span>
                     </h6>
                     <p-progressBar [value]="(info.power / info.maxPower) * 100" [styleClass]="'p-progressbar--thin'">
                         <ng-template pTemplate="content" let-value></ng-template>
@@ -556,8 +567,8 @@
                 </div>
 
                 <div class="mb-3">
-                    <h6 class="flex justify-content-between mb-1">
-                        Input Voltage<span>{{info.voltage}} V</span>
+                    <h6 class="flex justify-content-between align-items-center mb-1">
+                        <span class="flex align-items-center gap-2"><i class="pi pi-bolt text-blue-400 text-sm"></i>Input Voltage</span><span>{{info.voltage}} V</span>
                     </h6>
                     <div class="relative">
                         <p-progressBar [value]="(info.voltage / (info.nominalVoltage + .5)) * 100"
@@ -581,8 +592,8 @@
                 </div>
 
                 <div class="mb-3">
-                    <h6 class="flex justify-content-between mb-1">
-                        ASIC Frequency
+                    <h6 class="flex justify-content-between align-items-center mb-1">
+                        <span class="flex align-items-center gap-2"><i class="pi pi-wave-pulse text-purple-400 text-sm"></i>ASIC Frequency</span>
                         <span>
                             {{info.frequency}} MHz
                             <span *ngIf="info.actualFrequency && info.actualFrequency !== info.frequency"
@@ -595,8 +606,8 @@
                 </div>
 
                 <div>
-                    <h6 class="flex justify-content-between mb-1">
-                        Measured ASIC Voltage<span>{{info.coreVoltageActual}} V</span>
+                    <h6 class="flex justify-content-between align-items-center mb-1">
+                        <span class="flex align-items-center gap-2"><i class="pi pi-microchip text-green-400 text-sm"></i>Measured ASIC Voltage</span><span>{{info.coreVoltageActual}} V</span>
                     </h6>
                     <p-progressBar [value]="(info.coreVoltageActual / 1.8) * 100" [styleClass]="'p-progressbar--thin'">
                         <ng-template pTemplate="content" let-value></ng-template>
@@ -607,16 +618,19 @@
 
         <div class="col-12 md:col-4">
             <div class="card">
-                <h4 class="text-center">Heat</h4>
+                <h4 class="text-center"><i class="pi pi-sun mr-2"></i>Heat</h4>
 
                 <div class="mb-3">
-                    <h6 class="flex justify-content-between mb-1">
-                        <ng-container *ngIf="info.temp2 > 0; else singleTemp">
-                            ASIC Temperature 1
-                        </ng-container>
-                        <ng-template #singleTemp>
-                            ASIC Temperature
-                        </ng-template>
+                    <h6 class="flex justify-content-between align-items-center mb-1">
+                        <span class="flex align-items-center gap-2">
+                            <i class="pi pi-microchip text-orange-500 text-sm"></i>
+                            <ng-container *ngIf="info.temp2 > 0; else singleTemp">
+                                ASIC Temperature 1
+                            </ng-container>
+                            <ng-template #singleTemp>
+                                ASIC Temperature
+                            </ng-template>
+                        </span>
                         <span>
                             <ng-container *ngIf="info.temp > 0; else noValue">
                                 {{info.temp}} &deg;C
@@ -633,8 +647,8 @@
                 </div>
 
                 <div class="mb-3" *ngIf="info.temp2 > 0">
-                    <h6 class="flex justify-content-between mb-1">
-                        ASIC Temperature 2
+                    <h6 class="flex justify-content-between align-items-center mb-1">
+                        <span class="flex align-items-center gap-2"><i class="pi pi-microchip text-orange-400 text-sm"></i>ASIC Temperature 2</span>
                         <span>
                             {{info.temp2}} &deg;C
                         </span>
@@ -649,8 +663,8 @@
                 </div>
 
                 <div class="mb-3" *ngIf="info.vrTemp > 0">
-                    <h6 class="flex justify-content-between mb-1">
-                        Voltage Regulator Temperature<span>{{info.vrTemp}} &deg;C</span>
+                    <h6 class="flex justify-content-between align-items-center mb-1">
+                        <span class="flex align-items-center gap-2"><i class="pi pi-bolt text-red-400 text-sm"></i>Voltage Regulator Temperature</span><span>{{info.vrTemp}} &deg;C</span>
                     </h6>
                     <p-progressBar [value]="(info.vrTemp / 120) * 100" [styleClass]="'p-progressbar--thin'">
                         <ng-template pTemplate="content" let-value></ng-template>
@@ -665,11 +679,11 @@
 
         <div class="col-12 md:col-4">
             <div class="card">
-                <h4 class="text-center">Fan</h4>
+                <h4 class="text-center"><i class="pi pi-refresh mr-2"></i>Fan</h4>
 
                 <div class="mb-3">
-                    <h6 class="flex justify-content-between mb-1">
-                        Fan Speed<span>{{info.fanspeed.toFixed(1)}} %</span>
+                    <h6 class="flex justify-content-between align-items-center mb-1">
+                        <span class="flex align-items-center gap-2"><i class="pi pi-refresh text-cyan-400 text-sm"></i>Fan Speed</span><span>{{info.fanspeed.toFixed(1)}} %</span>
                     </h6>
                     <p-progressBar [value]="info.fanspeed" [styleClass]="'p-progressbar--thin'">
                         <ng-template pTemplate="content" let-value></ng-template>
@@ -677,13 +691,16 @@
                 </div>
 
                 <div class="mb-3">
-                    <h6 class="flex justify-content-between mb-1">
-                        <ng-container *ngIf="info.fan2rpm > 0; else singleFan">
-                            Fan 1 RPM
-                        </ng-container>
-                        <ng-template #singleFan>
-                            Fan RPM
-                        </ng-template>
+                    <h6 class="flex justify-content-between align-items-center mb-1">
+                        <span class="flex align-items-center gap-2">
+                            <i class="pi pi-refresh text-cyan-500 text-sm"></i>
+                            <ng-container *ngIf="info.fan2rpm > 0; else singleFan">
+                                Fan 1 RPM
+                            </ng-container>
+                            <ng-template #singleFan>
+                                Fan RPM
+                            </ng-template>
+                        </span>
                         <span>
                             <ng-container *ngIf="info.fanrpm > 0; else noValue">
                                 {{info.fanrpm}} RPM
@@ -697,8 +714,8 @@
                 </div>
 
                 <div *ngIf="info.fan2rpm > 0">
-                    <h6 class="flex justify-content-between mb-1">
-                        Fan 2 RPM
+                    <h6 class="flex justify-content-between align-items-center mb-1">
+                        <span class="flex align-items-center gap-2"><i class="pi pi-refresh text-cyan-500 text-sm"></i>Fan 2 RPM</span>
                         <span>
                             <ng-container *ngIf="info.fan2rpm > 0; else noValue">
                                 {{info.fan2rpm}} RPM
@@ -744,7 +761,7 @@
                 <ng-container *ngIf="!isSlaveMode">
                 <!-- Dual Pool Mode: Show both pools -->
                 <ng-container *ngIf="isDualPoolMode(info); else singlePoolDisplay">
-                    <h4 class="mb-3">Pools (Dual Mode)</h4>
+                    <h4 class="mb-3"><i class="pi pi-server mr-2"></i>Pools (Dual Mode)</h4>
 
                     <!-- Primary Pool -->
                     <div class="mb-3 pb-3 border-bottom-1 border-200">
@@ -797,7 +814,7 @@
                 <ng-template #singlePoolDisplay>
                     <div class="flex flex-nowrap justify-content-between mb-3 relative">
                         <h4 class="mb-0">
-                            Pool
+                            <i class="pi pi-server mr-2"></i>Pool
                             <a
                                 *ngIf="(quickLink$ | async) as quickLink"
                                 [href]="quickLink"
@@ -823,7 +840,7 @@
 
                     <div class="flex flex-nowrap">
                         <div class="col-fixed-width text-500">
-                            <tooltip-text-icon
+                            <i class="pi pi-link mr-1"></i><tooltip-text-icon
                                 text="URL"
                                 tooltip="{{ getPoolProtocolType(info) }}"
                             />
@@ -837,7 +854,7 @@
 
                     <div class="flex flex-nowrap ellipsis-magic overflow-hidden">
                         <div class="col-fixed-width text-500">
-                            <tooltip-text-icon
+                            <i class="pi pi-user mr-1"></i><tooltip-text-icon
                                 text="User"
                                 tooltip="{{ activePoolUser }}"
                             />
@@ -853,7 +870,7 @@
 
                     <div class="flex flex-nowrap">
                         <div class="col-fixed-width text-500">
-                            <tooltip-text-icon
+                            <i class="pi pi-clock mr-1"></i><tooltip-text-icon
                                 text="Time"
                                 tooltip="Time it takes for the pool to respond to a share"
                             />
@@ -865,7 +882,7 @@
 
                     <div class="flex flex-nowrap">
                         <div class="col-fixed-width text-500">
-                            <span>Difficulty</span>
+                            <i class="pi pi-gauge mr-1"></i><span>Difficulty</span>
                         </div>
                         <div>
                             {{ info.poolDifficulty }}
@@ -883,7 +900,7 @@
                     <h4 class="mb-3">
                         <i class="pi pi-chart-line mr-2"></i>Slave Performance
                     </h4>
-                    <div class="flex flex-nowrap mb-2">
+                    <div class="flex flex-nowrap mb-4">
                         <div class="col-fixed-width text-500">Best Diff</div>
                         <div>
                             <span class="cursor-pointer" pTooltip="{{info.bestDiff | number:'1.0-0'}}" tooltipPosition="bottom">
@@ -891,7 +908,7 @@
                             </span>
                         </div>
                     </div>
-                    <div class="flex flex-nowrap mb-2">
+                    <div class="flex flex-nowrap mb-4">
                         <div class="col-fixed-width text-500">Shares/Hour</div>
                         <div>{{getSharesPerHour(info) | number:'1.1-1'}}</div>
                     </div>
@@ -905,7 +922,7 @@
                 <ng-container *ngIf="!isSlaveMode">
                 <!-- Dual Pool Mode: Show both pools' block headers -->
                 <ng-container *ngIf="isDualPoolMode(info); else singleBlockHeader">
-                    <h4 class="mb-3">Block Headers (Dual Mode)</h4>
+                    <h4 class="mb-3"><i class="pi pi-box mr-2"></i>Block Headers (Dual Mode)</h4>
 
                     <!-- Primary Pool Block Header -->
                     <div class="mb-3 pb-3 border-bottom-1 border-200">
@@ -950,11 +967,11 @@
 
                 <!-- Single Pool / Failover Mode -->
                 <ng-template #singleBlockHeader>
-                    <h4 class="white-space-nowrap overflow-hidden text-overflow-ellipsis">Block Header</h4>
+                    <h4 class="white-space-nowrap overflow-hidden text-overflow-ellipsis"><i class="pi pi-box mr-2"></i>Block Header</h4>
 
                     <div class="flex flex-nowrap">
                         <div class="col-fixed-width text-500">
-                            <span>Height</span>
+                            <i class="pi pi-arrow-up mr-1"></i><span>Height</span>
                         </div>
                         <div>
                             {{ info.blockHeight }}
@@ -963,7 +980,7 @@
 
                     <div class="flex flex-nowrap">
                         <div class="col-fixed-width text-500">
-                            <span>Difficulty</span>
+                            <i class="pi pi-gauge mr-1"></i><span>Difficulty</span>
                         </div>
                         <div *ngIf="info.networkDifficulty" class="cursor-pointer" pTooltip="{{info.networkDifficulty | number:'1.0-0'}}" tooltipPosition="bottom">
                             {{ info.networkDifficulty | diffSuffix }}
@@ -972,7 +989,7 @@
 
                     <div class="flex flex-nowrap align-items-baseline">
                         <div class="col-fixed-width text-500">
-                            <span>Scriptsig</span>
+                            <i class="pi pi-code mr-1"></i><span>Scriptsig</span>
                         </div>
                         <div class="code">
                             {{ info.scriptsig }}
@@ -985,7 +1002,7 @@
 
         <div class="col-12 md:col-4">
             <div class="card">
-                <h4 class="white-space-nowrap overflow-hidden text-overflow-ellipsis">Hashrate Registers</h4>
+                <h4 class="white-space-nowrap overflow-hidden text-overflow-ellipsis"><i class="pi pi-microchip mr-2"></i>Hashrate Registers</h4>
 
                 <ng-container *ngIf="getAsicsAmount(info) as asicAmount">
                     <table class="heatmap text-{{asicAmount <= 2 ? 'sm' : 'xs'}}">

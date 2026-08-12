@@ -418,6 +418,8 @@ p-chart>div {
 }
 
 .card {
+    border-radius: 18px;  // Rounder cards
+
     &.chart {
         padding: 10px;
     }
