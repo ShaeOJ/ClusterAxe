@@ -19,7 +19,7 @@ static const uint8_t hex_val_table[256] = {
 
 size_t bin2hex(const uint8_t *buf, size_t buflen, char *hex, size_t hexlen)
 {
-    if (hexlen < buflen * 2) {
+    if (hexlen <= buflen * 2) {
         return 0;
     }
 
@@ -90,6 +90,8 @@ void midstate_sha256_bin(const uint8_t *data, const size_t data_len, uint8_t des
     mbedtls_sha256_update(&midstate, data, 64);
 
     memcpy(dest, midstate.state, 32);
+
+    mbedtls_sha256_free(&midstate);
 }
 
 void reverse_32bit_words(const uint8_t src[32], uint8_t dest[32])
