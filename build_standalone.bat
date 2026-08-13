@@ -1,8 +1,8 @@
 @echo off
 echo ============================================
-echo  ClusterAxe Build Script - GT 801 Standalone
-echo  GammaTurbo, 2x BM1370, 12V, no cluster (solo)
-echo  Build dir: build_gt_standalone  Config: sdkconfig.gt-standalone
+echo  ClusterAxe Build Script - Gamma 601 Standalone
+echo  Single BM1370, no cluster (solo mining)
+echo  Build dir: build_standalone  Config: sdkconfig.standalone
 echo ============================================
 echo.
 
@@ -28,10 +28,10 @@ echo.
 echo Building firmware...
 echo.
 
-:: Build into a dedicated dir with the GT standalone config as SDKCONFIG. A
+:: Build into a dedicated dir with the standalone config as SDKCONFIG. A
 :: per-variant build dir keeps variants separate AND sidesteps the Windows
 :: "copy preserves mtime" trap that stopped ninja from reconfiguring.
-%IDF_PYTHON% %IDF_PATH%\tools\idf.py -B build_gt_standalone -D SDKCONFIG=%CD%\sdkconfig.gt-standalone -D NPM_EXECUTABLE=%NPM_EXE% build
+%IDF_PYTHON% %IDF_PATH%\tools\idf.py -B build_standalone -D SDKCONFIG=%CD%\sdkconfig.standalone -D NPM_EXECUTABLE=%NPM_EXE% build
 set BUILD_RESULT=%ERRORLEVEL%
 
 if %BUILD_RESULT% NEQ 0 (
@@ -44,19 +44,19 @@ if %BUILD_RESULT% NEQ 0 (
 
 :: Variant-specific name. Standalone has no cluster mode, so project() names the
 :: app just "zombie-os" (see the cluster-mode check in CMakeLists).
-copy /Y build_gt_standalone\zombie-os.bin build_gt_standalone\clusteraxe-gt801-standalone.bin >nul
+copy /Y build_standalone\zombie-os.bin build_standalone\clusteraxe-gamma601-standalone.bin >nul
 
 echo.
 echo ============================================
 echo  Build Successful!
 echo ============================================
 echo.
-echo Firmware files located in: build_gt_standalone\
-echo  - clusteraxe-gt801-standalone.bin (copy of app, variant-named^)
+echo Firmware files located in: build_standalone\
+echo  - clusteraxe-gamma601-standalone.bin (copy of app, variant-named^)
 echo  - zombie-os.bin (main application^)
 echo  - bootloader\bootloader.bin
 echo  - partition_table\partition-table.bin
 echo  - www.bin
 echo.
-echo Flash from build_gt_standalone\ (see the esptool line idf.py printed above^).
+echo Flash from build_standalone\ (see the esptool line idf.py printed above^).
 echo.

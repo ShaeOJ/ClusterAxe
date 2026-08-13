@@ -8,8 +8,48 @@
 
 Distributed BitAxe mining firmware for ESP32‑S3. A **master** connects to the
 pool and hands work to up to 8 **slaves** over ESP‑NOW (wireless) or BAP/RS‑485
-(wired). This release ships prebuilt **master** and **slave** images for both
-the single‑chip **Gamma (board 601)** and the dual‑chip **GammaTurbo (board 801)**.
+(wired). This release ships prebuilt **master**, **slave**, and **standalone**
+images for both the single‑chip **Gamma (board 601)** and the dual‑chip
+**GammaTurbo (board 801)**.
+
+---
+
+## Features
+
+**Mining modes**
+- **Standalone** — solo/pool mining on a single board, no cluster.
+- **Master** — connects to the pool and distributes work to up to **8 slaves**.
+- **Slave** — receives work from a master; no pool connection of its own.
+- **Cluster transport:** ESP‑NOW (wireless, auto‑pairing) or BAP/RS‑485 (wired),
+  with heartbeat + auto re‑registration and full‑cluster rejection handling.
+- **Nonce‑space splitting** across all nodes so no two miners duplicate work.
+
+**Pools**
+- **Dual‑pool support** — primary + secondary, in failover or split mode, with a
+  live primary/secondary work‑split readout.
+
+**Tuning & protection (always‑on in every mode)**
+- **Watchdog** — throttles frequency + voltage on over‑temp / under‑volt, then
+  gradually auto‑recovers with hysteresis once conditions are safe. Board‑aware
+  thresholds (5 V Gamma vs 12 V GammaTurbo).
+- **Auto‑timing** — calibrates the ASIC job interval for best hashrate and
+  persists the result to NVS, so a reboot resumes instantly instead of
+  recalibrating.
+- **Benchmark tool** — voltage/frequency grid search that finds the best stable
+  operating point, auto‑applies it, and saves best‑so‑far to NVS (boot‑safe even
+  if you close the browser mid‑run).
+
+**Web UI (AxeOS‑based)**
+- Live hashrate charts with 1‑minute averaging + EMA smoothing.
+- Best difficulty — session and all‑time.
+- Cluster page (per‑slave status, work split, bulk controls) and a Tuner page
+  (watchdog + auto‑timing).
+- Over‑the‑air (OTA) firmware + web‑UI updates.
+- ZombieOS look with the **ASICPOOL / ZOMBIE OS** OLED splash.
+
+**Hardware**
+- ASIC: **BM1370**. Boards: **Gamma 601** (1× BM1370, 5 V) and **GammaTurbo 801**
+  (2× BM1370, 12 V, 36 W).
 
 ---
 
@@ -19,8 +59,10 @@ the single‑chip **Gamma (board 601)** and the dual‑chip **GammaTurbo (board 
 |-------|------|------|------|
 | Gamma 601 (1× BM1370) | **Master** | `build_master/clusteraxe-gamma601-master.bin` | 1,464,224 B |
 | Gamma 601 (1× BM1370) | **Slave**  | `build_slave/clusteraxe-gamma601-slave.bin`   | 1,336,928 B |
+| Gamma 601 (1× BM1370) | **Standalone** | `build_standalone/clusteraxe-gamma601-standalone.bin` | 1,337,440 B |
 | GammaTurbo 801 (2× BM1370, 12 V) | **Master** | `build_gt_master/clusteraxe-gt801-master.bin` | 1,464,224 B |
 | GammaTurbo 801 (2× BM1370, 12 V) | **Slave**  | `build_gt_slave/clusteraxe-gt801-slave.bin`   | 1,336,928 B |
+| GammaTurbo 801 (2× BM1370, 12 V) | **Standalone** | `build_gt_standalone/clusteraxe-gt801-standalone.bin` | 1,337,440 B |
 
 Each `build_*/` directory is a **complete flashable set**: `bootloader/bootloader.bin`,
 `partition_table/partition-table.bin`, the app image (`zombie-os-master.bin` /
@@ -87,11 +129,12 @@ Requires **ESP‑IDF 5.5.1** and **Node.js 22+** (the web UI builds as part of t
 firmware). Each variant builds into its **own** directory so nothing overwrites:
 
 ```
-build_master.bat       ->  build_master/       Gamma 601 master
-build_slave.bat        ->  build_slave/        Gamma 601 slave
-build_gt_master.bat    ->  build_gt_master/    GammaTurbo 801 master
-build_gt_slave.bat     ->  build_gt_slave/     GammaTurbo 801 slave
-build_gt_standalone.bat->  build/              GammaTurbo 801, no cluster
+build_master.bat        ->  build_master/         Gamma 601 master
+build_slave.bat         ->  build_slave/          Gamma 601 slave
+build_standalone.bat    ->  build_standalone/     Gamma 601 standalone (no cluster)
+build_gt_master.bat     ->  build_gt_master/      GammaTurbo 801 master
+build_gt_slave.bat      ->  build_gt_slave/       GammaTurbo 801 slave
+build_gt_standalone.bat ->  build_gt_standalone/  GammaTurbo 801 standalone (no cluster)
 ```
 
 Under the hood each script runs
