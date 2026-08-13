@@ -109,13 +109,18 @@ else()
         "${WEB_SRC_DIR}/src/*.*"
     )
 
-    # Also track build configuration files
+    # Also track build configuration files. version.txt (project root) is the
+    # single source of truth for the version; generate-version.js copies it into
+    # dist/. Tracking both means a version bump alone re-runs the web build so
+    # www.bin's version.txt can't go stale vs the app's PROJECT_VER.
     list(APPEND WEB_UI_SOURCES
         "${WEB_SRC_DIR}/package.json"
         "${WEB_SRC_DIR}/package-lock.json"
         "${WEB_SRC_DIR}/angular.json"
         "${WEB_SRC_DIR}/tsconfig.json"
         "${WEB_SRC_DIR}/tsconfig.app.json"
+        "${WEB_SRC_DIR}/generate-version.js"
+        "${CMAKE_SOURCE_DIR}/version.txt"
     )
 
     # Use a stamp file to track when the build was last done

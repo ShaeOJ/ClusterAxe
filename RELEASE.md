@@ -1,10 +1,10 @@
 ```
  ▂▃▅▇█▓▒░  Z O M B I E   O S  ░▒▓█▇▅▃▂
-        C L U S T E R A X E   ·   v1.5.1
+        C L U S T E R A X E   ·   v1.5.2
      reanimated firmware for BM1370 BitAxe
 ```
 
-# ClusterAxe / ZombieOS v1.5.1 — Gamma + GammaTurbo release
+# ClusterAxe / ZombieOS v1.5.2 — Gamma + GammaTurbo release
 
 Distributed BitAxe mining firmware for ESP32‑S3. A **master** connects to the
 pool and hands work to up to 8 **slaves** over ESP‑NOW (wireless) or BAP/RS‑485
@@ -109,12 +109,14 @@ slave‑named binary).
 
 ---
 
-## What's in v1.5.1
+## What's in v1.5.2
 
 - Cluster‑wide best‑difficulty tracking, benchmark tool, and the always‑on
   watchdog + auto‑timing.
 - Upstream ESP‑Miner fixes cherry‑picked through 2.14.2.
 - Four prebuilt variants (Gamma 601 + GammaTurbo 801 × master/slave) with
   correctly‑named, independently‑verified images.
+- OLED splash rebranded to **ASICPOOL / ZOMBIE OS** (was DUALPOOL / VAULT‑TEC).
+- Version bumped to **v1.5.2** — reported by the board's system info and web UI.
 
 *ZombieOS — a rebranded, reanimated ESP‑Miner. Mine on.*

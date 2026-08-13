@@ -8,7 +8,7 @@ try {
     version = fs.readFileSync(versionFile, 'utf8').trim();
 } catch (e) {
     // Fallback if version.txt not found
-    version = 'ClusterAxe-v1.5.1';
+    version = 'ClusterAxe-v1.5.2';
 }
 
 const outputPath = path.join(__dirname, 'dist', 'axe-os', 'version.txt');

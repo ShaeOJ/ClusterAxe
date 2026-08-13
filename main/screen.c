@@ -279,14 +279,14 @@ static lv_obj_t * create_scr_bitaxe_logo(const char * name, const char * board_v
 static lv_obj_t * create_scr_fire_pool() {
     lv_obj_t * scr = lv_obj_create(NULL);
 
-    // DualPool title
+    // A.S.I.C. Pool edition title
     lv_obj_t *label1 = lv_label_create(scr);
-    lv_label_set_text(label1, "DUALPOOL");
+    lv_label_set_text(label1, "ASICPOOL");
     lv_obj_align(label1, LV_ALIGN_CENTER, 0, -8);
 
-    // Vault-TEC subtitle
+    // ZombieOS subtitle
     lv_obj_t *label2 = lv_label_create(scr);
-    lv_label_set_text(label2, "VAULT-TEC");
+    lv_label_set_text(label2, "ZOMBIE OS");
     lv_obj_align(label2, LV_ALIGN_CENTER, 0, 4);
 
     return scr;
