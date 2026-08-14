@@ -36,15 +36,14 @@
 
                         <div class="text-orange-500 mb-3">Download both files for update!</div>
 
+                        <div class="text-500 text-sm mb-1">Firmware for this board (<span class="text-primary">{{boardTag() || boardVersion}}</span>):</div>
                         <div *ngFor="let asset of latestRelease.assets">
-                            <div *ngIf="asset.name == 'clusteraxe-master.bin'">
+                            <div *ngIf="isFirmwareAssetForBoard(asset.name)">
                                 <a style="text-decoration: underline;" target="_blank"
-                                    [href]="asset.browser_download_url">clusteraxe-master.bin</a>
+                                    [href]="asset.browser_download_url">{{asset.name}}</a>
                             </div>
-                            <div *ngIf="asset.name == 'clusteraxe-slave.bin'">
-                                <a style="text-decoration: underline;" target="_blank"
-                                    [href]="asset.browser_download_url">clusteraxe-slave.bin</a>
-                            </div>
+                        </div>
+                        <div *ngFor="let asset of latestRelease.assets">
                             <div *ngIf="asset.name == 'www.bin'">
                                 <a style="text-decoration: underline;" target="_blank"
                                     [href]="asset.browser_download_url">www.bin</a>
@@ -78,7 +77,7 @@
                 <p-fileUpload #firmwareUpload [customUpload]="true" mode="basic" accept=".bin" (uploadHandler)="otaUpdate($event)"
                     [auto]="true" chooseLabel="Browse"></p-fileUpload>
 
-                <small>(clusteraxe-master.bin / clusteraxe-slave.bin)</small>
+                <small>(clusteraxe-{{boardTag() || '&lt;board&gt;'}}-master / slave / standalone.bin)</small>
             </div>
 
         </div>

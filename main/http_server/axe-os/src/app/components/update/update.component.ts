@@ -26,6 +26,11 @@ export class UpdateComponent {
 
   public info$: Observable<any>;
 
+  // Board version of THIS device (e.g. "601" / "801"), used to match the
+  // correct firmware asset/upload so a board can't be flashed with another
+  // board's image (different voltage domain).
+  public boardVersion: string = '';
+
   @ViewChild('firmwareUpload') firmwareUpload!: FileUpload;
   @ViewChild('websiteUpload') websiteUpload!: FileUpload;
 
@@ -47,14 +52,46 @@ export class UpdateComponent {
       distinctUntilChanged((prev, curr) => JSON.stringify(prev) === JSON.stringify(curr)),
       shareReplay({ refCount: true, bufferSize: 1 })
     );
+
+    // Track this device's board so the firmware matcher below knows which
+    // clusteraxe-<board>-*.bin belongs to it.
+    this.info$.subscribe(info => this.boardVersion = info?.boardVersion ?? '');
+  }
+
+  // Maps the board version reported by the device to the tag used in release
+  // asset names: 601 -> gamma601, 801 -> gt801. Unknown boards fall back to
+  // "board<version>" so matching still works if new boards are added.
+  public boardTag(): string {
+    const v = (this.boardVersion || '').trim();
+    if (v === '601') return 'gamma601';
+    if (v === '801') return 'gt801';
+    return v ? 'board' + v : '';
+  }
+
+  // True if a release asset / uploaded file is a firmware image for THIS board,
+  // i.e. clusteraxe-<boardTag>-<mode>.bin (master/slave/standalone). When the
+  // board is unknown, accept any clusteraxe-*.bin so the page still works.
+  public isFirmwareAssetForBoard(name: string): boolean {
+    if (!name.endsWith('.bin')) return false;
+    const tag = this.boardTag();
+    return tag ? name.startsWith(`clusteraxe-${tag}-`) : name.startsWith('clusteraxe-');
   }
 
   otaUpdate(event: FileUploadHandlerEvent) {
     const file = event.files[0];
     this.firmwareUpload.clear(); // clear the file upload component
 
-    if (file.name != 'zombie-os-master.bin' && file.name != 'zombie-os-slave.bin') {
-      this.toastrService.error('Incorrect file, looking for zombie-os-master.bin or zombie-os-slave.bin.');
+    // Raw project outputs (any board) are always accepted; otherwise the file
+    // must be a clusteraxe image for THIS board so a 601 can't be flashed with
+    // an 801 image or vice-versa.
+    const rawNames = ['zombie-os-master.bin', 'zombie-os-slave.bin', 'zombie-os.bin'];
+    const tag = this.boardTag();
+    if (!rawNames.includes(file.name) && !this.isFirmwareAssetForBoard(file.name)) {
+      if (file.name.startsWith('clusteraxe-') && file.name.endsWith('.bin')) {
+        this.toastrService.error(`That firmware is for a different board. This device is ${tag || 'board ' + this.boardVersion}; use clusteraxe-${tag || '<board>'}-<master|slave|standalone>.bin.`);
+      } else {
+        this.toastrService.error(`Incorrect file. Expected clusteraxe-${tag || '<board>'}-<master|slave|standalone>.bin (or a zombie-os-*.bin).`);
+      }
       return;
     }
 
