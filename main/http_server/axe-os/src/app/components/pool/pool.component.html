@@ -1,7 +1,7 @@
 <form [formGroup]="form" *ngIf="form">
     <div class="card">
         <!-- Pool Mode Selection -->
-        <h2>Pool Mode</h2>
+        <h2><i class="pi pi-server mr-2"></i>Pool Mode</h2>
         <div class="card mb-4">
             <div class="field grid p-fluid">
                 <label htmlFor="poolMode" class="col-12 md:col-2 md:mb-0">
@@ -47,8 +47,9 @@
         </div>
 
         <ng-container *ngFor="let pool of pools">
-            <h2 *ngIf="pool === 'stratum'">Primary Pool Configuration</h2>
+            <h2 *ngIf="pool === 'stratum'"><i class="pi pi-sign-in mr-2"></i>Primary Pool Configuration</h2>
             <h2 *ngIf="pool === 'fallbackStratum'" class="mt-5">
+                <i class="pi pi-replay mr-2"></i>
                 <span *ngIf="isDualPoolMode()">Secondary Pool Configuration</span>
                 <span *ngIf="!isDualPoolMode()">Fallback Pool Configuration</span>
             </h2>

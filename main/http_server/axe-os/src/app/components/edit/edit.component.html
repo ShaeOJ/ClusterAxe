@@ -6,13 +6,13 @@
 
         <div class="field grid p-fluid">
             <ng-container *ngIf="settingsUnlocked">
-                <label for="frequency" class="col-12 md:col-2 md:m-0">Frequency</label>
+                <label for="frequency" class="col-12 md:col-2 md:m-0"><i class="pi pi-wave-pulse mr-2"></i>Frequency</label>
                 <div class="col-12 md:col-10">
                     <input pInputText id="frequency" formControlName="frequency" type="number" />
                 </div>
             </ng-container>
             <ng-container *ngIf="!settingsUnlocked">
-                <label (click)="frequencyDropdown.show()" class="col-12 md:col-2 md:m-0 hover-next-input">Frequency</label>
+                <label (click)="frequencyDropdown.show()" class="col-12 md:col-2 md:m-0 hover-next-input"><i class="pi pi-wave-pulse mr-2"></i>Frequency</label>
                 <div class="col-12 md:col-10">
                     <p-dropdown
                         [options]="dropdownFrequency"
@@ -27,13 +27,13 @@
 
         <div class="field grid p-fluid">
             <ng-container *ngIf="settingsUnlocked">
-                <label for="coreVoltage" class="col-12 md:col-2 md:m-0">Core Voltage</label>
+                <label for="coreVoltage" class="col-12 md:col-2 md:m-0"><i class="pi pi-bolt mr-2"></i>Core Voltage</label>
                 <div class="col-12 md:col-10">
                     <input pInputText id="coreVoltage" formControlName="coreVoltage" type="number" />
                 </div>
             </ng-container>
             <ng-container *ngIf="!settingsUnlocked">
-                <label (click)="voltageDropdown.show()" class="col-12 md:col-2 md:m-0 hover-next-input">Core Voltage</label>
+                <label (click)="voltageDropdown.show()" class="col-12 md:col-2 md:m-0 hover-next-input"><i class="pi pi-bolt mr-2"></i>Core Voltage</label>
                 <div class="col-12 md:col-10">
                     <p-dropdown
                         [options]="dropdownVoltage"
@@ -60,11 +60,11 @@
             <div class="col-1 md:col-10 md:flex-order-2">
                 <p-checkbox name="autofanspeed" formControlName="autofanspeed" inputId="autofanspeed" [binary]="true"></p-checkbox>
             </div>
-            <label for="autofanspeed" class="col-11 m-0 pl-3 md:col-2 md:flex-order-1 md:p-2">Automatic Fan Control</label>
+            <label for="autofanspeed" class="col-11 m-0 pl-3 md:col-2 md:flex-order-1 md:p-2"><i class="pi pi-refresh mr-2"></i>Automatic Fan Control</label>
         </div>
 
         <div *ngIf="form.controls['autofanspeed'].value" class="grid p-fluid my-2">
-            <label class="hidden md:flex md:col-2 md:m-0 hover-next-input">Target Temperature</label>
+            <label class="hidden md:flex md:col-2 md:m-0 hover-next-input"><i class="pi pi-sun mr-2"></i>Target Temperature</label>
             <div class="col-12 md:col-10">
                 <label class="block mb-1">
                     <span class="md:hidden mr-1">Target Temperature:</span>{{form.controls['temptarget'].value}} °C
@@ -74,7 +74,7 @@
         </div>
 
         <div *ngIf="form.controls['autofanspeed'].value" class="grid p-fluid">
-            <label class="hidden md:flex md:col-2 md:m-0 hover-next-input">Minimum Fan Speed</label>
+            <label class="hidden md:flex md:col-2 md:m-0 hover-next-input"><i class="pi pi-refresh mr-2"></i>Minimum Fan Speed</label>
             <div class="col-12 md:col-10">
                 <label class="block mb-1">
                     <span class="md:hidden mr-1">Minimum Fan Speed:</span>{{form.controls['minfanspeed'].value}} %
@@ -84,7 +84,7 @@
         </div>
 
         <div *ngIf="!form.controls['autofanspeed'].value" class="grid p-fluid mt-2">
-            <label class="hidden md:flex md:col-2 md:m-0 hover-next-input">Fan Speed</label>
+            <label class="hidden md:flex md:col-2 md:m-0 hover-next-input"><i class="pi pi-refresh mr-2"></i>Fan Speed</label>
             <div class="col-12 md:col-10">
                 <label class="block mb-1">
                     <span class="md:hidden mr-1">Fan Speed:</span>{{form.controls['manualFanSpeed'].value}} %
@@ -100,18 +100,18 @@
         </div>
     </div>
 
-    <h3 class="mt-5">Display</h3>
+    <h3 class="mt-5"><i class="pi pi-desktop mr-2"></i>Display</h3>
 
     <div class="card">
         <div class="field grid p-fluid">
-            <label (click)="displayDropdown.show()" class="col-12 md:col-2 md:m-0 hover-next-input">Type</label>
+            <label (click)="displayDropdown.show()" class="col-12 md:col-2 md:m-0 hover-next-input"><i class="pi pi-th-large mr-2"></i>Type</label>
             <div class="col-12 md:col-10">
                 <p-dropdown [options]="displays" formControlName="display" #displayDropdown></p-dropdown>
             </div>
         </div>
 
         <div class="field grid p-fluid">
-            <label (click)="rotationDropdown.show()" class="col-12 md:col-2 md:m-0 hover-next-input">Rotation</label>
+            <label (click)="rotationDropdown.show()" class="col-12 md:col-2 md:m-0 hover-next-input"><i class="pi pi-replay mr-2"></i>Rotation</label>
             <div class="col-12 md:col-10">
                 <p-dropdown [options]="rotations" formControlName="rotation" #rotationDropdown></p-dropdown>
             </div>
@@ -119,7 +119,7 @@
 
         <div class="field grid p-fluid">
             <label class="col-12 md:col-2 hidden md:flex md:m-0 relative hover-next-input">
-                Sleep
+                <i class="pi pi-moon mr-2"></i>Sleep
             </label>
             <div class="col-12 md:col-10">
                 <label class="block mb-1">
@@ -142,16 +142,16 @@
             <div class="col-1 md:col-10 md:flex-order-2">
                 <p-checkbox name="invertscreen" formControlName="invertscreen" inputId="invertscreen" [binary]="true"></p-checkbox>
             </div>
-            <label for="invertscreen" class="col-11 m-0 pl-3 md:col-2 md:flex-order-1 md:p-2">Invert Display Colors</label>
+            <label for="invertscreen" class="col-11 m-0 pl-3 md:col-2 md:flex-order-1 md:p-2"><i class="pi pi-eye mr-2"></i>Invert Display Colors</label>
         </div>
     </div>
 
-    <h3 class="mt-5">Statistics</h3>
+    <h3 class="mt-5"><i class="pi pi-chart-bar mr-2"></i>Statistics</h3>
 
     <div class="card">
         <div class="grid p-fluid">
             <label class="col-12 md:col-2 hidden md:flex md:m-0 relative hover-next-input">
-                Data Logging
+                <i class="pi pi-database mr-2"></i>Data Logging
             </label>
             <div class="col-12 md:col-10">
                 <label class="block mb-2">

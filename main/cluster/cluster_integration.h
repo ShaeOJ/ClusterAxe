@@ -132,6 +132,16 @@ void cluster_slave_intercept_share(GlobalState *GLOBAL_STATE,
  */
 bool cluster_slave_should_skip_stratum(void);
 
+/**
+ * @brief Enqueue one more bm_job from the last received cluster work.
+ *
+ * Called by create_jobs_task to keep the ASIC queue topped up between
+ * work broadcasts from master. Does NOT clear the queue first.
+ *
+ * @return true if a job was enqueued, false if no cluster work is available yet
+ */
+bool cluster_slave_refill_asic_queue(GlobalState *GLOBAL_STATE);
+
 #endif // CLUSTER_IS_SLAVE
 
 // ============================================================================

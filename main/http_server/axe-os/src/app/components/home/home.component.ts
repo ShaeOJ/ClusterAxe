@@ -12,6 +12,7 @@ import { LoadingService } from 'src/app/services/loading.service';
 import { SystemService } from 'src/app/services/system.service';
 import { ThemeService } from 'src/app/services/theme.service';
 import { ClusterService, IClusterStatus, IClusterSlave, ISlaveConfig, ISlaveHashrateMonitor } from 'src/app/services/cluster.service';
+import { FirePoolService, IFirePoolPoolStats, IFirePoolMinerStats } from 'src/app/services/firepool.service';
 import { ISystemInfo } from 'src/models/ISystemInfo';
 import { ISystemStatistics } from 'src/models/ISystemStatistics';
 import { Title } from '@angular/platform-browser';
@@ -66,17 +67,45 @@ export class HomeComponent implements OnInit, OnDestroy {
   // Auto-Timing
   public autoTimingStatus$!: Observable<any | null>;
 
+  // FirePool stats
+  public firepoolPoolStats$: Observable<IFirePoolPoolStats | null> = of(null);
+  public firepoolMinerStats$: Observable<IFirePoolMinerStats | null> = of(null);
+  public isFirePool: boolean = false;
+
   // Slave hashrate registers
   public slaveHashrateRegisters: Map<number, { hostname: string; hashrate: number; hashrateMonitor: ISlaveHashrateMonitor }> = new Map();
   public loadingSlaveRegisters: boolean = false;
 
   public chartOptions: any;
+
+  // Neon glow on the hashrate line (dataset 0). The shadow colour follows the
+  // dataset's current borderColor, so it tracks the active theme accent.
+  public chartPlugins: any[] = [
+    {
+      id: 'hashrateGlow',
+      beforeDatasetDraw: (chart: any, args: any) => {
+        if (args.index !== 0) return;
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.shadowColor = chart.data.datasets[0]?.borderColor || 'rgba(20, 245, 147, 0.8)';
+        ctx.shadowBlur = 7;
+      },
+      afterDatasetDraw: (chart: any, args: any) => {
+        if (args.index !== 0) return;
+        chart.ctx.restore();
+      }
+    }
+  ];
   public dataLabel: number[] = [];
   public hashrateData: number[] = [];
   public powerData: number[] = [];
   public chartY1Data: number[] = [];
   public chartY2Data: number[] = [];
   public chartData?: any;
+
+  private emaY1: number | null = null;
+  private emaY2: number | null = null;
+  private readonly EMA_ALPHA = 0.2;
 
   public maxPower: number = 0;
   public nominalVoltage: number = 0;
@@ -125,7 +154,8 @@ export class HomeComponent implements OnInit, OnDestroy {
     private toastr: ToastrService,
     private shareRejectReasonsService: ShareRejectionExplanationService,
     private storageService: LocalStorageService,
-    public clusterService: ClusterService
+    public clusterService: ClusterService,
+    private firePoolService: FirePoolService
   ) {
     this.initializeChart();
     this.initClusterStatus();
@@ -213,7 +243,7 @@ export class HomeComponent implements OnInit, OnDestroy {
 
     let dataSources = this.storageService.getItem(HOME_CHART_DATA_SOURCES);
     if (dataSources === null) {
-      dataSources = `{"chartY1Data":"${chartLabelKey(eChartLabel.hashrate)}",`;
+      dataSources = `{"chartY1Data":"${chartLabelKey(eChartLabel.hashrate_1m)}",`;
       dataSources += `"chartY2Data":"${chartLabelKey(eChartLabel.asicTemp)}"}`;
     }
 
@@ -235,11 +265,11 @@ export class HomeComponent implements OnInit, OnDestroy {
     const documentStyle = getComputedStyle(document.documentElement);
     const textColorSecondary = documentStyle.getPropertyValue('--text-color-secondary');
     const surfaceBorder = documentStyle.getPropertyValue('--surface-border');
-    const primaryColor = documentStyle.getPropertyValue('--primary-color');
+    const primaryColor = documentStyle.getPropertyValue('--primary-color').trim();
 
     // Update chart colors
     if (this.chartData && this.chartData.datasets) {
-      this.chartData.datasets[0].backgroundColor = primaryColor + '30';
+      this.chartData.datasets[0].backgroundColor = this.hashrateFill(primaryColor);
       this.chartData.datasets[0].borderColor = primaryColor;
       this.chartData.datasets[1].backgroundColor = textColorSecondary;
       this.chartData.datasets[1].borderColor = textColorSecondary;
@@ -257,6 +287,22 @@ export class HomeComponent implements OnInit, OnDestroy {
 
     // Force chart update
     this.chartData = { ...this.chartData };
+  }
+
+  // Scriptable area fill: vertical gradient from the accent colour at the line
+  // down to fully transparent at the baseline. Returns a flat tint until the
+  // chart area is measured on first paint.
+  private hashrateFill(primaryColor: string) {
+    return (context: any) => {
+      const chart = context.chart;
+      const { ctx, chartArea } = chart;
+      if (!chartArea) return primaryColor + '20';
+      const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+      gradient.addColorStop(0, primaryColor + '66');    // ~40% at the line
+      gradient.addColorStop(0.55, primaryColor + '1f'); // fading through
+      gradient.addColorStop(1, primaryColor + '00');    // transparent at baseline
+      return gradient;
+    };
   }
 
   public updateSystem() {
@@ -282,7 +328,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     const documentStyle = getComputedStyle(document.documentElement);
     const textColorSecondary = documentStyle.getPropertyValue('--text-color-secondary');
     const surfaceBorder = documentStyle.getPropertyValue('--surface-border');
-    const primaryColor = documentStyle.getPropertyValue('--primary-color');
+    const primaryColor = documentStyle.getPropertyValue('--primary-color').trim();
 
     this.chartData = {
       labels: [this.dataLabel],
@@ -292,9 +338,11 @@ export class HomeComponent implements OnInit, OnDestroy {
           label: eChartLabel.hashrate,
           data: [this.chartY1Data],
           fill: true,
-          backgroundColor: primaryColor + '30',
+          backgroundColor: this.hashrateFill(primaryColor),
           borderColor: primaryColor,
           tension: 0,  // Straight segments — data is already EMA-smoothed; avoids curvy overshoot
+          borderCapStyle: 'round',
+          borderJoinStyle: 'round',
           pointRadius: 0,
           pointHoverRadius: 4,
           borderWidth: 2,
@@ -330,6 +378,15 @@ export class HomeComponent implements OnInit, OnDestroy {
           display: false
         },
         tooltip: {
+          usePointStyle: true,
+          backgroundColor: 'rgba(10, 15, 12, 0.92)',
+          borderColor: primaryColor,
+          borderWidth: 1,
+          cornerRadius: 8,
+          padding: 10,
+          titleColor: primaryColor,
+          bodyColor: '#e9ecef',
+          boxPadding: 6,
           callbacks: {
             label: function (tooltipItem: any) {
               let label = tooltipItem.dataset.label || '';
@@ -368,7 +425,8 @@ export class HomeComponent implements OnInit, OnDestroy {
           grid: {
             color: surfaceBorder,
             drawBorder: false,
-            display: true
+            display: true,
+            borderDash: [4, 4]
           }
         },
         y: {
@@ -384,7 +442,8 @@ export class HomeComponent implements OnInit, OnDestroy {
           },
           grid: {
             color: surfaceBorder,
-            drawBorder: false
+            drawBorder: false,
+            borderDash: [4, 4]
           }
         },
         y2: {
@@ -465,16 +524,13 @@ export class HomeComponent implements OnInit, OnDestroy {
           this.dataLabel.push(new Date().getTime() - stats.currentTimestamp + element[idxTimestamp]);
           this.hashrateData.push(element[idxHashrate]);
           this.powerData.push(element[idxPower]);
-          if (-1 != idxChartY1Data) {
-            this.chartY1Data.push(element[idxChartY1Data]);
-          } else {
-            this.chartY1Data.push(0.0);
-          }
-          if (-1 != idxChartY2Data) {
-            this.chartY2Data.push(element[idxChartY2Data]);
-          } else {
-            this.chartY2Data.push(0.0);
-          }
+
+          const y1Raw = (-1 != idxChartY1Data) ? element[idxChartY1Data] : 0.0;
+          const y2Raw = (-1 != idxChartY2Data) ? element[idxChartY2Data] : 0.0;
+          this.emaY1 = this.smoothed(y1Raw, this.emaY1, chartLabelValue(chartY1DataLabel));
+          this.emaY2 = this.smoothed(y2Raw, this.emaY2, chartLabelValue(chartY2DataLabel));
+          this.chartY1Data.push(this.emaY1);
+          this.chartY2Data.push(this.emaY2);
 
           this.limitDataPoints();
         }),
@@ -484,6 +540,14 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   private isHashrateAxis(label: eChartLabel | undefined) {
     return label == eChartLabel.hashrate || label == eChartLabel.hashrate_1m || label == eChartLabel.hashrate_10m || label == eChartLabel.hashrate_1h || label == eChartLabel.clusterHashrate;
+  }
+
+  // Apply exponential moving average to hashrate series to suppress per-sample noise.
+  // Non-hashrate labels (temp, power, etc.) pass through unchanged.
+  private smoothed(value: number, prev: number | null, label: eChartLabel | undefined): number {
+    if (!this.isHashrateAxis(label) || value <= 0) return value;
+    if (prev === null || prev <= 0) return value; // seed on first point
+    return this.EMA_ALPHA * value + (1 - this.EMA_ALPHA) * prev;
   }
 
   private startGetLiveData()
@@ -522,8 +586,12 @@ export class HomeComponent implements OnInit, OnDestroy {
             power: this.clusterPowerData.length > 0 ? this.clusterPowerData[this.clusterPowerData.length - 1] : undefined,
             efficiency: this.clusterEfficiencyData.length > 0 ? this.clusterEfficiencyData[this.clusterEfficiencyData.length - 1] : undefined
           };
-          this.chartY1Data.push(HomeComponent.getDataForLabel(chartY1DataLabel, info, clusterData));
-          this.chartY2Data.push(HomeComponent.getDataForLabel(chartY2DataLabel, info, clusterData));
+          const y1Live = HomeComponent.getDataForLabel(chartY1DataLabel, info, clusterData);
+          const y2Live = HomeComponent.getDataForLabel(chartY2DataLabel, info, clusterData);
+          this.emaY1 = this.smoothed(y1Live, this.emaY1, chartY1DataLabel);
+          this.emaY2 = this.smoothed(y2Live, this.emaY2, chartY2DataLabel);
+          this.chartY1Data.push(this.emaY1);
+          this.chartY2Data.push(this.emaY2);
 
           this.limitDataPoints();
 
@@ -625,7 +693,40 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.handleSystemMessages(info);
         this.setTitle(info);
         this.checkForNewShares(info);
+        this.initFirePoolStats(info);
       });
+  }
+
+  private initFirePoolStats(info: ISystemInfo): void {
+    const activeURL = info.isUsingFallbackStratum ? info.fallbackStratumURL : info.stratumURL;
+    const activePort = info.isUsingFallbackStratum ? info.fallbackStratumPort : info.stratumPort;
+    const activeUser = info.isUsingFallbackStratum ? info.fallbackStratumUser : info.stratumUser;
+
+    const connected = this.firePoolService.isFirePool(activeURL);
+    if (connected === this.isFirePool) return; // no change
+
+    this.isFirePool = connected;
+    if (!connected) {
+      this.firepoolPoolStats$ = of(null);
+      this.firepoolMinerStats$ = of(null);
+      return;
+    }
+
+    const poolId = this.firePoolService.getPoolId(activePort);
+    const address = this.firePoolService.getMinerAddress(activeUser);
+    if (!poolId || !address) return;
+
+    this.firepoolPoolStats$ = interval(60000).pipe(
+      startWith(0),
+      switchMap(() => this.firePoolService.getPoolStats(poolId).pipe(catchError(() => of(null)))),
+      shareReplay({ refCount: true, bufferSize: 1 })
+    );
+
+    this.firepoolMinerStats$ = interval(60000).pipe(
+      startWith(0),
+      switchMap(() => this.firePoolService.getMinerStats(poolId, address).pipe(catchError(() => of(null)))),
+      shareReplay({ refCount: true, bufferSize: 1 })
+    );
   }
 
   onPoolChange(event: { originalEvent: Event; value: PoolLabel }) {
@@ -749,7 +850,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     updateMessage(!info.frequency || info.frequency < 400, 'FREQUENCY_LOW', 'warn', 'Device frequency is set low - See settings');
     updateMessage(info.isUsingFallbackStratum && !this.isDualPoolMode(info), 'FALLBACK_STRATUM', 'warn', 'Using fallback pool - Share stats reset. Check Pool Settings and / or reboot Device.');
     updateMessage(this.isDualPoolMode(info), 'DUAL_POOL_MODE', 'info', `Dual Pool Mode: ${info.poolBalance}% Primary / ${100 - (info.poolBalance ?? 50)}% Secondary${info.secondaryPoolConnected ? '' : ' (Secondary disconnected)'}`);
-    updateMessage(info.version !== info.axeOSVersion, 'VERSION_MISMATCH', 'warn', `Firmware (${info.version}) and ClusterAxe UI (${info.axeOSVersion}) versions do not match. Please update firmware.`);
+    updateMessage(info.version !== info.axeOSVersion, 'VERSION_MISMATCH', 'warn', `Firmware (${info.version}) and ZombieOS UI (${info.axeOSVersion}) versions do not match. Please update firmware.`);
   }
 
   private calculateEfficiency(info: ISystemInfo, key: 'hashRate' | 'expectedHashrate'): number {
@@ -841,6 +942,8 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.powerData.length = 0;
     this.chartY1Data.length = 0;
     this.chartY2Data.length = 0;
+    this.emaY1 = null;
+    this.emaY2 = null;
   }
 
   public limitDataPoints() {
@@ -1277,5 +1380,17 @@ export class HomeComponent implements OnInit, OnDestroy {
     const finalB = (b * (1 - t) + target * t) | 0;
 
     return `rgb(${finalR}, ${finalG}, ${finalB})`;
+  }
+
+  public formatFirePoolHashrate(hashrate: number): string {
+    return HashSuffixPipe.transform(hashrate);
+  }
+
+  public getFirePoolWorkerList(workers: { [name: string]: { hashrate: number; sharesPerSecond: number } }): { name: string; hashrate: number; sharesPerSecond: number }[] {
+    return Object.entries(workers).map(([name, stats]) => ({ name, ...stats }));
+  }
+
+  public formatFirePoolDifficulty(diff: number): string {
+    return DiffSuffixPipe.transform(diff);
   }
 }

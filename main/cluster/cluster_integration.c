@@ -21,6 +21,8 @@
 #include "nvs_config.h"
 #include "power/power.h"
 #include "power/vcore.h"
+#include "work_queue.h"
+#include "system.h"
 #include <inttypes.h>
 
 #if CLUSTER_ENABLED
@@ -80,7 +82,7 @@ esp_err_t cluster_integration_init(GlobalState *GLOBAL_STATE)
                  CLUSTER_IS_MASTER ? "MASTER" : (CLUSTER_IS_SLAVE ? "SLAVE" : "DISABLED"));
 
         // Initialize watchdog (monitors temp/voltage and auto-throttles)
-        cluster_watchdog_init();
+        cluster_watchdog_init(cluster_get_global_state());
     }
 
     return ret;
@@ -581,6 +583,93 @@ void cluster_notify_share_result(int message_id, bool accepted)
 
 #if CLUSTER_IS_SLAVE
 
+// Last work received from master — used to keep refilling the ASIC queue
+// between broadcasts so the hardware never sits idle.
+static cluster_work_t s_last_cluster_work = {0};
+static bool s_has_cluster_work = false;
+
+/**
+ * @brief Build a heap-allocated bm_job from cluster work.
+ * Caller must free jobid, extranonce2, and the job itself (or enqueue it —
+ * ASIC_jobs_queue_clear / queue_dequeue do the freeing automatically).
+ */
+static bm_job *create_bm_job_from_cluster_work(GlobalState *GLOBAL_STATE,
+                                                const cluster_work_t *work)
+{
+    bm_job *job = malloc(sizeof(bm_job));
+    if (!job) {
+        ESP_LOGE(TAG, "Failed to allocate job");
+        return NULL;
+    }
+    memset(job, 0, sizeof(bm_job));
+
+    extern void reverse_32bit_words(const uint8_t *src, uint8_t *dest);
+    extern void reverse_endianness_per_word(uint8_t *data);
+    extern void midstate_sha256_bin(const uint8_t *data, size_t len, uint8_t *midstate);
+
+    reverse_32bit_words(work->merkle_root, job->merkle_root);
+
+    uint8_t prev_hash_work[32];
+    memcpy(prev_hash_work, work->prev_block_hash, 32);
+    reverse_endianness_per_word(prev_hash_work);
+    reverse_32bit_words(prev_hash_work, job->prev_block_hash);
+
+    job->version = work->version;
+    job->target = work->nbits;
+    job->ntime = work->ntime;
+    job->pool_diff = work->pool_diff;
+
+    uint8_t midstate_data[64];
+    memcpy(midstate_data, &job->version, 4);
+    memcpy(midstate_data + 4, prev_hash_work, 32);
+    memcpy(midstate_data + 36, work->merkle_root, 28);
+
+    uint8_t midstate[32];
+    midstate_sha256_bin(midstate_data, 64, midstate);
+    reverse_32bit_words(midstate, job->midstate);
+
+    uint32_t version_mask = work->version_mask;
+    if (version_mask != 0) {
+        extern uint32_t increment_bitmask(uint32_t value, uint32_t mask);
+
+        uint32_t rolled_version = increment_bitmask(job->version, version_mask);
+        memcpy(midstate_data, &rolled_version, 4);
+        midstate_sha256_bin(midstate_data, 64, midstate);
+        reverse_32bit_words(midstate, job->midstate1);
+
+        rolled_version = increment_bitmask(rolled_version, version_mask);
+        memcpy(midstate_data, &rolled_version, 4);
+        midstate_sha256_bin(midstate_data, 64, midstate);
+        reverse_32bit_words(midstate, job->midstate2);
+
+        rolled_version = increment_bitmask(rolled_version, version_mask);
+        memcpy(midstate_data, &rolled_version, 4);
+        midstate_sha256_bin(midstate_data, 64, midstate);
+        reverse_32bit_words(midstate, job->midstate3);
+
+        job->num_midstates = 4;
+    } else {
+        job->num_midstates = 1;
+    }
+
+    job->starting_nonce = work->nonce_start;
+    job->version_mask = version_mask;
+    job->pool_id = 0xFF;  // Special ID for cluster work
+
+    char job_id_str[16];
+    snprintf(job_id_str, sizeof(job_id_str), "%08lx", (unsigned long)work->job_id);
+    job->jobid = strdup(job_id_str);
+
+    char en2_str[17];
+    for (int i = 0; i < work->extranonce2_len; i++) {
+        sprintf(en2_str + i * 2, "%02x", work->extranonce2[i]);
+    }
+    en2_str[work->extranonce2_len * 2] = '\0';
+    job->extranonce2 = strdup(en2_str);
+
+    return job;
+}
+
 void cluster_slave_submit_to_asic(GlobalState *GLOBAL_STATE,
                                    const cluster_work_t *work)
 {
@@ -593,102 +682,20 @@ void cluster_slave_submit_to_asic(GlobalState *GLOBAL_STATE,
              (unsigned long)work->nonce_start,
              (unsigned long)work->nonce_end);
 
-    // Create a bm_job from cluster work
-    bm_job *job = malloc(sizeof(bm_job));
-    if (!job) {
-        ESP_LOGE(TAG, "Failed to allocate job");
-        return;
-    }
-    memset(job, 0, sizeof(bm_job));
+    // Save work so create_jobs_task can keep the ASIC queue full between broadcasts
+    s_last_cluster_work = *work;
+    s_has_cluster_work = true;
 
-    // Import byte manipulation functions from mining.c
-    extern void reverse_32bit_words(const uint8_t *src, uint8_t *dest);
-    extern void reverse_endianness_per_word(uint8_t *data);
-    extern void midstate_sha256_bin(const uint8_t *data, size_t len, uint8_t *midstate);
+    bm_job *job = create_bm_job_from_cluster_work(GLOBAL_STATE, work);
+    if (!job) return;
 
-    // Process merkle root - reverse 32-bit words for ASIC
-    reverse_32bit_words(work->merkle_root, job->merkle_root);
-
-    // Process prev_block_hash - already in bytes, just need proper formatting
-    uint8_t prev_hash_work[32];
-    memcpy(prev_hash_work, work->prev_block_hash, 32);
-    reverse_endianness_per_word(prev_hash_work);
-    reverse_32bit_words(prev_hash_work, job->prev_block_hash);
-
-    job->version = work->version;
-    job->target = work->nbits;
-    job->ntime = work->ntime;
-    // Use pool difficulty from master's work, not slave's local settings
-    job->pool_diff = work->pool_diff;
     ESP_LOGI(TAG, "Job pool_diff set to: %lu", (unsigned long)job->pool_diff);
 
-    // Compute midstate hash - this is critical for the ASIC to mine correctly
-    // The midstate is computed from: version (4) + prev_block_hash (32) + merkle_root (28) = 64 bytes
-    uint8_t midstate_data[64];
-    memcpy(midstate_data, &job->version, 4);           // version (4 bytes)
-    memcpy(midstate_data + 4, prev_hash_work, 32);     // prev_block_hash (32 bytes)
-    memcpy(midstate_data + 36, work->merkle_root, 28); // first 28 bytes of merkle_root
-
-    uint8_t midstate[32];
-    midstate_sha256_bin(midstate_data, 64, midstate);
-    reverse_32bit_words(midstate, job->midstate);
-
-    ESP_LOGD(TAG, "Job version=0x%08lX, version_mask=0x%08lX",
-             (unsigned long)job->version, (unsigned long)work->version_mask);
-
-    // Compute all 4 midstates when version rolling is enabled (matching construct_bm_job)
-    // Use version_mask from master's work, not slave's local settings
-    uint32_t version_mask = work->version_mask;
-    if (version_mask != 0) {
-        extern uint32_t increment_bitmask(uint32_t value, uint32_t mask);
-
-        // midstate1 - first rolled version
-        uint32_t rolled_version = increment_bitmask(job->version, version_mask);
-        memcpy(midstate_data, &rolled_version, 4);
-        midstate_sha256_bin(midstate_data, 64, midstate);
-        reverse_32bit_words(midstate, job->midstate1);
-
-        // midstate2 - second rolled version
-        rolled_version = increment_bitmask(rolled_version, version_mask);
-        memcpy(midstate_data, &rolled_version, 4);
-        midstate_sha256_bin(midstate_data, 64, midstate);
-        reverse_32bit_words(midstate, job->midstate2);
-
-        // midstate3 - third rolled version
-        rolled_version = increment_bitmask(rolled_version, version_mask);
-        memcpy(midstate_data, &rolled_version, 4);
-        midstate_sha256_bin(midstate_data, 64, midstate);
-        reverse_32bit_words(midstate, job->midstate3);
-
-        job->num_midstates = 4;
-    } else {
-        job->num_midstates = 1;
-    }
-
-    // Set nonce range for this slave
-    job->starting_nonce = work->nonce_start;
-    job->version_mask = version_mask;
-
-    // Create job ID string
-    char job_id_str[16];
-    snprintf(job_id_str, sizeof(job_id_str), "%08lx", (unsigned long)work->job_id);
-    job->jobid = strdup(job_id_str);
-
-    // Create extranonce2 string
-    char en2_str[17];
-    for (int i = 0; i < work->extranonce2_len; i++) {
-        sprintf(en2_str + i * 2, "%02x", work->extranonce2[i]);
-    }
-    en2_str[work->extranonce2_len * 2] = '\0';
-    job->extranonce2 = strdup(en2_str);
-
-    // Set pool ID to indicate cluster source
-    job->pool_id = 0xFF;  // Special ID for cluster work
-
-    // Enqueue the job
+    // Discard stale jobs then load fresh work (same as stratum clean_jobs path)
+    ASIC_jobs_queue_clear(&GLOBAL_STATE->ASIC_jobs_queue);
     queue_enqueue(&GLOBAL_STATE->ASIC_jobs_queue, job);
 
-    // Notify the ASIC task
+    // Wake ASIC task in case it is waiting on the semaphore rather than the queue
     if (GLOBAL_STATE->ASIC_TASK_MODULE.semaphore) {
         xSemaphoreGive(GLOBAL_STATE->ASIC_TASK_MODULE.semaphore);
     }
@@ -698,7 +705,6 @@ void cluster_slave_submit_to_asic(GlobalState *GLOBAL_STATE,
         GLOBAL_STATE->block_height = work->block_height;
     }
     if (work->scriptsig[0]) {
-        // Free old scriptsig if exists and allocate new one
         if (GLOBAL_STATE->scriptsig) {
             free(GLOBAL_STATE->scriptsig);
         }
@@ -708,6 +714,21 @@ void cluster_slave_submit_to_asic(GlobalState *GLOBAL_STATE,
         strncpy(GLOBAL_STATE->network_diff_string, work->network_diff_str,
                 sizeof(GLOBAL_STATE->network_diff_string) - 1);
     }
+}
+
+bool cluster_slave_refill_asic_queue(GlobalState *GLOBAL_STATE)
+{
+    if (!GLOBAL_STATE || !s_has_cluster_work) {
+        return false;
+    }
+
+    bm_job *job = create_bm_job_from_cluster_work(GLOBAL_STATE, &s_last_cluster_work);
+    if (!job) {
+        return false;
+    }
+
+    queue_enqueue(&GLOBAL_STATE->ASIC_jobs_queue, job);
+    return true;
 }
 
 void cluster_slave_intercept_share(GlobalState *GLOBAL_STATE,
@@ -742,6 +763,9 @@ void cluster_slave_intercept_share(GlobalState *GLOBAL_STATE,
     // Route to cluster slave share handler with actual ASIC version bits
     // Pass the extranonce2 from the job so we use the correct one
     cluster_slave_on_share_found(nonce, numeric_job_id, version, ntime, job_en2, nonce_diff);
+
+    // Count share found as accepted — slave has no pool feedback, this drives Shares/Hour stat
+    SYSTEM_notify_accepted_share(GLOBAL_STATE);
 }
 
 bool cluster_slave_should_skip_stratum(void)

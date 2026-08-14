@@ -1,5 +1,8 @@
 import { NgModule } from '@angular/core';
 import { AccordionModule } from 'primeng/accordion';
+import { BadgeModule } from 'primeng/badge';
+import { CardModule } from 'primeng/card';
+import { DividerModule } from 'primeng/divider';
 import { RadioButtonModule } from 'primeng/radiobutton';
 import { ButtonModule } from 'primeng/button';
 import { ChartModule } from 'primeng/chart';
@@ -22,6 +25,9 @@ import { TooltipModule } from 'primeng/tooltip';
 
 const primeNgModules = [
     AccordionModule,
+    BadgeModule,
+    CardModule,
+    DividerModule,
     SidebarModule,
     InputTextModule,
     InputNumberModule,

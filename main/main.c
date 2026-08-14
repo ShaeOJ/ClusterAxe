@@ -26,10 +26,9 @@
 #include "cluster_config.h"
 #if CLUSTER_ENABLED
 #include "cluster_integration.h"
-#if CLUSTER_IS_MASTER
+#endif
+#include "cluster_watchdog.h"
 #include "auto_timing.h"
-#endif
-#endif
 
 static GlobalState GLOBAL_STATE;
 
@@ -108,16 +107,14 @@ void app_main(void)
     esp_err_t cluster_ret = cluster_integration_init(&GLOBAL_STATE);
     if (cluster_ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize cluster module: %d", cluster_ret);
-        // Continue anyway, cluster is optional
     } else {
         ESP_LOGI(TAG, "Clusteraxe module initialized");
     }
-#if CLUSTER_IS_MASTER
-    // Initialize auto-timing module (master only)
+#endif
+    // Watchdog and auto-timing run in all modes (standalone + cluster)
+    cluster_watchdog_init(&GLOBAL_STATE);
     auto_timing_init(&GLOBAL_STATE);
     auto_timing_start(&GLOBAL_STATE);
-#endif
-#endif
 
     queue_init(&GLOBAL_STATE.stratum_queue);
     queue_init(&GLOBAL_STATE.stratum_queue_secondary);  // For dual pool mode

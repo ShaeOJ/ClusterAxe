@@ -28,6 +28,7 @@ import { SwarmComponent } from './components/swarm/swarm.component';
 import { ThemeConfigComponent } from './components/design/theme-config.component';
 import { DesignComponent } from './components/design/design.component';
 import { ClusterComponent } from './components/cluster/cluster.component';
+import { TunerComponent } from './components/tuner/tuner.component';
 import { AppLayoutModule } from './layout/app.layout.module';
 import { ANSIPipe } from './pipes/ansi.pipe';
 import { DateAgoPipe } from './pipes/date-ago.pipe';
@@ -74,7 +75,8 @@ const components = [
     DesignComponent,
     PoolComponent,
     DialogListComponent,
-    ClusterComponent
+    ClusterComponent,
+    TunerComponent
   ],
   imports: [
     BrowserModule,

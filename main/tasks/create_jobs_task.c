@@ -44,11 +44,13 @@ void create_jobs_task(void *pvParameters)
     while (1)
     {
 #if CLUSTER_ENABLED && CLUSTER_IS_SLAVE
-        // In slave mode, work comes from cluster master, not stratum
-        // The cluster_slave module handles work reception and ASIC job creation
+        // In slave mode, work comes from the cluster master.
+        // Keep the ASIC queue filled from the last received cluster work so the
+        // hardware never sits idle between master broadcasts.
         if (cluster_slave_should_skip_stratum()) {
-            // Wait for cluster work - the cluster_submit_work_to_asic() function
-            // directly enqueues jobs to ASIC_jobs_queue when work arrives from master
+            if (should_generate_more_work(GLOBAL_STATE)) {
+                cluster_slave_refill_asic_queue(GLOBAL_STATE);
+            }
             ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(WORK_WAIT_TIMEOUT_MS));
             continue;
         }

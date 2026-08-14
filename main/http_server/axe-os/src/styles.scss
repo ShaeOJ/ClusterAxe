@@ -418,11 +418,78 @@ p-chart>div {
 }
 
 .card {
-    border-radius: 18px;  // Rounder cards
+    position: relative;
+    border-radius: 10px;  // Softly rounded cards
 
     &.chart {
         padding: 10px;
     }
+
+    /* asicpool-style HUD corner bracket — single, top-left, subtle */
+    &::after {
+        content: "";
+        position: absolute;
+        top: 5px;
+        left: 5px;
+        width: 14px;
+        height: 14px;
+        pointer-events: none;
+        z-index: 2;
+        border-top: 1.5px solid var(--primary-color);
+        border-left: 1.5px solid var(--primary-color);
+        border-top-left-radius: 4px;
+        opacity: 0.28;
+    }
+}
+
+/* Same subtle top-left bracket on the menu / sidebar panel */
+.layout-sidebar::after {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    width: 16px;
+    height: 16px;
+    pointer-events: none;
+    z-index: 2;
+    border-top: 1.5px solid var(--primary-color);
+    border-left: 1.5px solid var(--primary-color);
+    border-top-left-radius: 4px;
+    opacity: 0.28;
+}
+
+/* ===== Overall "a little rounder" pass ===== */
+.p-button:not(.p-button-rounded),
+.p-dropdown,
+.p-inputtext,
+.p-multiselect,
+.p-inputnumber-input,
+.p-password > input,
+.p-togglebutton,
+.p-fileupload-choose {
+    border-radius: 8px !important;
+}
+
+.layout-menu a {
+    border-radius: 8px !important;
+}
+
+.p-panel,
+.p-dialog,
+.p-menu,
+.p-overlaypanel,
+.p-dropdown-panel,
+.p-toast .p-toast-message {
+    border-radius: 10px !important;
+}
+
+/* Gradient fill on progress bars (Power / Heat / Fan meters) */
+.p-progressbar .p-progressbar-value {
+    background: var(--primary-color) !important;  // fallback if color-mix unsupported
+    background: linear-gradient(90deg,
+        color-mix(in srgb, var(--primary-color) 35%, transparent),
+        var(--primary-color)) !important;
+    border-radius: 8px;
 }
 
 .hover-next-input:hover + * {

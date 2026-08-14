@@ -6,24 +6,25 @@ import { timeout } from 'rxjs/operators';
 export type BenchmarkMode = 'efficiency' | 'overclock';
 
 export interface BenchmarkConfig {
-  mode: BenchmarkMode;       // 'efficiency' = best J/TH, 'overclock' = highest hashrate
-  targetIp: string;          // IP address of device to benchmark (empty for master)
-  targetName: string;        // Display name
-  startVoltage: number;      // Starting voltage in mV (default: 1200)
-  startFrequency: number;    // Starting frequency in MHz (default: 500)
-  minVoltage: number;        // Minimum voltage (default: 1000)
-  maxVoltage: number;        // Maximum voltage (default: 1400)
-  minFrequency: number;      // Minimum frequency (default: 400)
-  maxFrequency: number;      // Maximum frequency (default: 625, max: 999)
-  voltageStep: number;       // Voltage increment (default: 20)
-  frequencyStep: number;     // Frequency increment (default: 25)
-  testDurationMs: number;    // Test duration per config (default: 600000 = 10 min)
-  sampleIntervalMs: number;  // Sample interval (default: 15000 = 15 sec)
-  stabilizationMs: number;   // Wait after restart (default: 90000 = 90 sec)
-  maxTemp: number;           // Max chip temp (default: 66)
-  maxVrTemp: number;         // Max VR temp (default: 86)
-  maxPower: number;          // Max power watts (default: 40)
-  minHashratePercent: number; // Min % of expected hashrate (default: 94)
+  mode: BenchmarkMode;        // 'efficiency' = best J/TH, 'overclock' = highest hashrate
+  targetIp: string;           // IP address of device to benchmark (empty for master)
+  targetName: string;         // Display name
+  startVoltage: number;       // Starting voltage in mV
+  startFrequency: number;     // Starting frequency in MHz
+  minVoltage: number;         // Minimum voltage to test
+  maxVoltage: number;         // Maximum voltage to test
+  minFrequency: number;       // Minimum frequency to test
+  maxFrequency: number;       // Maximum frequency to test
+  voltageStep: number;        // Voltage increment per step
+  frequencyStep: number;      // Frequency increment per step
+  testDurationMs: number;     // Test duration per config
+  sampleIntervalMs: number;   // Sample interval
+  stabilizationMs: number;    // Wait after applying settings
+  maxTemp: number;            // Abort if chip temp exceeds this
+  maxVrTemp: number;          // Abort if VR temp exceeds this
+  maxPower: number;           // Fail if average power exceeds this (W)
+  minHashratePercent: number; // Fail if hashrate < this % of expected
+  maxErrorPercent: number;    // Fail if hardware error rate exceeds this %
 }
 
 export interface BenchmarkResult {
@@ -31,9 +32,11 @@ export interface BenchmarkResult {
   frequency: number;
   avgHashrate: number;
   expectedHashrate: number;
-  efficiency: number;        // J/TH
+  efficiency: number;         // J/TH
   avgTemp: number;
   avgPower: number;
+  avgErrorPercent: number;    // hardware error rate
+  hashratePercent: number;    // % of expected hashrate achieved
   samples: number;
   passed: boolean;
   failReason?: string;
@@ -58,13 +61,15 @@ export interface BenchmarkState {
 export interface DeviceInfo {
   smallCoreCount: number;
   asicCount: number;
-  frequency: number;
+  frequency: number;          // current configured frequency (MHz)
   coreVoltage: number;
-  hashRate: number;
+  hashRate: number;           // current hashrate (GH/s)
+  expectedHashrate: number;   // firmware-calculated expected hashrate (GH/s) at current freq
   temp: number;
   vrTemp: number;
   power: number;
   voltage: number;
+  errorPercentage: number;    // hardware error rate (%)
 }
 
 @Injectable({
@@ -117,7 +122,6 @@ export class BenchmarkService {
 
   getDefaultConfig(mode: BenchmarkMode = 'efficiency'): BenchmarkConfig {
     if (mode === 'overclock') {
-      // Overclock mode: higher limits, find max hashrate
       return {
         mode: 'overclock',
         targetIp: '',
@@ -132,33 +136,34 @@ export class BenchmarkService {
         frequencyStep: 25,
         testDurationMs: 300000,
         sampleIntervalMs: 15000,
-        stabilizationMs: 15000,
-        maxTemp: 70,             // Higher temp tolerance
+        stabilizationMs: 30000,
+        maxTemp: 70,
         maxVrTemp: 90,
-        maxPower: 50,            // Higher power tolerance
-        minHashratePercent: 90   // Lower hashrate threshold
+        maxPower: 60,
+        minHashratePercent: 85,  // Allow up to 15% below expected
+        maxErrorPercent: 2.0     // Fail if hardware errors exceed 2%
       };
     }
-    // Efficiency mode: conservative limits, find best J/TH
     return {
       mode: 'efficiency',
       targetIp: '',
       targetName: 'Master',
-      startVoltage: 1200,
+      startVoltage: 1150,
       startFrequency: 500,
-      minVoltage: 1100,
+      minVoltage: 1050,
       maxVoltage: 1300,
-      minFrequency: 400,
-      maxFrequency: 625,
+      minFrequency: 450,
+      maxFrequency: 700,
       voltageStep: 25,
       frequencyStep: 25,
       testDurationMs: 300000,
       sampleIntervalMs: 15000,
-      stabilizationMs: 15000,
-      maxTemp: 66,
+      stabilizationMs: 30000,
+      maxTemp: 68,
       maxVrTemp: 86,
-      maxPower: 40,
-      minHashratePercent: 94
+      maxPower: 50,
+      minHashratePercent: 85,  // Allow up to 15% below expected
+      maxErrorPercent: 1.5     // Fail if hardware errors exceed 1.5%
     };
   }
 
@@ -181,11 +186,17 @@ export class BenchmarkService {
     try {
       // Get device info
       const deviceInfo = await this.getDeviceInfo(config.targetIp);
-      this.log(`Device: ${deviceInfo.asicCount} ASICs, ${deviceInfo.smallCoreCount} cores each`);
+      this.log(`Device: ${deviceInfo.asicCount} ASIC(s) × ${deviceInfo.smallCoreCount} cores, ${deviceInfo.frequency} MHz, ${deviceInfo.coreVoltage} mV`);
+      this.log(`Baseline: ${deviceInfo.expectedHashrate > 0 ? deviceInfo.expectedHashrate.toFixed(1) + ' GH/s expected' : 'no baseline'}, ${deviceInfo.errorPercentage.toFixed(2)}% hw errors`);
 
-      // Calculate expected hashrate formula: freq * cores * asics / 1000
-      const calcExpectedHashrate = (freq: number) =>
-        freq * deviceInfo.smallCoreCount * deviceInfo.asicCount / 1000;
+      // Scale the firmware's own expectedHashrate to any test frequency.
+      // Falls back to theoretical formula if the API didn't provide one.
+      const calcExpectedHashrate = (freq: number): number => {
+        if (deviceInfo.expectedHashrate > 0 && deviceInfo.frequency > 0) {
+          return (deviceInfo.expectedHashrate / deviceInfo.frequency) * freq;
+        }
+        return freq * deviceInfo.smallCoreCount * deviceInfo.asicCount / 1000;
+      };
 
       // Generate test configurations - systematic grid search
       const tests = this.generateTestConfigs(config);
@@ -289,6 +300,12 @@ export class BenchmarkService {
             } else {
               this.log(`New best efficiency: ${frequency} MHz @ ${voltage} mV (${result.efficiency.toFixed(2)} J/TH)`);
             }
+            // Persist best-so-far to NVS immediately. If the browser closes mid-run,
+            // the device will boot with these settings on the next power cycle.
+            try {
+              await this.applySettings(config.targetIp, result.voltage, result.frequency);
+              this.log(`Saved to NVS (boot-safe)`);
+            } catch (_) { /* non-fatal — run continues */ }
           }
         }
 
@@ -308,22 +325,20 @@ export class BenchmarkService {
         this.log(`Smart skip: skipped ${skippedCount} test(s) where hashrate was declining`);
       }
 
-      // Complete - auto-apply best result if found
-      if (this.state.bestResult && !this.stopRequested) {
-        this.log(`Benchmark complete! Applying best settings...`);
-        this.log(`Best: ${this.state.bestResult.frequency} MHz @ ${this.state.bestResult.voltage} mV`);
+      // Apply best result on completion or stop — best-so-far is already in NVS from the
+      // per-test apply above, but do a final explicit apply to confirm the device is on it.
+      if (this.state.bestResult) {
+        const reason = this.stopRequested ? 'stopped early' : 'complete';
+        this.log(`Benchmark ${reason} — confirming best settings: ${this.state.bestResult.frequency} MHz @ ${this.state.bestResult.voltage} mV`);
         this.log(`Hashrate: ${this.state.bestResult.avgHashrate.toFixed(1)} GH/s, Efficiency: ${this.state.bestResult.efficiency.toFixed(2)} J/TH`);
-
         try {
           await this.applySettings(config.targetIp, this.state.bestResult.voltage, this.state.bestResult.frequency);
-          this.log(`Applied best settings successfully!`);
+          this.log(`Best settings confirmed and saved`);
         } catch (e: any) {
-          this.log(`Failed to apply best settings: ${e.message}`);
+          this.log(`Failed to confirm best settings: ${e.message}`);
         }
-      } else if (!this.state.bestResult) {
-        this.log('Benchmark complete - no valid configurations found');
       } else {
-        this.log('Benchmark stopped by user');
+        this.log(this.stopRequested ? 'Benchmark stopped — no valid result found' : 'Benchmark complete — no valid configurations found');
       }
 
       this.updateState({ phase: 'complete', running: false });
@@ -357,8 +372,8 @@ export class BenchmarkService {
   private generateTestConfigs(config: BenchmarkConfig): Array<{voltage: number, frequency: number}> {
     const tests: Array<{voltage: number, frequency: number}> = [];
 
-    for (let v = config.startVoltage; v <= config.maxVoltage; v += config.voltageStep) {
-      for (let f = config.startFrequency; f <= config.maxFrequency; f += config.frequencyStep) {
+    for (let v = config.minVoltage; v <= config.maxVoltage; v += config.voltageStep) {
+      for (let f = config.minFrequency; f <= config.maxFrequency; f += config.frequencyStep) {
         tests.push({ voltage: v, frequency: f });
       }
     }
@@ -373,15 +388,17 @@ export class BenchmarkService {
     );
 
     return {
-      smallCoreCount: response.smallCoreCount || response.coreCount || 894,
+      smallCoreCount: response.smallCoreCount || 894,
       asicCount: response.asicCount || 1,
       frequency: response.frequency || 500,
-      coreVoltage: response.coreVoltage || response.coreVoltageActual || 1200,
+      coreVoltage: response.coreVoltageActual || response.coreVoltage || 1200,
       hashRate: response.hashRate || 0,
+      expectedHashrate: response.expectedHashrate || 0,
       temp: response.temp || 0,
       vrTemp: response.vrTemp || 0,
       power: response.power || 0,
-      voltage: response.voltage || 5000
+      voltage: response.voltage || 0,
+      errorPercentage: response.errorPercentage || 0
     };
   }
 
@@ -412,15 +429,18 @@ export class BenchmarkService {
       try {
         const info = await this.getDeviceInfo(config.targetIp);
 
-        // Safety checks
+        // Safety checks — abort sampling if temp is dangerous
         if (info.temp > config.maxTemp) {
-          this.log(`WARNING: Temp ${info.temp}°C exceeds max ${config.maxTemp}°C`);
+          this.log(`ABORT: Temp ${info.temp.toFixed(1)}°C exceeds max ${config.maxTemp}°C`);
+          break;
         }
         if (info.vrTemp > config.maxVrTemp) {
-          this.log(`WARNING: VR Temp ${info.vrTemp}°C exceeds max ${config.maxVrTemp}°C`);
+          this.log(`ABORT: VR Temp ${info.vrTemp.toFixed(1)}°C exceeds max ${config.maxVrTemp}°C`);
+          break;
         }
-        if (info.power > config.maxPower) {
-          this.log(`WARNING: Power ${info.power}W exceeds max ${config.maxPower}W`);
+        if (info.errorPercentage > config.maxErrorPercent * 3) {
+          this.log(`ABORT: HW errors ${info.errorPercentage.toFixed(2)}% critically high`);
+          break;
         }
 
         samples.push(info);
@@ -448,41 +468,42 @@ export class BenchmarkService {
     expectedHashrate: number,
     config: BenchmarkConfig
   ): BenchmarkResult {
-    if (samples.length < 5) {
+    if (samples.length < 3) {
       return {
         voltage, frequency, expectedHashrate,
         avgHashrate: 0, efficiency: 999, avgTemp: 0, avgPower: 0,
+        avgErrorPercent: 0, hashratePercent: 0,
         samples: samples.length, passed: false, failReason: 'Insufficient samples'
       };
     }
 
-    // Extract hashrates and sort
-    const hashrates = samples.map(s => s.hashRate).sort((a, b) => a - b);
-    const temps = samples.map(s => s.temp).sort((a, b) => a - b);
-    const powers = samples.map(s => s.power).sort((a, b) => a - b);
+    const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
 
-    // Trim outliers (remove 2 lowest and 2 highest if enough samples)
-    const trimCount = Math.min(2, Math.floor(hashrates.length / 4));
-    const trimmedHashrates = hashrates.slice(trimCount, hashrates.length - trimCount);
-    const trimmedTemps = temps.slice(trimCount, temps.length - trimCount);
-    const trimmedPowers = powers.slice(trimCount, powers.length - trimCount);
+    // Trim outliers (2 lowest + 2 highest if enough samples)
+    const trim = <T>(arr: T[]): T[] => {
+      const sorted = [...arr].sort((a: any, b: any) => a - b);
+      const n = Math.min(2, Math.floor(sorted.length / 5));
+      return sorted.slice(n, sorted.length - n);
+    };
 
-    // Calculate averages
-    const avgHashrate = trimmedHashrates.reduce((a, b) => a + b, 0) / trimmedHashrates.length;
-    const avgTemp = trimmedTemps.reduce((a, b) => a + b, 0) / trimmedTemps.length;
-    const avgPower = trimmedPowers.reduce((a, b) => a + b, 0) / trimmedPowers.length;
+    const avgHashrate   = avg(trim(samples.map(s => s.hashRate)));
+    const avgTemp       = avg(trim(samples.map(s => s.temp)));
+    const avgPower      = avg(trim(samples.map(s => s.power)));
+    const avgErrorPercent = avg(samples.map(s => s.errorPercentage)); // no trim — errors matter
 
-    // Calculate efficiency (J/TH = Watts / TH/s)
-    const efficiency = avgPower / (avgHashrate / 1000);
+    const efficiency = avgPower > 0 && avgHashrate > 0 ? avgPower / (avgHashrate / 1000) : 999;
+    const hashratePercent = expectedHashrate > 0 ? (avgHashrate / expectedHashrate) * 100 : 100;
 
-    // Check pass/fail
     let passed = true;
     let failReason: string | undefined;
 
-    const hashratePercent = (avgHashrate / expectedHashrate) * 100;
     if (hashratePercent < config.minHashratePercent) {
       passed = false;
-      failReason = `Hashrate ${hashratePercent.toFixed(1)}% < ${config.minHashratePercent}%`;
+      failReason = `Hashrate ${hashratePercent.toFixed(1)}% of expected`;
+    }
+    if (avgErrorPercent > config.maxErrorPercent) {
+      passed = false;
+      failReason = `HW errors ${avgErrorPercent.toFixed(2)}% > ${config.maxErrorPercent}%`;
     }
     if (avgTemp > config.maxTemp) {
       passed = false;
@@ -496,6 +517,7 @@ export class BenchmarkService {
     return {
       voltage, frequency, expectedHashrate,
       avgHashrate, efficiency, avgTemp, avgPower,
+      avgErrorPercent, hashratePercent,
       samples: samples.length, passed, failReason
     };
   }

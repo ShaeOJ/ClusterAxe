@@ -1,10 +1,10 @@
 <div class="card">
-    <h2>Update</h2>
+    <h2><i class="pi pi-sync mr-2"></i>Update</h2>
 
     <div class="grid">
         <div class="col-12 xl:col-4">
             <div class="card h-full">
-                <h5>Current Version: {{(info$ | async)?.version}}</h5>
+                <h5><i class="pi pi-tag mr-2"></i>Current Version: {{(info$ | async)?.version}}</h5>
 
                 <ng-container *ngIf="checkLatestRelease == false; else afterCheck">
                     <h3>Latest Release: <p-button (onClick)="handleReleaseCheck()">Check</p-button></h3>
@@ -64,7 +64,7 @@
         </div>
         <div class="col-12 lg:col-6 xl:col-4">
             <div class="card h-full">
-                <h3>Update ClusterAxe UI <span *ngIf="websiteUpdateProgress != null">{{websiteUpdateProgress}} %</span></h3>
+                <h3><i class="pi pi-desktop mr-2"></i>Update ClusterAxe UI <span *ngIf="websiteUpdateProgress != null">{{websiteUpdateProgress}} %</span></h3>
 
                 <p-fileUpload #websiteUpload [customUpload]="true" mode="basic" accept=".bin" (uploadHandler)="otaWWWUpdate($event)"
                     [auto]="true" chooseLabel="Browse"></p-fileUpload>
@@ -74,7 +74,7 @@
         </div>
         <div class="col-12 lg:col-6 xl:col-4">
             <div class="card h-full">
-                <h3>Update Firmware <span *ngIf="firmwareUpdateProgress != null">{{firmwareUpdateProgress}} %</span></h3>
+                <h3><i class="pi pi-microchip mr-2"></i>Update Firmware <span *ngIf="firmwareUpdateProgress != null">{{firmwareUpdateProgress}} %</span></h3>
                 <p-fileUpload #firmwareUpload [customUpload]="true" mode="basic" accept=".bin" (uploadHandler)="otaUpdate($event)"
                     [auto]="true" chooseLabel="Browse"></p-fileUpload>
 

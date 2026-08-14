@@ -454,6 +454,12 @@ esp_err_t cluster_slave_handle_ack(uint8_t assigned_id, const char *hostname)
         return ESP_ERR_INVALID_STATE;
     }
 
+    // NerdAxe_Cluster sends hostname="FULL" when cluster is at capacity; slot 0 is a valid assignment
+    if (hostname && strcmp(hostname, "FULL") == 0) {
+        ESP_LOGW(TAG, "Registration rejected: cluster full, will retry");
+        return ESP_ERR_NO_MEM;
+    }
+
     g_slave->my_id = assigned_id;
     g_slave->registered = true;
 
@@ -462,7 +468,8 @@ esp_err_t cluster_slave_handle_ack(uint8_t assigned_id, const char *hostname)
         g_slave->master_hostname[31] = '\0';
     }
 
-    ESP_LOGI(TAG, "Registered with master, assigned ID: %d", assigned_id);
+    ESP_LOGI(TAG, "Registered with master (hostname: %s), assigned ID: %d",
+             hostname ? hostname : "?", assigned_id);
 
     return ESP_OK;
 }

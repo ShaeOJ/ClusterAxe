@@ -11,10 +11,11 @@ import { SwarmComponent } from './components/swarm/swarm.component';
 import { DesignComponent } from './components/design/design.component';
 import { PoolComponent } from './components/pool/pool.component';
 import { ClusterComponent } from './components/cluster/cluster.component';
+import { TunerComponent } from './components/tuner/tuner.component';
 import { AppLayoutComponent } from './layout/app.layout.component';
 import { ApModeGuard } from './guards/ap-mode.guard';
 
-const TITLE_PREFIX = 'ClusterAxe';
+const TITLE_PREFIX = 'ZombieOS';
 
 const routes: Routes = [
   {
@@ -82,6 +83,11 @@ const routes: Routes = [
         path: 'cluster',
         component: ClusterComponent,
         title: `${TITLE_PREFIX} Cluster`,
+      },
+      {
+        path: 'tuner',
+        component: TunerComponent,
+        title: `${TITLE_PREFIX} Tuner`,
       }
     ]
   },

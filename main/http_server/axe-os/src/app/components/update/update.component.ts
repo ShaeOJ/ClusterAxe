@@ -53,8 +53,8 @@ export class UpdateComponent {
     const file = event.files[0];
     this.firmwareUpload.clear(); // clear the file upload component
 
-    if (file.name != 'clusteraxe-master.bin' && file.name != 'clusteraxe-slave.bin') {
-      this.toastrService.error('Incorrect file, looking for clusteraxe-master.bin or clusteraxe-slave.bin.');
+    if (file.name != 'zombie-os-master.bin' && file.name != 'zombie-os-slave.bin') {
+      this.toastrService.error('Incorrect file, looking for zombie-os-master.bin or zombie-os-slave.bin.');
       return;
     }
 
@@ -104,7 +104,7 @@ export class UpdateComponent {
             this.websiteUpdateProgress = Math.round((event.loaded / (event.total as number)) * 100);
           } else if (event.type === HttpEventType.Response) {
             if (event.ok) {
-              this.toastrService.success('ClusterAxe UI updated. The page will reload in a few seconds.');
+              this.toastrService.success('ZombieOS UI updated. The page will reload in a few seconds.');
               setTimeout(() => {
                 window.location.reload();
               }, 2000);

@@ -23,8 +23,12 @@
 #include "nvs_config.h"
 #include "http_server.h"
 #include "global_state.h"
+#include "power/power.h"
+#include "power/vcore.h"
 
 static const char *TAG = "cluster_watchdog";
+
+static GlobalState *s_gs = NULL;
 
 // ============================================================================
 // State
@@ -56,11 +60,37 @@ static void throttle_master(uint8_t reason);
 static void recover_master(void);
 
 // ============================================================================
+// Voltage Threshold Helpers (nominal-voltage-aware)
+// ============================================================================
+
+// Returns the Vin throttle threshold appropriate for the current board.
+// Uses 95% of nominal voltage — same ratio as the original 5V design (4.75/5.0).
+static float get_vin_throttle_threshold(void)
+{
+    if (s_gs && s_gs->DEVICE_CONFIG.family.nominal_voltage > 0) {
+        return s_gs->DEVICE_CONFIG.family.nominal_voltage * 0.95f;
+    }
+    return WATCHDOG_VIN_THRESHOLD; // fallback: original 5V value
+}
+
+// Returns the Vin recovery threshold appropriate for the current board.
+// Uses 98% of nominal voltage — same ratio as the original 5V design (4.9/5.0).
+static float get_vin_recovery_threshold(void)
+{
+    if (s_gs && s_gs->DEVICE_CONFIG.family.nominal_voltage > 0) {
+        return s_gs->DEVICE_CONFIG.family.nominal_voltage * 0.98f;
+    }
+    return WATCHDOG_VIN_RECOVERY_THRESHOLD; // fallback: original 5V value
+}
+
+// ============================================================================
 // Public API
 // ============================================================================
 
-esp_err_t cluster_watchdog_init(void)
+esp_err_t cluster_watchdog_init(GlobalState *gs)
 {
+    s_gs = gs;
+
     if (s_watchdog.initialized) {
         return ESP_OK;
     }
@@ -181,6 +211,16 @@ uint8_t cluster_watchdog_get_throttled_count(void)
     return s_watchdog.throttled_count;
 }
 
+float cluster_watchdog_get_vin_throttle_threshold(void)
+{
+    return get_vin_throttle_threshold();
+}
+
+float cluster_watchdog_get_vin_recovery_threshold(void)
+{
+    return get_vin_recovery_threshold();
+}
+
 // ============================================================================
 // Watchdog Task
 // ============================================================================
@@ -188,8 +228,8 @@ uint8_t cluster_watchdog_get_throttled_count(void)
 static void watchdog_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Watchdog task running - checking every %d ms", WATCHDOG_CHECK_INTERVAL_MS);
-    ESP_LOGI(TAG, "Thresholds: Temp >= %.1f C, Vin <= %.1f V",
-             WATCHDOG_TEMP_THRESHOLD, WATCHDOG_VIN_THRESHOLD);
+    ESP_LOGI(TAG, "Thresholds: Temp >= %.1f C, Vin <= %.2f V (recovery >= %.2f V)",
+             WATCHDOG_TEMP_THRESHOLD, get_vin_throttle_threshold(), get_vin_recovery_threshold());
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(WATCHDOG_CHECK_INTERVAL_MS));
@@ -234,23 +274,40 @@ static void watchdog_task(void *pvParameters)
 
 static void check_master_device(void)
 {
-    // Get current readings from cluster integration layer
+    // Get current sensor readings
+#if CLUSTER_ENABLED
     float temp = cluster_get_chip_temp();
     float vin = cluster_get_voltage_in();
     uint16_t freq = cluster_get_asic_frequency();
     uint16_t voltage = cluster_get_core_voltage();
+#else
+    float temp = s_gs ? s_gs->POWER_MANAGEMENT_MODULE.chip_temp_avg : 0.0f;
+    float vin  = s_gs ? Power_get_input_voltage(s_gs) / 1000.0f : 0.0f;
+    uint16_t freq    = s_gs ? (uint16_t)s_gs->POWER_MANAGEMENT_MODULE.frequency_value : 0;
+    int16_t  vmv     = s_gs ? VCORE_get_voltage_mv(s_gs) : 0;
+    uint16_t voltage = (vmv > 0) ? (uint16_t)vmv : 0;
+#endif
+
+    // Board-appropriate Vin thresholds (5V boards: 4.75V/4.9V, 12V boards: 11.4V/11.76V)
+    float vin_throttle = get_vin_throttle_threshold();
+    float vin_recovery = get_vin_recovery_threshold();
 
     s_watchdog.master.last_temp = temp;
     s_watchdog.master.last_vin = vin;
-    s_watchdog.master.current_frequency = freq;
-    s_watchdog.master.current_voltage = voltage;
+    // Bug fix: only update tracked freq/voltage from live readings when not throttled.
+    // While throttled, the watchdog owns these values via its step operations — overwriting
+    // from telemetry would cause the step logic to lose track of where it is.
+    if (!s_watchdog.master.is_throttled) {
+        s_watchdog.master.current_frequency = freq;
+        s_watchdog.master.current_voltage = voltage;
+    }
 
     // Determine throttle reason
     uint8_t reason = THROTTLE_NONE;
     if (temp >= WATCHDOG_TEMP_THRESHOLD) {
         reason |= THROTTLE_TEMP_HIGH;
     }
-    if (vin > 0 && vin <= WATCHDOG_VIN_THRESHOLD) {
+    if (vin > 0 && vin <= vin_throttle) {
         reason |= THROTTLE_VIN_LOW;
     }
 
@@ -260,6 +317,27 @@ static void check_master_device(void)
             // Store original values before first throttle
             s_watchdog.master.original_frequency = freq;
             s_watchdog.master.original_voltage = voltage;
+            if (s_watchdog.master.was_recovered) {
+                // Re-throttled after a prior recovery — the recovery target was too high.
+                // Step it down so we don't keep cycling back to an unstable frequency.
+                if (s_watchdog.master.recovery_frequency > WATCHDOG_MIN_FREQUENCY + WATCHDOG_FREQ_STEP) {
+                    s_watchdog.master.recovery_frequency -= WATCHDOG_FREQ_STEP;
+                } else {
+                    s_watchdog.master.recovery_frequency = WATCHDOG_MIN_FREQUENCY;
+                }
+                if (s_watchdog.master.recovery_voltage > WATCHDOG_MIN_VOLTAGE + WATCHDOG_VOLTAGE_STEP) {
+                    s_watchdog.master.recovery_voltage -= WATCHDOG_VOLTAGE_STEP;
+                } else {
+                    s_watchdog.master.recovery_voltage = WATCHDOG_MIN_VOLTAGE;
+                }
+                ESP_LOGW(TAG, "MASTER: Re-throttle after recovery — lowering recovery target to %d MHz / %d mV",
+                         s_watchdog.master.recovery_frequency, s_watchdog.master.recovery_voltage);
+                s_watchdog.master.was_recovered = false;
+            } else {
+                // First throttle — set recovery target to current operating point
+                s_watchdog.master.recovery_frequency = freq;
+                s_watchdog.master.recovery_voltage = voltage;
+            }
         }
         // Reset recovery state - conditions are not safe
         s_watchdog.master.safe_since = 0;
@@ -271,7 +349,7 @@ static void check_master_device(void)
 
         // Check if conditions are within recovery thresholds (hysteresis)
         bool temp_safe = (temp <= WATCHDOG_TEMP_RECOVERY_THRESHOLD);
-        bool vin_safe = (vin <= 0 || vin >= WATCHDOG_VIN_RECOVERY_THRESHOLD);
+        bool vin_safe = (vin <= 0 || vin >= vin_recovery);
 
         if (temp_safe && vin_safe) {
             // Conditions are safe for recovery
@@ -323,17 +401,26 @@ static void check_slave_device(uint8_t slot)
     uint16_t freq = slave_info.frequency;
     uint16_t voltage = slave_info.core_voltage;
 
+    // Board-appropriate Vin thresholds for this slave
+    float vin_throttle = get_vin_throttle_threshold();
+    float vin_recovery = get_vin_recovery_threshold();
+
     s_watchdog.slaves[slot].last_temp = temp;
     s_watchdog.slaves[slot].last_vin = vin;
-    s_watchdog.slaves[slot].current_frequency = freq;
-    s_watchdog.slaves[slot].current_voltage = voltage;
+    // Bug fix: only update tracked freq/voltage from live readings when not throttled.
+    // While throttled, the watchdog owns these values via its step operations — overwriting
+    // from telemetry would cause the step logic to lose track of where it is.
+    if (!s_watchdog.slaves[slot].is_throttled) {
+        s_watchdog.slaves[slot].current_frequency = freq;
+        s_watchdog.slaves[slot].current_voltage = voltage;
+    }
 
     // Determine throttle reason
     uint8_t reason = THROTTLE_NONE;
     if (temp >= WATCHDOG_TEMP_THRESHOLD) {
         reason |= THROTTLE_TEMP_HIGH;
     }
-    if (vin > 0 && vin <= WATCHDOG_VIN_THRESHOLD) {
+    if (vin > 0 && vin <= vin_throttle) {
         reason |= THROTTLE_VIN_LOW;
     }
 
@@ -343,6 +430,27 @@ static void check_slave_device(uint8_t slot)
             // Store original values before first throttle
             s_watchdog.slaves[slot].original_frequency = freq;
             s_watchdog.slaves[slot].original_voltage = voltage;
+            if (s_watchdog.slaves[slot].was_recovered) {
+                // Re-throttled after a prior recovery — the recovery target was too high.
+                // Step it down so we don't keep cycling back to an unstable frequency.
+                if (s_watchdog.slaves[slot].recovery_frequency > WATCHDOG_MIN_FREQUENCY + WATCHDOG_FREQ_STEP) {
+                    s_watchdog.slaves[slot].recovery_frequency -= WATCHDOG_FREQ_STEP;
+                } else {
+                    s_watchdog.slaves[slot].recovery_frequency = WATCHDOG_MIN_FREQUENCY;
+                }
+                if (s_watchdog.slaves[slot].recovery_voltage > WATCHDOG_MIN_VOLTAGE + WATCHDOG_VOLTAGE_STEP) {
+                    s_watchdog.slaves[slot].recovery_voltage -= WATCHDOG_VOLTAGE_STEP;
+                } else {
+                    s_watchdog.slaves[slot].recovery_voltage = WATCHDOG_MIN_VOLTAGE;
+                }
+                ESP_LOGW(TAG, "SLAVE %d: Re-throttle after recovery — lowering recovery target to %d MHz / %d mV",
+                         slot, s_watchdog.slaves[slot].recovery_frequency, s_watchdog.slaves[slot].recovery_voltage);
+                s_watchdog.slaves[slot].was_recovered = false;
+            } else {
+                // First throttle — set recovery target to current operating point
+                s_watchdog.slaves[slot].recovery_frequency = freq;
+                s_watchdog.slaves[slot].recovery_voltage = voltage;
+            }
         }
         // Reset recovery state - conditions are not safe
         s_watchdog.slaves[slot].safe_since = 0;
@@ -354,7 +462,7 @@ static void check_slave_device(uint8_t slot)
 
         // Check if conditions are within recovery thresholds (hysteresis)
         bool temp_safe = (temp <= WATCHDOG_TEMP_RECOVERY_THRESHOLD);
-        bool vin_safe = (vin <= 0 || vin >= WATCHDOG_VIN_RECOVERY_THRESHOLD);
+        bool vin_safe = (vin <= 0 || vin >= vin_recovery);
 
         if (temp_safe && vin_safe) {
             // Conditions are safe for recovery
@@ -542,8 +650,9 @@ static void recover_master(void)
 
     uint16_t current_freq = s_watchdog.master.current_frequency;
     uint16_t current_voltage = s_watchdog.master.current_voltage;
-    uint16_t target_freq = s_watchdog.master.original_frequency;
-    uint16_t target_voltage = s_watchdog.master.original_voltage;
+    // Use adaptive recovery target (steps down on re-throttle to prevent cycling)
+    uint16_t target_freq = s_watchdog.master.recovery_frequency ? s_watchdog.master.recovery_frequency : s_watchdog.master.original_frequency;
+    uint16_t target_voltage = s_watchdog.master.recovery_voltage ? s_watchdog.master.recovery_voltage : s_watchdog.master.original_voltage;
 
     // Check if already recovered
     if (current_freq >= target_freq && current_voltage >= target_voltage) {
@@ -552,6 +661,7 @@ static void recover_master(void)
                  target_freq, target_voltage);
         s_watchdog.master.is_throttled = false;
         s_watchdog.master.is_recovering = false;
+        s_watchdog.master.was_recovered = true;
         s_watchdog.master.safe_since = 0;
         s_watchdog.master.last_recovery_time = 0;
         return;
@@ -631,8 +741,9 @@ static void recover_slave(uint8_t slot)
 
     uint16_t current_freq = s_watchdog.slaves[slot].current_frequency;
     uint16_t current_voltage = s_watchdog.slaves[slot].current_voltage;
-    uint16_t target_freq = s_watchdog.slaves[slot].original_frequency;
-    uint16_t target_voltage = s_watchdog.slaves[slot].original_voltage;
+    // Use adaptive recovery target (steps down on re-throttle to prevent cycling)
+    uint16_t target_freq = s_watchdog.slaves[slot].recovery_frequency ? s_watchdog.slaves[slot].recovery_frequency : s_watchdog.slaves[slot].original_frequency;
+    uint16_t target_voltage = s_watchdog.slaves[slot].recovery_voltage ? s_watchdog.slaves[slot].recovery_voltage : s_watchdog.slaves[slot].original_voltage;
 
     // Check if already recovered
     if (current_freq >= target_freq && current_voltage >= target_voltage) {
@@ -641,6 +752,7 @@ static void recover_slave(uint8_t slot)
                  slot, target_freq, target_voltage);
         s_watchdog.slaves[slot].is_throttled = false;
         s_watchdog.slaves[slot].is_recovering = false;
+        s_watchdog.slaves[slot].was_recovered = true;
         s_watchdog.slaves[slot].safe_since = 0;
         s_watchdog.slaves[slot].last_recovery_time = 0;
         return;

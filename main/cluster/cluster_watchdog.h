@@ -20,6 +20,7 @@
 #include <stdbool.h>
 #include "esp_err.h"
 #include "cluster_config.h"
+#include "global_state.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,7 +32,7 @@ extern "C" {
 
 #define WATCHDOG_CHECK_INTERVAL_MS      5000    // Check every 5 seconds
 #define WATCHDOG_TEMP_THRESHOLD         68.0f   // Throttle if temp >= 68°C
-#define WATCHDOG_VIN_THRESHOLD          4.9f    // Throttle if Vin <= 4.9V
+#define WATCHDOG_VIN_THRESHOLD          4.75f   // Throttle if Vin <= 4.75V (loosened from 4.9V to tolerate ADC variance)
 #define WATCHDOG_FREQ_STEP              50      // Reduce frequency by 50 MHz per step
 #define WATCHDOG_VOLTAGE_STEP           50      // Reduce voltage by 50 mV per step
 #define WATCHDOG_MIN_FREQUENCY          400     // Minimum frequency (MHz)
@@ -39,7 +40,7 @@ extern "C" {
 
 // Recovery thresholds (with hysteresis to prevent oscillation)
 #define WATCHDOG_TEMP_RECOVERY_THRESHOLD    62.0f   // Recover when temp <= 62°C
-#define WATCHDOG_VIN_RECOVERY_THRESHOLD     5.1f    // Recover when Vin >= 5.1V
+#define WATCHDOG_VIN_RECOVERY_THRESHOLD     4.9f    // Recover when Vin >= 4.9V
 #define WATCHDOG_RECOVERY_STABILITY_MS      30000   // Must be safe for 30s before recovery
 #define WATCHDOG_RECOVERY_INTERVAL_MS       10000   // Time between recovery steps
 
@@ -62,13 +63,16 @@ typedef enum {
 typedef struct {
     bool        is_throttled;           // Currently throttled
     bool        is_recovering;          // Currently in recovery process
+    bool        was_recovered;          // Completed at least one recovery cycle (used to detect re-throttle cycling)
     uint8_t     throttle_reason;        // Bitmask of throttle reasons
     float       last_temp;              // Last measured temperature
     float       last_vin;               // Last measured input voltage
-    uint16_t    original_frequency;     // Frequency before throttling
-    uint16_t    original_voltage;       // Voltage before throttling
-    uint16_t    current_frequency;      // Current frequency (may be reduced)
-    uint16_t    current_voltage;        // Current voltage (may be reduced)
+    uint16_t    original_frequency;     // Frequency at time of first throttle
+    uint16_t    original_voltage;       // Voltage at time of first throttle
+    uint16_t    recovery_frequency;     // Target frequency for recovery (adapts down on re-throttle)
+    uint16_t    recovery_voltage;       // Target voltage for recovery (adapts down on re-throttle)
+    uint16_t    current_frequency;      // Current frequency (watchdog-tracked, not overwritten from telemetry while throttled)
+    uint16_t    current_voltage;        // Current voltage (watchdog-tracked, not overwritten from telemetry while throttled)
     uint32_t    throttle_count;         // Number of times throttled
     int64_t     last_throttle_time;     // When last throttled (ms since boot)
     int64_t     safe_since;             // When conditions became safe (0 if unsafe)
@@ -92,9 +96,10 @@ typedef struct {
 
 /**
  * @brief Initialize the watchdog module
+ * @param gs GlobalState pointer (used for sensor reads in standalone mode)
  * @return ESP_OK on success
  */
-esp_err_t cluster_watchdog_init(void);
+esp_err_t cluster_watchdog_init(GlobalState *gs);
 
 /**
  * @brief Enable or disable the watchdog
@@ -126,6 +131,18 @@ void cluster_watchdog_get_status(watchdog_status_t *status);
  * @return Number of throttled devices
  */
 uint8_t cluster_watchdog_get_throttled_count(void);
+
+/**
+ * @brief Get the board-appropriate Vin throttle threshold (95% of nominal voltage)
+ * @return Threshold in volts
+ */
+float cluster_watchdog_get_vin_throttle_threshold(void);
+
+/**
+ * @brief Get the board-appropriate Vin recovery threshold (98% of nominal voltage)
+ * @return Threshold in volts
+ */
+float cluster_watchdog_get_vin_recovery_threshold(void);
 
 #ifdef __cplusplus
 }

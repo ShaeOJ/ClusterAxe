@@ -1,0 +1,448 @@
+<div class="flex justify-content-center px-3">
+<div class="w-full" style="max-width: 1400px;">
+
+  <div class="flex align-items-center gap-3 mb-3">
+    <h2 class="m-0 text-xl"><i class="pi pi-sliders-h mr-2"></i>Tuner</h2>
+    <p-tag *ngIf="isSlaveMode" icon="pi pi-server" value="Tuning: This Device (Slave)" severity="warning"></p-tag>
+    <p-tag *ngIf="isMasterMode" icon="pi pi-sitemap" value="Tuning: Master" severity="info"></p-tag>
+    <p-tag *ngIf="!isSlaveMode && !isMasterMode" icon="pi pi-desktop" value="Tuning: This Device" severity="secondary"></p-tag>
+  </div>
+
+  <div class="grid">
+
+    <!-- ========== WATCHDOG CARD ========== -->
+    <div class="col-12 md:col-6">
+      <div class="surface-card border-round p-3">
+
+        <!-- Header -->
+        <div class="flex justify-content-between align-items-center mb-3">
+          <div class="flex align-items-center gap-2">
+            <i class="pi pi-shield text-lg"
+               [ngClass]="{
+                 'text-green-500':  watchdog?.enabled && watchdog?.master?.throttled === false && watchdog?.master?.recovering === false,
+                 'text-orange-500': watchdog?.enabled && watchdog?.master?.throttled,
+                 'text-cyan-500':   watchdog?.enabled && watchdog?.master?.recovering,
+                 'text-500':        !watchdog?.enabled
+               }"></i>
+            <span class="font-semibold">Safety Watchdog</span>
+            <span *ngIf="watchdog" class="text-xs px-2 py-1 border-round font-medium"
+                  [ngClass]="{
+                    'bg-green-100 text-green-700':  watchdogStatusLabel === 'OK',
+                    'bg-orange-100 text-orange-700': watchdogStatusLabel === 'THROTTLED',
+                    'bg-cyan-100 text-cyan-700':    watchdogStatusLabel === 'RECOVERING'
+                  }">
+              {{ watchdogStatusLabel }}
+            </span>
+          </div>
+          <p-inputSwitch
+            *ngIf="watchdog"
+            [(ngModel)]="watchdog.enabled"
+            [disabled]="watchdogToggling"
+            (onChange)="toggleWatchdog()">
+          </p-inputSwitch>
+        </div>
+
+        <!-- Loading -->
+        <div *ngIf="watchdogLoading" class="flex justify-content-center py-4">
+          <i class="pi pi-spin pi-spinner text-2xl text-500"></i>
+        </div>
+
+        <!-- Data -->
+        <div *ngIf="!watchdogLoading && watchdog">
+
+          <!-- Stat boxes row -->
+          <div class="grid mb-3">
+            <div class="col-6">
+              <div class="surface-ground border-round p-2 text-center">
+                <div class="text-400 text-xs mb-1"><i class="pi pi-sun mr-1"></i>Chip Temp</div>
+                <div class="text-xl font-bold"
+                     [ngClass]="{
+                       'text-red-500':    watchdog.master.temp >= watchdog.tempThreshold,
+                       'text-yellow-500': watchdog.master.temp >= watchdog.tempRecoveryThreshold && watchdog.master.temp < watchdog.tempThreshold
+                     }">
+                  {{ watchdog.master.temp | number:'1.1-1' }}°C
+                </div>
+                <div class="text-400 text-xs">limit {{ watchdog.tempThreshold }}°C</div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="surface-ground border-round p-2 text-center">
+                <div class="text-400 text-xs mb-1"><i class="pi pi-bolt mr-1"></i>Input Voltage</div>
+                <div class="text-xl font-bold"
+                     [ngClass]="{
+                       'text-red-500':    watchdog.master.vin > 0 && watchdog.master.vin <= watchdog.vinThreshold,
+                       'text-yellow-500': watchdog.master.vin > watchdog.vinThreshold && watchdog.master.vin <= watchdog.vinRecoveryThreshold
+                     }">
+                  {{ watchdog.master.vin | number:'1.2-2' }}V
+                </div>
+                <div class="text-400 text-xs">limit {{ watchdog.vinThreshold | number:'1.2-2' }}V</div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="surface-ground border-round p-2 text-center">
+                <div class="text-400 text-xs mb-1"><i class="pi pi-gauge mr-1"></i>Frequency</div>
+                <div class="text-xl font-bold text-primary">{{ watchdog.master.frequency }} MHz</div>
+                <div *ngIf="watchdog.master.throttled" class="text-400 text-xs">
+                  was {{ watchdog.master.originalFrequency }} MHz
+                </div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="surface-ground border-round p-2 text-center">
+                <div class="text-400 text-xs mb-1"><i class="pi pi-server mr-1"></i>Core Voltage</div>
+                <div class="text-xl font-bold text-primary">{{ watchdog.master.voltage }} mV</div>
+                <div *ngIf="watchdog.master.throttled" class="text-400 text-xs">
+                  was {{ watchdog.master.originalVoltage }} mV
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer row -->
+          <div class="flex justify-content-between align-items-center text-sm border-top-1 surface-border pt-2">
+            <span class="text-500">Throttle events</span>
+            <span class="font-medium" [ngClass]="{'text-orange-500': watchdog.master.throttleCount > 0}">
+              {{ watchdog.master.throttleCount }}
+            </span>
+          </div>
+          <div class="text-400 text-xs mt-2">
+            Recovers when temp &le; {{ watchdog.tempRecoveryThreshold }}°C
+            and Vin &ge; {{ watchdog.vinRecoveryThreshold | number:'1.2-2' }}V
+            for {{ watchdog.recoveryStabilityMs / 1000 | number:'1.0-0' }}s
+          </div>
+        </div>
+
+        <div *ngIf="!watchdogLoading && !watchdog" class="text-500 text-center py-4">
+          Watchdog data unavailable
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== AUTO-TUNER CARD ========== -->
+    <div class="col-12 md:col-6">
+      <div class="surface-card border-round p-3">
+
+        <!-- Header -->
+        <div class="flex justify-content-between align-items-center mb-3">
+          <div class="flex align-items-center gap-2">
+            <i class="pi pi-sliders-h text-lg text-primary"></i>
+            <span class="font-semibold">Auto-Tuner</span>
+            <span *ngIf="autoTiming" class="text-xs px-2 py-1 border-round font-medium"
+                  [ngClass]="{
+                    'bg-yellow-100 text-yellow-700': autoTiming.state === 'calibrating',
+                    'bg-blue-100 text-blue-700':    autoTiming.state === 'monitoring',
+                    'bg-green-100 text-green-700':  autoTiming.state === 'locked',
+                    'bg-gray-100 text-500':         autoTiming.state === 'disabled'
+                  }">
+              {{ autoTiming.state | uppercase }}
+            </span>
+          </div>
+          <p-inputSwitch
+            *ngIf="autoTiming"
+            [(ngModel)]="autoTiming.enabled"
+            [disabled]="autoTimingToggling"
+            (onChange)="toggleAutoTiming()">
+          </p-inputSwitch>
+        </div>
+
+        <!-- Loading -->
+        <div *ngIf="autoTimingLoading" class="flex justify-content-center py-4">
+          <i class="pi pi-spin pi-spinner text-2xl text-500"></i>
+        </div>
+
+        <!-- Data -->
+        <div *ngIf="!autoTimingLoading && autoTiming">
+
+          <!-- Calibration progress -->
+          <div *ngIf="autoTiming.state === 'calibrating'" class="mb-3">
+            <div class="flex justify-content-between text-xs text-500 mb-1">
+              <span>Calibration progress</span>
+              <span>Step {{ autoTiming.calibrationStep }} / 7</span>
+            </div>
+            <p-progressBar [value]="calibrationProgress" [showValue]="false" styleClass="h-1rem"></p-progressBar>
+          </div>
+
+          <!-- Stat boxes row -->
+          <div class="grid mb-3">
+            <div class="col-6">
+              <div class="surface-ground border-round p-2 text-center">
+                <div class="text-400 text-xs mb-1"><i class="pi pi-clock mr-1"></i>Job Interval</div>
+                <div class="text-xl font-bold text-primary">{{ autoTiming.currentInterval }} ms</div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="surface-ground border-round p-2 text-center">
+                <div class="text-400 text-xs mb-1"><i class="pi pi-star mr-1"></i>Optimal</div>
+                <div class="text-xl font-bold text-green-500">{{ autoTiming.optimalInterval }} ms</div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="surface-ground border-round p-2 text-center">
+                <div class="text-400 text-xs mb-1"><i class="pi pi-percentage mr-1"></i>Rejection Rate</div>
+                <div class="text-xl font-bold"
+                     [ngClass]="{
+                       'text-red-500':    autoTiming.rejectionRate > 5,
+                       'text-yellow-500': autoTiming.rejectionRate > 1 && autoTiming.rejectionRate <= 5,
+                       'text-green-500':  autoTiming.rejectionRate <= 1
+                     }">
+                  {{ autoTiming.rejectionRate | number:'1.1-1' }}%
+                </div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="surface-ground border-round p-2 text-center">
+                <div class="text-400 text-xs mb-1"><i class="pi pi-chart-bar mr-1"></i>5-min Window</div>
+                <div class="text-sm font-medium mt-1">
+                  <span class="text-green-500">{{ autoTiming.windowAccepted }} acc</span>
+                  <span class="text-500"> / </span>
+                  <span class="text-red-500">{{ autoTiming.windowRejected }} rej</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer row -->
+          <div class="flex justify-content-between align-items-center text-sm border-top-1 surface-border pt-2 mb-2">
+            <span class="text-500">Range</span>
+            <span class="font-medium">{{ autoTiming.minInterval }}–{{ autoTiming.maxInterval }} ms</span>
+          </div>
+
+          <div class="flex justify-content-end">
+            <p-button
+              label="Recalibrate"
+              icon="pi pi-refresh"
+              severity="secondary"
+              size="small"
+              [loading]="recalibrating"
+              [disabled]="!autoTiming.enabled"
+              (onClick)="recalibrate()">
+            </p-button>
+          </div>
+        </div>
+
+        <div *ngIf="!autoTimingLoading && !autoTiming" class="text-500 text-center py-4">
+          Auto-tuner data unavailable
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ========== BENCHMARK CARD ========== -->
+  <div *ngIf="!isSlaveMode" class="surface-card border-round p-3 mt-3">
+
+    <!-- Header -->
+    <div class="flex justify-content-between align-items-center">
+      <div class="flex align-items-center gap-2">
+        <i class="pi pi-chart-line text-lg text-primary"></i>
+        <span class="font-semibold">Benchmark</span>
+        <span class="text-400 text-sm">Find optimal voltage &amp; frequency for this device</span>
+      </div>
+      <div class="flex gap-2" *ngIf="!showBenchmark">
+        <p-button label="Efficiency" icon="pi pi-chart-line" severity="secondary" size="small"
+                  (onClick)="openBenchmark('efficiency')"></p-button>
+        <p-button label="Overclock" icon="pi pi-bolt" severity="warning" size="small"
+                  (onClick)="openBenchmark('overclock')"></p-button>
+      </div>
+    </div>
+
+    <!-- Benchmark Panel -->
+    <div *ngIf="showBenchmark" class="mt-3 border-top-1 surface-border pt-3">
+      <ng-container *ngIf="benchmarkState$ | async as state">
+
+        <!-- Sub-header -->
+        <div class="flex justify-content-between align-items-center mb-3">
+          <div class="flex align-items-center gap-2">
+            <i [ngClass]="benchmarkConfig.mode === 'overclock' ? 'pi pi-bolt text-orange-500' : 'pi pi-chart-line text-primary'"></i>
+            <span class="font-medium">
+              {{ benchmarkConfig.mode === 'overclock' ? 'Overclock' : 'Efficiency Benchmark' }}
+            </span>
+          </div>
+          <p-button *ngIf="!state.running" icon="pi pi-times" [rounded]="true" [text]="true" severity="secondary" size="small"
+                    (onClick)="closeBenchmark()"></p-button>
+        </div>
+
+        <!-- Config (idle/not complete) -->
+        <div *ngIf="!state.running && state.phase !== 'complete'">
+          <div class="grid">
+            <div class="col-12 sm:col-6">
+              <label class="block text-500 text-sm mb-2">Voltage Range (mV)</label>
+              <div class="flex align-items-center gap-2">
+                <p-inputNumber [(ngModel)]="benchmarkConfig.minVoltage" [min]="1000" [max]="1400" [step]="25"
+                               styleClass="flex-1" inputStyleClass="w-full text-center"></p-inputNumber>
+                <span class="text-500">–</span>
+                <p-inputNumber [(ngModel)]="benchmarkConfig.maxVoltage" [min]="1000" [max]="1400" [step]="25"
+                               styleClass="flex-1" inputStyleClass="w-full text-center"></p-inputNumber>
+              </div>
+            </div>
+            <div class="col-12 sm:col-6">
+              <label class="block text-500 text-sm mb-2">Frequency Range (MHz)</label>
+              <div class="flex align-items-center gap-2">
+                <p-inputNumber [(ngModel)]="benchmarkConfig.minFrequency" [min]="400" [max]="999" [step]="25"
+                               styleClass="flex-1" inputStyleClass="w-full text-center"></p-inputNumber>
+                <span class="text-500">–</span>
+                <p-inputNumber [(ngModel)]="benchmarkConfig.maxFrequency" [min]="400" [max]="999" [step]="25"
+                               styleClass="flex-1" inputStyleClass="w-full text-center"></p-inputNumber>
+              </div>
+            </div>
+            <div class="col-6">
+              <label class="block text-500 text-sm mb-2">Start Voltage</label>
+              <p-inputNumber [(ngModel)]="benchmarkConfig.startVoltage" [min]="1000" [max]="1400" [step]="25"
+                             suffix=" mV" styleClass="w-full" inputStyleClass="w-full text-center"></p-inputNumber>
+            </div>
+            <div class="col-6">
+              <label class="block text-500 text-sm mb-2">Start Frequency</label>
+              <p-inputNumber [(ngModel)]="benchmarkConfig.startFrequency" [min]="400" [max]="999" [step]="25"
+                             suffix=" MHz" styleClass="w-full" inputStyleClass="w-full text-center"></p-inputNumber>
+            </div>
+            <div class="col-12">
+              <label class="block text-500 text-sm mb-2">Test Duration per Step</label>
+              <div class="flex gap-2">
+                <button pButton label="3 min" class="flex-1"
+                        [ngClass]="benchmarkConfig.testDurationMs === 180000 ? 'p-button-primary' : 'p-button-outlined'"
+                        (click)="benchmarkConfig.testDurationMs = 180000"></button>
+                <button pButton label="5 min" class="flex-1"
+                        [ngClass]="benchmarkConfig.testDurationMs === 300000 ? 'p-button-primary' : 'p-button-outlined'"
+                        (click)="benchmarkConfig.testDurationMs = 300000"></button>
+                <button pButton label="10 min" class="flex-1"
+                        [ngClass]="benchmarkConfig.testDurationMs === 600000 ? 'p-button-primary' : 'p-button-outlined'"
+                        (click)="benchmarkConfig.testDurationMs = 600000"></button>
+              </div>
+            </div>
+          </div>
+          <button pButton label="Start Benchmark" icon="pi pi-play" class="w-full mt-3 p-button-lg"
+                  (click)="startBenchmark()"></button>
+        </div>
+
+        <!-- Running -->
+        <div *ngIf="state.running">
+          <div class="text-center mb-3">
+            <div class="text-lg font-medium mb-1">
+              <i class="pi pi-spin pi-spinner mr-2"></i>
+              <span *ngIf="state.phase === 'starting'">Starting test...</span>
+              <span *ngIf="state.phase === 'stabilizing'">Stabilizing ({{ (state.timeRemainingMs / 1000) | number:'1.0-0' }}s)</span>
+              <span *ngIf="state.phase === 'sampling'">Sampling {{ state.samplesCollected }}/{{ state.samplesNeeded }}</span>
+              <span *ngIf="state.phase === 'analyzing'">Analyzing...</span>
+            </div>
+          </div>
+          <div class="flex justify-content-center gap-4 mb-3">
+            <div class="text-center">
+              <div class="text-500 text-xs">Frequency</div>
+              <div class="font-bold text-primary">{{ state.currentFrequency }} MHz</div>
+            </div>
+            <div class="text-center">
+              <div class="text-500 text-xs">Voltage</div>
+              <div class="font-bold text-orange-500">{{ state.currentVoltage }} mV</div>
+            </div>
+            <div class="text-center">
+              <div class="text-500 text-xs">Test</div>
+              <div class="font-bold">{{ state.testNumber }} / {{ state.totalTests }}</div>
+            </div>
+          </div>
+          <p-progressBar [value]="state.samplesNeeded ? (state.samplesCollected / state.samplesNeeded * 100) : 0"
+                         [showValue]="false" class="mb-3"></p-progressBar>
+          <button pButton label="Stop" icon="pi pi-stop" class="w-full p-button-danger"
+                  (click)="stopBenchmark()"></button>
+        </div>
+
+        <!-- Results list -->
+        <div *ngIf="state.results.length > 0 && !state.running" class="mt-3">
+          <div class="text-500 text-sm mb-2">Results ({{ state.results.length }})</div>
+          <div class="surface-ground border-round" style="max-height: 200px; overflow-y: auto;">
+            <div *ngFor="let result of state.results"
+                 class="p-2 border-bottom-1 surface-border"
+                 [ngClass]="{'bg-green-50': result === state.bestResult}">
+              <div class="flex justify-content-between align-items-center">
+                <div>
+                  <span class="font-medium">{{ result.frequency }}</span><span class="text-500 text-xs"> MHz</span>
+                  <span class="text-500 mx-1">&#64;</span>
+                  <span class="font-medium">{{ result.voltage }}</span><span class="text-500 text-xs"> mV</span>
+                </div>
+                <div class="flex align-items-center gap-3 text-right">
+                  <span>
+                    <span class="font-medium">{{ result.avgHashrate | number:'1.0-0' }}</span>
+                    <span class="text-500 text-xs"> GH/s</span>
+                    <span class="text-xs ml-1"
+                          [ngClass]="{
+                            'text-green-600': result.hashratePercent >= 95,
+                            'text-yellow-600': result.hashratePercent >= 85 && result.hashratePercent < 95,
+                            'text-red-500': result.hashratePercent < 85
+                          }">({{ result.hashratePercent | number:'1.0-0' }}%)</span>
+                  </span>
+                  <span>
+                    <span class="font-medium">{{ result.efficiency | number:'1.1-1' }}</span>
+                    <span class="text-500 text-xs"> J/TH</span>
+                  </span>
+                  <span class="text-xs"
+                        [ngClass]="{
+                          'text-green-600': result.avgErrorPercent < 1,
+                          'text-yellow-600': result.avgErrorPercent >= 1 && result.avgErrorPercent < 2,
+                          'text-red-500': result.avgErrorPercent >= 2
+                        }">
+                    {{ result.avgErrorPercent | number:'1.2-2' }}% err
+                  </span>
+                  <i *ngIf="result.passed" class="pi pi-check text-green-500"></i>
+                  <i *ngIf="!result.passed" class="pi pi-times text-red-500" [pTooltip]="result.failReason"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Best result -->
+        <div *ngIf="state.bestResult && !state.running" class="surface-ground border-round p-3 mt-3 border-2 border-green-500">
+          <div class="flex align-items-center justify-content-center gap-2 mb-2">
+            <i class="pi pi-star-fill text-yellow-500"></i>
+            <span class="font-bold">Best Configuration</span>
+          </div>
+          <div class="grid text-center">
+            <div class="col-2">
+              <div class="text-500 text-xs">Freq</div>
+              <div class="font-bold">{{ state.bestResult.frequency }} MHz</div>
+            </div>
+            <div class="col-2">
+              <div class="text-500 text-xs">Voltage</div>
+              <div class="font-bold">{{ state.bestResult.voltage }} mV</div>
+            </div>
+            <div class="col-3">
+              <div class="text-500 text-xs">Hashrate</div>
+              <div class="font-bold text-primary">{{ state.bestResult.avgHashrate | number:'1.0-0' }} GH/s</div>
+              <div class="text-xs text-500">({{ state.bestResult.hashratePercent | number:'1.0-0' }}% of expected)</div>
+            </div>
+            <div class="col-3">
+              <div class="text-500 text-xs">J/TH</div>
+              <div class="font-bold text-green-500">{{ state.bestResult.efficiency | number:'1.1-1' }}</div>
+            </div>
+            <div class="col-2">
+              <div class="text-500 text-xs">HW Errors</div>
+              <div class="font-bold"
+                   [ngClass]="{
+                     'text-green-500': state.bestResult.avgErrorPercent < 1,
+                     'text-yellow-500': state.bestResult.avgErrorPercent >= 1 && state.bestResult.avgErrorPercent < 2,
+                     'text-red-500': state.bestResult.avgErrorPercent >= 2
+                   }">
+                {{ state.bestResult.avgErrorPercent | number:'1.2-2' }}%
+              </div>
+            </div>
+          </div>
+          <button pButton label="Apply These Settings" icon="pi pi-check" class="w-full mt-3 p-button-success"
+                  (click)="applyBenchmarkResult()"></button>
+        </div>
+
+        <!-- Logs -->
+        <p-accordion *ngIf="benchmarkLogs.length > 0" class="mt-3">
+          <p-accordionTab header="Logs ({{ benchmarkLogs.length }})">
+            <div class="surface-ground border-round p-2 text-xs font-mono" style="max-height: 120px; overflow-y: auto;">
+              <div *ngFor="let log of benchmarkLogs" class="py-1">{{ log }}</div>
+            </div>
+          </p-accordionTab>
+        </p-accordion>
+
+      </ng-container>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<p-toast></p-toast>

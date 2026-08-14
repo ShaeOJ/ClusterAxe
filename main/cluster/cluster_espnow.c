@@ -32,7 +32,7 @@ static const char *TAG = "cluster_espnow";
 // Constants
 // ============================================================================
 
-#define ESPNOW_QUEUE_SIZE       16
+#define ESPNOW_QUEUE_SIZE       32
 #define ESPNOW_MAX_DATA_LEN     250
 
 // ============================================================================

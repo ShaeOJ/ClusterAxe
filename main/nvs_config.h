@@ -31,10 +31,11 @@ typedef enum {
     NVS_CONFIG_OVERCLOCK_ENABLED,
 
     // Auto-timing configuration
-    NVS_CONFIG_AUTO_TIMING_ENABLED,   // Enable auto-timing feature
-    NVS_CONFIG_JOB_INTERVAL_MS,       // Current/optimal job interval (500-800)
-    NVS_CONFIG_AUTO_TIMING_MIN,       // Minimum interval allowed
-    NVS_CONFIG_AUTO_TIMING_MAX,       // Maximum interval allowed
+    NVS_CONFIG_AUTO_TIMING_ENABLED,     // Enable auto-timing feature
+    NVS_CONFIG_JOB_INTERVAL_MS,         // Current/optimal job interval (500-800)
+    NVS_CONFIG_AUTO_TIMING_MIN,         // Minimum interval allowed
+    NVS_CONFIG_AUTO_TIMING_MAX,         // Maximum interval allowed
+    NVS_CONFIG_AUTO_TIMING_CALIBRATED,  // Calibration completed at least once — skip recal on reboot
     
     NVS_CONFIG_DISPLAY,
     NVS_CONFIG_ROTATION,
@@ -49,7 +50,7 @@ typedef enum {
     NVS_CONFIG_OVERHEAT_MODE,
     
     NVS_CONFIG_STATISTICS_FREQUENCY,
-    
+
     NVS_CONFIG_BEST_DIFF,
     NVS_CONFIG_SELF_TEST,
     NVS_CONFIG_SWARM,
