@@ -31,7 +31,7 @@ echo.
 :: Build into a dedicated dir with the standalone config as SDKCONFIG. A
 :: per-variant build dir keeps variants separate AND sidesteps the Windows
 :: "copy preserves mtime" trap that stopped ninja from reconfiguring.
-%IDF_PYTHON% %IDF_PATH%\tools\idf.py -B build_standalone -D SDKCONFIG=%CD%\sdkconfig.standalone -D NPM_EXECUTABLE=%NPM_EXE% build
+%IDF_PYTHON% %IDF_PATH%\tools\idf.py -B build_standalone -D SDKCONFIG_DEFAULTS="%CD%\sdkconfig.defaults;%CD%\sdkconfig.defaults.standalone" -D SDKCONFIG=%CD%\build_standalone\sdkconfig -D NPM_EXECUTABLE=%NPM_EXE% build
 set BUILD_RESULT=%ERRORLEVEL%
 
 if %BUILD_RESULT% NEQ 0 (

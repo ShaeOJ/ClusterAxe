@@ -173,20 +173,24 @@ The master device handles pool connections and coordinates all slaves.
 get_idf
 # Or on Windows, use ESP-IDF Command Prompt
 
-# Copy master configuration
-cp sdkconfig.master sdkconfig
+# Build the firmware with the master config. SDKCONFIG_DEFAULTS layers the
+# shared base + the variant overrides (both read-only), and SDKCONFIG points
+# the generated config into the build dir so the tracked defaults never get
+# clobbered. (This also builds the web UI automatically.)
+idf.py -B build_master \
+  -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.master" \
+  -D SDKCONFIG=build_master/sdkconfig build
 
-# Build the firmware (this also builds the web UI automatically)
-idf.py build
+# On Windows, just run the helper: build_master.bat
 
 # Flash to device (replace COM3 with your actual port)
 # Windows: COM3, COM4, etc.
 # Linux: /dev/ttyUSB0, /dev/ttyACM0, etc.
 # macOS: /dev/cu.usbserial-*, /dev/cu.SLAB_USBtoUART, etc.
-idf.py -p COM3 flash
+idf.py -B build_master -p COM3 flash
 
 # Optional: Monitor serial output for debugging
-idf.py -p COM3 monitor
+idf.py -B build_master -p COM3 monitor
 # Press Ctrl+] to exit monitor
 ```
 
@@ -195,27 +199,26 @@ idf.py -p COM3 monitor
 Slave devices receive work from the master and report shares back.
 
 ```bash
-# Clean previous build (recommended when switching configurations)
-idf.py fullclean
-
-# Copy slave configuration
-cp sdkconfig.slave sdkconfig
-
-# Build
-idf.py build
+# Build the slave firmware into its own build dir (no fullclean needed —
+# each variant has a dedicated build dir, so they never collide).
+idf.py -B build_slave \
+  -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.slave" \
+  -D SDKCONFIG=build_slave/sdkconfig build
 
 # Flash to slave device
-idf.py -p COM4 flash
+idf.py -B build_slave -p COM4 flash
+
+# On Windows, just run the helper: build_slave.bat
 ```
 
 ### One-Line Build Commands
 
 ```bash
-# Master: clean, configure, build, and flash
-idf.py fullclean && cp sdkconfig.master sdkconfig && idf.py build flash -p COM3
+# Master: configure, build, and flash
+idf.py -B build_master -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.master" -D SDKCONFIG=build_master/sdkconfig build flash -p COM3
 
-# Slave: clean, configure, build, and flash
-idf.py fullclean && cp sdkconfig.slave sdkconfig && idf.py build flash -p COM4
+# Slave: configure, build, and flash
+idf.py -B build_slave -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.slave" -D SDKCONFIG=build_slave/sdkconfig build flash -p COM4
 ```
 
 ### Building the Web UI Separately
@@ -382,9 +385,13 @@ ClusterAxe/
 │   ├── asic/                       # ASIC drivers (BM1366, BM1368, etc.)
 │   ├── stratum/                    # Stratum protocol
 │   └── connect/                    # WiFi management
-├── sdkconfig.master                # Master build config
-├── sdkconfig.slave                 # Slave build config
-├── sdkconfig.defaults              # Default ESP-IDF settings
+├── sdkconfig.defaults              # Shared base ESP-IDF settings (read-only)
+├── sdkconfig.defaults.master       # Gamma 601 master overrides
+├── sdkconfig.defaults.slave        # Gamma 601 slave overrides
+├── sdkconfig.defaults.standalone   # Gamma 601 standalone overrides
+├── sdkconfig.defaults.gt-master    # GammaTurbo 801 master overrides
+├── sdkconfig.defaults.gt-slave     # GammaTurbo 801 slave overrides
+├── sdkconfig.defaults.gt-standalone# GammaTurbo 801 standalone overrides
 └── CMakeLists.txt                  # Build configuration
 ```
 

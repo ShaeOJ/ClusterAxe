@@ -220,19 +220,29 @@ main/http_server/axe-os/src/app/
 
 ## Build Instructions
 
+Each variant seeds its config from `sdkconfig.defaults` (shared base) plus a
+per-variant `sdkconfig.defaults.<variant>` overlay via `SDKCONFIG_DEFAULTS`,
+and writes the generated `sdkconfig` into the variant's build dir so the tracked
+defaults are never overwritten. On Windows the `build_*.bat` helpers wrap this.
+
 ### Master Firmware
 ```bash
-cp sdkconfig.master sdkconfig
-idf.py build
-idf.py -p COM[X] flash
+idf.py -B build_master \
+  -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.master" \
+  -D SDKCONFIG=build_master/sdkconfig build
+idf.py -B build_master -p COM[X] flash
 ```
 
 ### Slave Firmware
 ```bash
-cp sdkconfig.slave sdkconfig
-idf.py build
-idf.py -p COM[X] flash
+idf.py -B build_slave \
+  -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.slave" \
+  -D SDKCONFIG=build_slave/sdkconfig build
+idf.py -B build_slave -p COM[X] flash
 ```
+
+Other variants follow the same pattern: `standalone`, `gt-master`, `gt-slave`,
+`gt-standalone` (each with its own `-B build_<variant>` and matching defaults).
 
 ---
 

@@ -31,7 +31,7 @@ echo.
 :: Build into a dedicated dir with the GT master config as SDKCONFIG. A
 :: per-variant build dir keeps variants separate AND sidesteps the Windows
 :: "copy preserves mtime" trap that stopped ninja from reconfiguring.
-%IDF_PYTHON% %IDF_PATH%\tools\idf.py -B build_gt_master -D SDKCONFIG=%CD%\sdkconfig.gt-master -D NPM_EXECUTABLE=%NPM_EXE% build
+%IDF_PYTHON% %IDF_PATH%\tools\idf.py -B build_gt_master -D SDKCONFIG_DEFAULTS="%CD%\sdkconfig.defaults;%CD%\sdkconfig.defaults.gt-master" -D SDKCONFIG=%CD%\build_gt_master\sdkconfig -D NPM_EXECUTABLE=%NPM_EXE% build
 set BUILD_RESULT=%ERRORLEVEL%
 
 if %BUILD_RESULT% NEQ 0 (

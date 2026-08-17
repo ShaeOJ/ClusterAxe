@@ -1,0 +1,6 @@
+# ClusterAxe — GammaTurbo (801) Standalone variant overrides (no cluster).
+# Layered on top of sdkconfig.defaults via SDKCONFIG_DEFAULTS in build_gt_standalone.bat.
+# IDF reads this (never rewrites it); the generated sdkconfig lands in build_gt_standalone/.
+CONFIG_DEFAULT_BOARD_VERSION="801"
+# CONFIG_CLUSTER_MODE_MASTER is not set
+# CONFIG_CLUSTER_MODE_SLAVE is not set

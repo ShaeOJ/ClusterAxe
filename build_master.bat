@@ -28,11 +28,11 @@ echo.
 echo Building firmware...
 echo.
 
-:: Build into a dedicated dir with the master config as SDKCONFIG. A per-variant
-:: build dir keeps master/slave outputs separate AND sidesteps the Windows
-:: "copy preserves mtime" trap that stopped ninja from reconfiguring when we
-:: copied a variant sdkconfig over the shared one.
-%IDF_PYTHON% %IDF_PATH%\tools\idf.py -B build_master -D SDKCONFIG=%CD%\sdkconfig.master -D NPM_EXECUTABLE=%NPM_EXE% build
+:: Seed the config from the shared base + this variant's overrides via
+:: SDKCONFIG_DEFAULTS (IDF reads these but never rewrites them), and let the
+:: generated sdkconfig live inside the build dir so builds never clobber the
+:: tracked defaults files. A per-variant build dir also keeps outputs separate.
+%IDF_PYTHON% %IDF_PATH%\tools\idf.py -B build_master -D SDKCONFIG_DEFAULTS="%CD%\sdkconfig.defaults;%CD%\sdkconfig.defaults.master" -D SDKCONFIG=%CD%\build_master\sdkconfig -D NPM_EXECUTABLE=%NPM_EXE% build
 set BUILD_RESULT=%ERRORLEVEL%
 
 if %BUILD_RESULT% NEQ 0 (
