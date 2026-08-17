@@ -25,9 +25,18 @@
         />
     </ng-container>
 
-    <p-message *ngIf="info.blockFound" severity="success" styleClass="w-full mb-4 py-4 border-round-xl"
-        text="Today is your lucky day! Your device has found a block 🎉">
-    </p-message>
+    <div *ngIf="showBlockFound" class="relative w-full mb-4">
+        <p-message severity="success" styleClass="w-full py-4 border-round-xl"
+            text="Today is your lucky day! Your device has found a block 🎉">
+        </p-message>
+        <button type="button"
+            class="p-link absolute"
+            style="top: 0.5rem; right: 0.75rem;"
+            aria-label="Dismiss"
+            (click)="dismissBlockFound()">
+            <i class="pi pi-times"></i>
+        </button>
+    </div>
 
     <!-- Slave Mode Banner -->
     <ng-container *ngIf="clusterStatus$ | async as clusterStatus">
@@ -1218,5 +1227,5 @@
         </div>
     </ng-container>
 
-    <app-confetti *ngIf="info.blockFound"></app-confetti>
+    <app-confetti *ngIf="showBlockFound"></app-confetti>
 </ng-container>

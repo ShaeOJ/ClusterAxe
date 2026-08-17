@@ -52,6 +52,12 @@ const HOME_CHART_DATA_SOURCES = 'HOME_CHART_DATA_SOURCES';
 export class HomeComponent implements OnInit, OnDestroy {
   public messages: ISystemMessage[] = [];
 
+  // Block-found celebration banner (dismissible + auto-timeout)
+  private static readonly BLOCK_FOUND_TIMEOUT_MS = 60000;
+  public showBlockFound: boolean = false;
+  private prevBlockFound: boolean = false;
+  private blockFoundTimer: any = null;
+
   public info$!: Observable<ISystemInfo>;
   public stats$!: Observable<ISystemStatistics>;
   public pools$!: Observable<SelectItem<PoolLabel>[]>;
@@ -257,6 +263,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    this.clearBlockFoundTimer();
     this.destroy$.next();
     this.destroy$.complete();
   }
@@ -690,11 +697,45 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.infoSubscription = this.info$
       .pipe(takeUntil(this.destroy$))
       .subscribe(info => {
+        this.updateBlockFound(info);
         this.handleSystemMessages(info);
         this.setTitle(info);
         this.checkForNewShares(info);
         this.initFirePoolStats(info);
       });
+  }
+
+  // Show the celebration only on the rising edge of the firmware flag, then
+  // hide it after a timeout or when the user dismisses it. Without this the
+  // banner/confetti would stay up forever, since the firmware only clears
+  // block_found on reboot and the UI polls the raw flag every 5s.
+  private updateBlockFound(info: ISystemInfo): void {
+    const blockFound = !!info.blockFound;
+    if (blockFound && !this.prevBlockFound) {
+      this.showBlockFound = true;
+      this.clearBlockFoundTimer();
+      this.blockFoundTimer = setTimeout(
+        () => this.dismissBlockFound(),
+        HomeComponent.BLOCK_FOUND_TIMEOUT_MS
+      );
+    } else if (!blockFound) {
+      // Firmware flag cleared (e.g. reboot) — re-arm for the next block.
+      this.showBlockFound = false;
+      this.clearBlockFoundTimer();
+    }
+    this.prevBlockFound = blockFound;
+  }
+
+  public dismissBlockFound(): void {
+    this.showBlockFound = false;
+    this.clearBlockFoundTimer();
+  }
+
+  private clearBlockFoundTimer(): void {
+    if (this.blockFoundTimer) {
+      clearTimeout(this.blockFoundTimer);
+      this.blockFoundTimer = null;
+    }
   }
 
   private initFirePoolStats(info: ISystemInfo): void {
@@ -754,7 +795,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   private setTitle(info: ISystemInfo) {
     const parts = [this.pageDefaultTitle];
 
-    if (info.blockFound) {
+    if (this.showBlockFound) {
       parts.push('Block found 🎉');
     } else {
       parts.push(
