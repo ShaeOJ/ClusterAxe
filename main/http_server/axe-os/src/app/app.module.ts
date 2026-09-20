@@ -29,6 +29,7 @@ import { ThemeConfigComponent } from './components/design/theme-config.component
 import { DesignComponent } from './components/design/design.component';
 import { ClusterComponent } from './components/cluster/cluster.component';
 import { TunerComponent } from './components/tuner/tuner.component';
+import { ScoreboardComponent } from './components/scoreboard/scoreboard.component';
 import { AppLayoutModule } from './layout/app.layout.module';
 import { ANSIPipe } from './pipes/ansi.pipe';
 import { DateAgoPipe } from './pipes/date-ago.pipe';
@@ -76,7 +77,8 @@ const components = [
     PoolComponent,
     DialogListComponent,
     ClusterComponent,
-    TunerComponent
+    TunerComponent,
+    ScoreboardComponent
   ],
   imports: [
     BrowserModule,

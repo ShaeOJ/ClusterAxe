@@ -15,7 +15,7 @@
 - [ ] `clusteraxe-slave.bin` - Slave firmware
 - [ ] `bootloader.bin` - Bootloader
 - [ ] `partition-table.bin` - Partition table
-- [ ] `www.bin` - Web UI
+      (web UI is embedded in the app image — no separate `www.bin`)
 
 ---
 
@@ -30,8 +30,7 @@
      -z --flash_mode dio --flash_freq 80m --flash_size detect \
      0x0 bootloader.bin \
      0x8000 partition-table.bin \
-     0x10000 clusteraxe-master.bin \
-     0x410000 www.bin
+     0x10000 clusteraxe-master.bin
    ```
 4. [ ] Reset device
 5. [ ] Connect to WiFi AP or existing network
@@ -56,8 +55,7 @@
      -z --flash_mode dio --flash_freq 80m --flash_size detect \
      0x0 bootloader.bin \
      0x8000 partition-table.bin \
-     0x10000 clusteraxe-slave.bin \
-     0x410000 www.bin
+     0x10000 clusteraxe-slave.bin
    ```
 4. [ ] Reset device
 5. [ ] Connect to same WiFi network as master

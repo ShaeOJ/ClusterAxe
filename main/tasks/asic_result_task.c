@@ -130,6 +130,21 @@ void ASIC_result_task(void *pvParameters)
             }
         }
 
+        // Record into the top-20 scoreboard (RAM-only, keeps the highest diffs).
+        scoreboard_add(&GLOBAL_STATE->SYSTEM_MODULE.scoreboard,
+                       nonce_diff,
+                       active_job->jobid,
+                       active_job->extranonce2,
+                       active_job->ntime,
+                       asic_result->nonce,
+                       asic_result->rolled_version ^ active_job->version);
+
+        // Track the most recently found nonce for the Block Header display.
+        GLOBAL_STATE->SYSTEM_MODULE.last_nonce = asic_result->nonce;
+        GLOBAL_STATE->SYSTEM_MODULE.last_nonce_diff = nonce_diff;
+        GLOBAL_STATE->SYSTEM_MODULE.last_nonce_version = asic_result->rolled_version ^ active_job->version;
+        GLOBAL_STATE->SYSTEM_MODULE.last_nonce_ntime = active_job->ntime;
+
         SYSTEM_notify_found_nonce(GLOBAL_STATE, nonce_diff, job_id);
     }
 }

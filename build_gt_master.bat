@@ -44,7 +44,7 @@ if %BUILD_RESULT% NEQ 0 (
 
 :: Variant-specific name so 601/801 and master/slave never get mixed up.
 :: (project() names it zombie-os-master via the cluster-mode check in CMakeLists.)
-copy /Y build_gt_master\zombie-os-master.bin build_gt_master\clusteraxe-gt801-master.bin >nul
+copy /Y build_gt_master\zombie-os.bin build_gt_master\clusteraxe-gt801-master.bin >nul
 
 echo.
 echo ============================================
@@ -56,7 +56,6 @@ echo  - clusteraxe-gt801-master.bin (copy of app, variant-named^)
 echo  - zombie-os-master.bin (main application^)
 echo  - bootloader\bootloader.bin
 echo  - partition_table\partition-table.bin
-echo  - www.bin
 echo.
 echo Flash from build_gt_master\ (see the esptool line idf.py printed above^).
 echo.

@@ -1,1 +1,1 @@
-ClusterAxe-v1.5.2
+ClusterAxe-v1.6.0

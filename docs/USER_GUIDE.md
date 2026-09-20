@@ -110,7 +110,8 @@ Download the pre-built firmware files:
 - `clusteraxe-slave.bin` - For slave devices
 - `bootloader.bin` - Bootloader (same for both)
 - `partition-table.bin` - Partition table (same for both)
-- `www.bin` - Web UI (same for both)
+
+The web UI is embedded in the app image, so there is no separate `www.bin`.
 
 ### Step 2: Flash Master Device
 
@@ -122,8 +123,7 @@ esptool.py --chip esp32s3 --port COM3 --baud 460800 \
   -z --flash_mode dio --flash_freq 80m --flash_size detect \
   0x0 bootloader.bin \
   0x8000 partition-table.bin \
-  0x10000 clusteraxe-master.bin \
-  0x410000 www.bin
+  0x10000 clusteraxe-master.bin
 ```
 
 Or use the Bitaxe web UI OTA update feature.
@@ -138,8 +138,7 @@ esptool.py --chip esp32s3 --port COM3 --baud 460800 \
   -z --flash_mode dio --flash_freq 80m --flash_size detect \
   0x0 bootloader.bin \
   0x8000 partition-table.bin \
-  0x10000 clusteraxe-slave.bin \
-  0x410000 www.bin
+  0x10000 clusteraxe-slave.bin
 ```
 
 ---

@@ -47,8 +47,10 @@
 #include "axe-os/api/system/asic_settings.h"
 #include "display.h"
 #include "http_server.h"
+#include "embedded_web_ui.h"
 #include "system.h"
 #include "websocket.h"
+#include "websocket_api.h"
 #include "auto_timing.h"
 #include "cluster_watchdog.h"
 
@@ -346,49 +348,68 @@ esp_err_t is_network_allowed(httpd_req_t * req)
     return ESP_FAIL;
 }
 
-static void readAxeOSVersion(void) {
-    FILE* f = fopen("/version.txt", "r");
-    if (f != NULL) {
+// True once the SPIFFS "www" partition holding a user-uploaded custom UI has
+// been mounted successfully. The default UI is embedded in the app binary and
+// is always available regardless of this flag.
+static bool s_www_fs_available = false;
+
+// Read version.txt from whichever UI source is active. from_spiffs=true reads
+// the uploaded custom UI; otherwise reads the firmware-embedded UI.
+static void readAxeOSVersion(bool from_spiffs) {
+    if (from_spiffs) {
+        FILE* f = fopen("/version.txt", "r");
+        if (f == NULL) {
+            snprintf(axeOSVersion, sizeof(axeOSVersion), "%s", "unknown");
+            ESP_LOGE(TAG, "Failed to open custom AxeOS version.txt");
+            return;
+        }
         size_t n = fread(axeOSVersion, 1, sizeof(axeOSVersion) - 1, f);
         axeOSVersion[n] = '\0';
         fclose(f);
-
-        ESP_LOGI(TAG, "ClusterAxe UI version: %s", axeOSVersion);
-
-        if (strcmp(axeOSVersion, esp_app_get_description()->version) != 0) {
-            ESP_LOGE(TAG, "Firmware (%s) and ClusterAxe UI (%s) versions do not match.", esp_app_get_description()->version, axeOSVersion);
-        }
     } else {
-        snprintf(axeOSVersion, sizeof(axeOSVersion), "%s", "unknown");
-        ESP_LOGE(TAG, "Failed to open ClusterAxe version.txt");
+        const EmbeddedFile * ef = get_embedded_file("/version.txt");
+        if (ef == NULL) {
+            snprintf(axeOSVersion, sizeof(axeOSVersion), "%s", "unknown");
+            ESP_LOGE(TAG, "Failed to find embedded version.txt");
+            return;
+        }
+        size_t n = ef->size < sizeof(axeOSVersion) - 1 ? ef->size : sizeof(axeOSVersion) - 1;
+        memcpy(axeOSVersion, ef->data, n);
+        axeOSVersion[n] = '\0';
+    }
+
+    ESP_LOGI(TAG, "ClusterAxe UI version: %s", axeOSVersion);
+
+    if (strcmp(axeOSVersion, esp_app_get_description()->version) != 0) {
+        ESP_LOGE(TAG, "Firmware (%s) and ClusterAxe UI (%s) versions do not match.", esp_app_get_description()->version, axeOSVersion);
     }
 }
 
+// Mount the optional SPIFFS "www" partition used for a custom (user-uploaded)
+// UI. A fresh device has no valid filesystem here, which is expected and NOT an
+// error: the embedded UI is served instead. Sets s_www_fs_available on success.
 esp_err_t init_fs(void)
 {
     esp_vfs_spiffs_conf_t conf = {.base_path = "", .partition_label = NULL, .max_files = 5, .format_if_mount_failed = false};
     esp_err_t ret = esp_vfs_spiffs_register(&conf);
 
     if (ret != ESP_OK) {
-        if (ret == ESP_FAIL) {
-            ESP_LOGE(TAG, "Failed to mount or format filesystem");
-        } else if (ret == ESP_ERR_NOT_FOUND) {
-            ESP_LOGE(TAG, "Failed to find SPIFFS partition");
-        } else {
-            ESP_LOGE(TAG, "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
-        }
+        // No custom UI present (or partition unformatted). This is normal on a
+        // stock flash; fall back to the embedded UI.
+        ESP_LOGI(TAG, "No custom www filesystem (%s) - serving embedded UI", esp_err_to_name(ret));
+        s_www_fs_available = false;
         return ESP_FAIL;
     }
+
+    s_www_fs_available = true;
 
     size_t total = 0, used = 0;
     ret = esp_spiffs_info(NULL, &total, &used);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to get SPIFFS partition information (%s)", esp_err_to_name(ret));
     } else {
-        ESP_LOGI(TAG, "Partition size: total: %d, used: %d", total, used);
+        ESP_LOGI(TAG, "Custom www partition size: total: %d, used: %d", total, used);
     }
-
-    readAxeOSVersion();
 
     return ESP_OK;
 }
@@ -495,8 +516,8 @@ static bool file_exists(const char *path) {
     return (stat(path, &buffer) == 0);
 }
 
-/* Send HTTP response with the contents of the requested file */
-static esp_err_t rest_common_get_handler(httpd_req_t * req)
+/* Send HTTP response with the contents of a custom UI file from SPIFFS */
+static esp_err_t rest_common_get_handler_spiffs(httpd_req_t * req)
 {
     char filepath[FILE_PATH_MAX];
     char gz_file[FILE_PATH_MAX];
@@ -562,6 +583,38 @@ static esp_err_t rest_common_get_handler(httpd_req_t * req)
     ESP_LOGI(TAG, "File sending complete");
     /* Respond with an empty chunk to signal HTTP response completion */
     httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}
+
+/* Send HTTP response with the contents of a file embedded in the app binary */
+static esp_err_t rest_common_get_handler_embedded(httpd_req_t * req)
+{
+    char rel_path[FILE_PATH_MAX];
+    if (req->uri[strlen(req->uri) - 1] == '/') {
+        strlcpy(rel_path, "/index.html", sizeof(rel_path));
+    } else {
+        strlcpy(rel_path, req->uri, sizeof(rel_path));
+    }
+
+    const EmbeddedFile * ef = get_embedded_file(rel_path);
+    if (ef != NULL) {
+        set_content_type_from_file(req, rel_path);
+        if (req->uri[strlen(req->uri) - 1] != '/') {
+            httpd_resp_set_hdr(req, "Cache-Control", "max-age=2592000");
+        }
+        if (ef->is_gzipped) {
+            httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+        }
+        return httpd_resp_send(req, (const char *) ef->data, ef->size);
+    }
+
+    // Not found in embedded assets: redirect to root (SPA / captive portal)
+    httpd_resp_set_status(req, "302 Temporary Redirect");
+    httpd_resp_set_hdr(req, "Location", "/");
+    // iOS requires content in the response to detect a captive portal.
+    httpd_resp_send(req, "Redirect to the captive portal", HTTPD_RESP_USE_STRLEN);
+
+    ESP_LOGI(TAG, "Redirecting to root");
     return ESP_OK;
 }
 
@@ -825,6 +878,84 @@ static const char* esp_reset_reason_to_string(esp_reset_reason_t reason) {
 }
 
 /* Simple handler for getting system handler */
+// Build a compact JSON object of the fast-changing telemetry that the live
+// WebSocket (/api/ws/live) pushes to connected clients. The frontend merges
+// these fields into its cached system-info model. Caller owns the returned
+// cJSON object.
+cJSON * build_live_info_json(GlobalState * GLOBAL_STATE)
+{
+    int8_t wifi_rssi = -90;
+    get_wifi_current_rssi(&wifi_rssi);
+
+    cJSON * root = cJSON_CreateObject();
+
+    // Power / thermal
+    cJSON_AddFloatToObject(root, "power", GLOBAL_STATE->POWER_MANAGEMENT_MODULE.power);
+    cJSON_AddFloatToObject(root, "voltage", GLOBAL_STATE->POWER_MANAGEMENT_MODULE.voltage);
+    cJSON_AddFloatToObject(root, "current", Power_get_current(GLOBAL_STATE));
+    cJSON_AddFloatToObject(root, "temp", GLOBAL_STATE->POWER_MANAGEMENT_MODULE.chip_temp_avg);
+    cJSON_AddFloatToObject(root, "temp2", GLOBAL_STATE->POWER_MANAGEMENT_MODULE.chip_temp2_avg);
+    cJSON_AddFloatToObject(root, "vrTemp", GLOBAL_STATE->POWER_MANAGEMENT_MODULE.vr_temp);
+
+    float hashrate_th = GLOBAL_STATE->SYSTEM_MODULE.current_hashrate / 1000.0f;
+    float efficiency = (hashrate_th > 0) ? (GLOBAL_STATE->POWER_MANAGEMENT_MODULE.power / hashrate_th) : 0;
+    cJSON_AddFloatToObject(root, "efficiency", efficiency);
+
+    // Hashrate
+    cJSON_AddFloatToObject(root, "hashRate", GLOBAL_STATE->SYSTEM_MODULE.current_hashrate);
+    cJSON_AddFloatToObject(root, "hashRate_1m", GLOBAL_STATE->SYSTEM_MODULE.hashrate_1m);
+    cJSON_AddFloatToObject(root, "hashRate_10m", GLOBAL_STATE->SYSTEM_MODULE.hashrate_10m);
+    cJSON_AddFloatToObject(root, "hashRate_1h", GLOBAL_STATE->SYSTEM_MODULE.hashrate_1h);
+    cJSON_AddFloatToObject(root, "expectedHashrate", GLOBAL_STATE->POWER_MANAGEMENT_MODULE.expected_hashrate);
+    cJSON_AddFloatToObject(root, "errorPercentage", GLOBAL_STATE->SYSTEM_MODULE.error_percentage);
+
+    // Shares / difficulty
+    cJSON_AddNumberToObject(root, "bestDiff", GLOBAL_STATE->SYSTEM_MODULE.best_nonce_diff);
+    cJSON_AddNumberToObject(root, "bestSessionDiff", GLOBAL_STATE->SYSTEM_MODULE.best_session_nonce_diff);
+    cJSON_AddNumberToObject(root, "sharesAccepted", GLOBAL_STATE->SYSTEM_MODULE.shares_accepted);
+    cJSON_AddNumberToObject(root, "sharesRejected", GLOBAL_STATE->SYSTEM_MODULE.shares_rejected);
+    cJSON_AddNumberToObject(root, "blockFound", GLOBAL_STATE->SYSTEM_MODULE.block_found);
+
+    // Most recently found nonce (for the Block Header card)
+    if (GLOBAL_STATE->SYSTEM_MODULE.last_nonce != 0) {
+        char last_nonce_hex[9], last_nonce_ver_hex[9];
+        snprintf(last_nonce_hex, sizeof(last_nonce_hex), "%08X", (unsigned int) GLOBAL_STATE->SYSTEM_MODULE.last_nonce);
+        snprintf(last_nonce_ver_hex, sizeof(last_nonce_ver_hex), "%08X", (unsigned int) GLOBAL_STATE->SYSTEM_MODULE.last_nonce_version);
+        cJSON_AddStringToObject(root, "lastNonce", last_nonce_hex);
+        cJSON_AddNumberToObject(root, "lastNonceDiff", GLOBAL_STATE->SYSTEM_MODULE.last_nonce_diff);
+        cJSON_AddStringToObject(root, "lastNonceVersion", last_nonce_ver_hex);
+        cJSON_AddNumberToObject(root, "lastNonceTime", GLOBAL_STATE->SYSTEM_MODULE.last_nonce_ntime);
+    }
+
+    // Fan
+    cJSON_AddFloatToObject(root, "fanspeed", GLOBAL_STATE->POWER_MANAGEMENT_MODULE.fan_perc);
+    cJSON_AddNumberToObject(root, "fanrpm", GLOBAL_STATE->POWER_MANAGEMENT_MODULE.fan_rpm);
+    cJSON_AddNumberToObject(root, "fan2rpm", GLOBAL_STATE->POWER_MANAGEMENT_MODULE.fan2_rpm);
+
+    // Voltage / frequency actuals
+    cJSON_AddNumberToObject(root, "coreVoltageActual", VCORE_get_voltage_mv(GLOBAL_STATE));
+    cJSON_AddFloatToObject(root, "actualFrequency", GLOBAL_STATE->POWER_MANAGEMENT_MODULE.actual_frequency);
+
+    // System
+    cJSON_AddFloatToObject(root, "cpuUsage", GLOBAL_STATE->SYSTEM_MODULE.cpu_usage);
+    cJSON_AddNumberToObject(root, "freeHeap", esp_get_free_heap_size());
+    cJSON_AddNumberToObject(root, "uptimeSeconds", (esp_timer_get_time() - GLOBAL_STATE->SYSTEM_MODULE.start_time) / 1000000);
+    cJSON_AddNumberToObject(root, "wifiRSSI", wifi_rssi);
+
+    // Pool connectivity
+    cJSON_AddNumberToObject(root, "isUsingFallbackStratum", GLOBAL_STATE->SYSTEM_MODULE.is_using_fallback);
+    cJSON_AddNumberToObject(root, "primaryPoolConnected", GLOBAL_STATE->primary_pool_connected);
+    cJSON_AddNumberToObject(root, "secondaryPoolConnected", GLOBAL_STATE->secondary_pool_connected);
+    cJSON_AddNumberToObject(root, "responseTime", GLOBAL_STATE->SYSTEM_MODULE.response_time);
+    cJSON_AddNumberToObject(root, "responseTimeSecondary", GLOBAL_STATE->SYSTEM_MODULE.response_time_secondary);
+
+    if (GLOBAL_STATE->SYSTEM_MODULE.power_fault > 0) {
+        cJSON_AddStringToObject(root, "power_fault", VCORE_get_fault_string(GLOBAL_STATE));
+    }
+
+    return root;
+}
+
 static esp_err_t GET_system_info(httpd_req_t * req)
 {
     if (is_network_allowed(req) != ESP_OK) {
@@ -888,6 +1019,7 @@ static esp_err_t GET_system_info(httpd_req_t * req)
 
     cJSON_AddNumberToObject(root, "isPSRAMAvailable", GLOBAL_STATE->psram_is_available);
 
+    cJSON_AddFloatToObject(root, "cpuUsage", GLOBAL_STATE->SYSTEM_MODULE.cpu_usage);
     cJSON_AddNumberToObject(root, "freeHeap", esp_get_free_heap_size());
 
     cJSON_AddNumberToObject(root, "freeHeapInternal", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
@@ -960,6 +1092,7 @@ static esp_err_t GET_system_info(httpd_req_t * req)
 
     cJSON_AddNumberToObject(root, "overheat_mode", nvs_config_get_bool(NVS_CONFIG_OVERHEAT_MODE));
     cJSON_AddNumberToObject(root, "overclockEnabled", nvs_config_get_bool(NVS_CONFIG_OVERCLOCK_ENABLED));
+    cJSON_AddNumberToObject(root, "useCustomWWW", nvs_config_get_bool(NVS_CONFIG_USE_CUSTOM_WWW) ? 1 : 0);
     cJSON_AddStringToObject(root, "display", display);
     cJSON_AddNumberToObject(root, "rotation", nvs_config_get_u16(NVS_CONFIG_ROTATION));
     cJSON_AddNumberToObject(root, "invertscreen", nvs_config_get_bool(NVS_CONFIG_INVERT_SCREEN));
@@ -977,6 +1110,17 @@ static esp_err_t GET_system_info(httpd_req_t * req)
     cJSON_AddNumberToObject(root, "statsFrequency", nvs_config_get_u16(NVS_CONFIG_STATISTICS_FREQUENCY));
 
     cJSON_AddNumberToObject(root, "blockFound", GLOBAL_STATE->SYSTEM_MODULE.block_found);
+
+    // Most recently found nonce (for the Block Header card)
+    if (GLOBAL_STATE->SYSTEM_MODULE.last_nonce != 0) {
+        char last_nonce_hex[9], last_nonce_ver_hex[9];
+        snprintf(last_nonce_hex, sizeof(last_nonce_hex), "%08X", (unsigned int) GLOBAL_STATE->SYSTEM_MODULE.last_nonce);
+        snprintf(last_nonce_ver_hex, sizeof(last_nonce_ver_hex), "%08X", (unsigned int) GLOBAL_STATE->SYSTEM_MODULE.last_nonce_version);
+        cJSON_AddStringToObject(root, "lastNonce", last_nonce_hex);
+        cJSON_AddNumberToObject(root, "lastNonceDiff", GLOBAL_STATE->SYSTEM_MODULE.last_nonce_diff);
+        cJSON_AddStringToObject(root, "lastNonceVersion", last_nonce_ver_hex);
+        cJSON_AddNumberToObject(root, "lastNonceTime", GLOBAL_STATE->SYSTEM_MODULE.last_nonce_ntime);
+    }
 
     if (GLOBAL_STATE->SYSTEM_MODULE.power_fault > 0) {
         cJSON_AddStringToObject(root, "power_fault", VCORE_get_fault_string(GLOBAL_STATE));
@@ -1137,6 +1281,53 @@ static esp_err_t GET_system_statistics(httpd_req_t * req)
     return res;
 }
 
+/* Return the top-20 highest-difficulty shares seen this uptime */
+static esp_err_t GET_scoreboard(httpd_req_t * req)
+{
+    if (is_network_allowed(req) != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "Unauthorized");
+    }
+
+    httpd_resp_set_type(req, "application/json");
+
+    if (set_cors_headers(req) != ESP_OK) {
+        httpd_resp_send_500(req);
+        return ESP_OK;
+    }
+
+    Scoreboard *scoreboard = &GLOBAL_STATE->SYSTEM_MODULE.scoreboard;
+    cJSON * root = cJSON_CreateArray();
+
+    // The endpoint is registered before scoreboard_init runs; if a request
+    // arrives in that window, just return an empty list.
+    if (scoreboard->mutex != NULL && xSemaphoreTake(scoreboard->mutex, portMAX_DELAY) == pdTRUE) {
+        for (int i = 0; i < scoreboard->count; i++) {
+            const ScoreboardEntry *e = &scoreboard->entries[i];
+            cJSON *entry = cJSON_CreateObject();
+
+            char nonce_str[9], version_bits_str[9];
+            snprintf(nonce_str, sizeof(nonce_str), "%08X", (unsigned int)e->nonce);
+            snprintf(version_bits_str, sizeof(version_bits_str), "%08X", (unsigned int)e->version_bits);
+
+            cJSON_AddNumberToObject(entry, "difficulty", e->difficulty);
+            cJSON_AddStringToObject(entry, "job_id", e->job_id);
+            cJSON_AddStringToObject(entry, "extranonce2", e->extranonce2);
+            cJSON_AddNumberToObject(entry, "ntime", e->ntime);
+            cJSON_AddStringToObject(entry, "nonce", nonce_str);
+            cJSON_AddStringToObject(entry, "version_bits", version_bits_str);
+
+            cJSON_AddItemToArray(root, entry);
+        }
+        xSemaphoreGive(scoreboard->mutex);
+    }
+
+    esp_err_t res = HTTP_send_json(req, root, &api_common_prebuffer_len);
+
+    cJSON_Delete(root);
+
+    return res;
+}
+
 esp_err_t POST_WWW_update(httpd_req_t * req)
 {
     if (is_network_allowed(req) != ESP_OK) {
@@ -1200,7 +1391,9 @@ esp_err_t POST_WWW_update(httpd_req_t * req)
 
     httpd_resp_sendstr(req, "WWW update complete\n");
 
-    readAxeOSVersion();
+    // Switch to serving the uploaded custom UI from SPIFFS. It takes effect on
+    // the next reboot, once the freshly written partition is mounted.
+    nvs_config_set_bool(NVS_CONFIG_USE_CUSTOM_WWW, true);
 
     snprintf(GLOBAL_STATE->SYSTEM_MODULE.firmware_update_status, 20, "Finished...");
     vTaskDelay(1000 / portTICK_PERIOD_MS);
@@ -2265,12 +2458,19 @@ esp_err_t start_rest_server(void * pvParameters)
     asic_api_init(GLOBAL_STATE);
     const char * base_path = "";
 
-    bool enter_recovery = false;
-    if (init_fs() != ESP_OK) {
-        // Unable to initialize the web app filesystem.
-        // Enter recovery mode
-        enter_recovery = true;
+    // Attempt to mount the optional custom-UI SPIFFS partition. Failure is fine:
+    // the default UI is embedded in the app binary and always available.
+    init_fs();
+
+    // Serve the uploaded custom UI only if the user asked for it AND it mounted.
+    // If the flag is set but no valid custom UI is present, self-heal by clearing
+    // it so we cleanly fall back to the embedded UI.
+    bool use_custom = nvs_config_get_bool(NVS_CONFIG_USE_CUSTOM_WWW) && s_www_fs_available;
+    if (nvs_config_get_bool(NVS_CONFIG_USE_CUSTOM_WWW) && !s_www_fs_available) {
+        ESP_LOGW(TAG, "Custom UI requested but not available - reverting to embedded UI");
+        nvs_config_set_bool(NVS_CONFIG_USE_CUSTOM_WWW, false);
     }
+    readAxeOSVersion(use_custom);
 
     REST_CHECK(base_path, "wrong base path", err);
     rest_server_context_t * rest_context = calloc(1, sizeof(rest_server_context_t));
@@ -2281,7 +2481,7 @@ esp_err_t start_rest_server(void * pvParameters)
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.stack_size = 8192;
     config.max_open_sockets = 20;
-    config.max_uri_handlers = 40;
+    config.max_uri_handlers = 48;
     config.close_fn = websocket_close_fn;
     config.lru_purge_enable = true;
 
@@ -2325,6 +2525,15 @@ esp_err_t start_rest_server(void * pvParameters)
         .user_ctx = rest_context
     };
     httpd_register_uri_handler(server, &system_statistics_get_uri);
+
+    /* URI handler for the top-20 best-shares scoreboard */
+    httpd_uri_t scoreboard_get_uri = {
+        .uri = "/api/system/scoreboard",
+        .method = HTTP_GET,
+        .handler = GET_scoreboard,
+        .user_ctx = rest_context
+    };
+    httpd_register_uri_handler(server, &scoreboard_get_uri);
 
     /* URI handler for WiFi scan */
     httpd_uri_t wifi_scan_get_uri = {
@@ -2478,37 +2687,43 @@ esp_err_t start_rest_server(void * pvParameters)
     };
     httpd_register_uri_handler(server, &ws);
 
-    if (enter_recovery) {
-        /* Make default route serve Recovery */
-        httpd_uri_t recovery_implicit_get_uri = {
-            .uri = "/*", .method = HTTP_GET, 
-            .handler = rest_recovery_handler, 
-            .user_ctx = rest_context
-        };
-        httpd_register_uri_handler(server, &recovery_implicit_get_uri);
+    // Live telemetry WebSocket - must be registered before the "/api/*" wildcard
+    httpd_uri_t ws_live = {
+        .uri = "/api/ws/live",
+        .method = HTTP_GET,
+        .handler = websocket_api_handler,
+        .user_ctx = NULL,
+        .is_websocket = true
+    };
+    httpd_register_uri_handler(server, &ws_live);
 
-    } else {
-        httpd_uri_t api_common_uri = {
-            .uri = "/api/*",
-            .method = HTTP_ANY,
-            .handler = rest_api_common_handler,
-            .user_ctx = rest_context
-        };
-        httpd_register_uri_handler(server, &api_common_uri);
-        /* URI handler for getting web server files */
-        httpd_uri_t common_get_uri = {
-            .uri = "/*", 
-            .method = HTTP_GET, 
-            .handler = rest_common_get_handler, 
-            .user_ctx = rest_context
-        };
-        httpd_register_uri_handler(server, &common_get_uri);
-    }
+    httpd_uri_t api_common_uri = {
+        .uri = "/api/*",
+        .method = HTTP_ANY,
+        .handler = rest_api_common_handler,
+        .user_ctx = rest_context
+    };
+    httpd_register_uri_handler(server, &api_common_uri);
+    /* URI handler for getting web server files: uploaded custom UI from SPIFFS
+       if enabled and present, otherwise the firmware-embedded UI. */
+    httpd_uri_t common_get_uri = {
+        .uri = "/*",
+        .method = HTTP_GET,
+        .handler = use_custom ? rest_common_get_handler_spiffs : rest_common_get_handler_embedded,
+        .user_ctx = rest_context
+    };
+    httpd_register_uri_handler(server, &common_get_uri);
 
     httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, http_404_error_handler);
 
     // Start websocket log handler thread
     xTaskCreateWithCaps(websocket_task, "websocket_task", 8192, server, 2, NULL, MALLOC_CAP_SPIRAM);
+
+    // Start live-telemetry websocket broadcaster (/api/ws/live)
+    websocket_api_set_handle(server);
+    if (xTaskCreateWithCaps(websocket_api_task, "ws_api_task", 8192, (void *) GLOBAL_STATE, 2, NULL, MALLOC_CAP_SPIRAM) != pdPASS) {
+        ESP_LOGE(TAG, "Error creating ws api task");
+    }
 
     // Start the DNS server that will redirect all queries to the softAP IP
     dns_server_config_t dns_config = DNS_SERVER_CONFIG_SINGLE("*" /* all A queries */, "WIFI_AP_DEF" /* softAP netif ID */);

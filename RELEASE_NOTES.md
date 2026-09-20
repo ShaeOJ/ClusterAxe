@@ -1,5 +1,40 @@
 # ClusterAxe Release Notes
 
+## v1.6.0 (September 18, 2026) — ESP-Miner 2.15.1 feature adoption
+
+### New Features
+
+- **Unlock Overclock Mode button**: Custom frequency & voltage input no longer
+  requires the hidden `?oc` URL parameter. A new "Unlock Overclock Mode" button on
+  the Settings page enables manual entry (swapping the safe preset dropdowns for
+  number inputs) and persists `overclockEnabled` to NVS so it survives reboots.
+  "Disable Overclock Mode" re-locks it. This restores manual OC entry that had been
+  effectively gated after the embedded-UI switch.
+- **Embedded web UI (no more www.bin)**: The AxeOS web UI is now compiled directly
+  into the app binary via `tools/embed_web_ui.py`. Flashing is a single app image —
+  no separate `www.bin` / SPIFFS website slot, and there is no longer a "Website"
+  slot to upload during OTA. A user-uploaded custom UI is still supported: uploading
+  via the "Website" OTA (`/api/system/OTAWWW`) sets `useCustomWWW` and serves from
+  SPIFFS on the next boot; it self-reverts to the embedded UI if the custom
+  filesystem is missing.
+- **Block Header now shows the last found nonce**: The Dashboard's Block Header card
+  adds the most recently found nonce plus its difficulty, version bits, and nTime —
+  updated as your miner works.
+- **Best Shares scoreboard**: New "Best Shares" page listing the top-20 highest
+  difficulty shares of the current uptime (`/api/system/scoreboard`, RAM-only).
+- **Live telemetry WebSocket**: `/api/ws/live` pushes fast-changing telemetry
+  (hashrate, temps, power, fan, shares, CPU usage, last nonce…) at ~1 Hz so UIs can
+  update between the regular `/api/system/info` polls (`LiveDataService` on the
+  frontend).
+- **Task/CPU diagnostics**: Per-task runtime accounting logged to the console plus
+  a rolling `cpuUsage` field in `/api/system/info` (needs
+  `CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS`, now enabled by default).
+
+### Flashing note
+
+There is no more `www.bin`. Flash only bootloader (`0x0`), partition table
+(`0x8000`), the app (`0x10000`) and OTA data (`0xf10000`).
+
 ## v1.5.0 (January 23, 2026)
 
 ### Breaking Changes

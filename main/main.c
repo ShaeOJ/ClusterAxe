@@ -8,6 +8,7 @@
 #include "hashrate_monitor_task.h"
 #include "statistics_task.h"
 #include "system.h"
+#include "task_monitor.h"
 #include "http_server.h"
 #include "serial.h"
 #include "stratum_task.h"
@@ -86,6 +87,14 @@ void app_main(void)
         ESP_LOGE(TAG, "Error creating power management task");
     }
 
+    // Diagnostics: rolling CPU-usage figure + periodic per-task runtime stats
+    if (xTaskCreateWithCaps(cpu_monitor_task, "cpu_monitor", 4096, (void *) &GLOBAL_STATE, 1, NULL, MALLOC_CAP_SPIRAM) != pdPASS) {
+        ESP_LOGE(TAG, "Error creating cpu monitor task");
+    }
+    if (xTaskCreateWithCaps(task_monitor_task, "task_monitor", 8192, NULL, 1, NULL, MALLOC_CAP_SPIRAM) != pdPASS) {
+        ESP_LOGE(TAG, "Error creating task monitor task");
+    }
+
     //start the API for AxeOS
     start_rest_server((void *) &GLOBAL_STATE);
 
@@ -115,6 +124,10 @@ void app_main(void)
     cluster_watchdog_init(&GLOBAL_STATE);
     auto_timing_init(&GLOBAL_STATE);
     auto_timing_start(&GLOBAL_STATE);
+
+    if (scoreboard_init(&GLOBAL_STATE.SYSTEM_MODULE.scoreboard) != ESP_OK) {
+        ESP_LOGE(TAG, "Error initializing scoreboard");
+    }
 
     queue_init(&GLOBAL_STATE.stratum_queue);
     queue_init(&GLOBAL_STATE.stratum_queue_secondary);  // For dual pool mode

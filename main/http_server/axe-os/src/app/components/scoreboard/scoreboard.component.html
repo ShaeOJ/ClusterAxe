@@ -1,0 +1,43 @@
+<div class="card">
+    <div class="flex justify-content-between flex-column md:align-items-center md:flex-row mb-3">
+        <h2 class="mb-0 h-3rem">
+            <i class="pi pi-trophy mr-2"></i>Best Shares
+        </h2>
+        <span class="text-500">Top {{ entries.length }} highest-difficulty shares this uptime</span>
+    </div>
+
+    <div *ngIf="loading" class="text-center p-4 text-500">
+        <i class="pi pi-spin pi-spinner mr-2"></i>Loading…
+    </div>
+
+    <div *ngIf="!loading && entries.length === 0" class="text-center p-4 text-500">
+        No shares recorded yet. The board fills as your miner finds high-difficulty shares.
+    </div>
+
+    <div *ngIf="!loading && entries.length > 0" class="overflow-x-auto">
+        <table class="w-full" style="border-collapse: collapse;">
+            <thead>
+                <tr class="text-left text-500">
+                    <th class="p-2">#</th>
+                    <th class="p-2">Difficulty</th>
+                    <th class="p-2">Nonce</th>
+                    <th class="p-2">Version</th>
+                    <th class="p-2">nTime</th>
+                    <th class="p-2">Job</th>
+                    <th class="p-2">Extranonce2</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr *ngFor="let e of entries; let i = index" style="border-top: 1px solid var(--surface-border);">
+                    <td class="p-2">{{ i + 1 }}</td>
+                    <td class="p-2 font-bold">{{ formatDifficulty(e.difficulty) }}</td>
+                    <td class="p-2"><code>{{ e.nonce }}</code></td>
+                    <td class="p-2"><code>{{ e.version_bits }}</code></td>
+                    <td class="p-2">{{ e.ntime }}</td>
+                    <td class="p-2">{{ e.job_id }}</td>
+                    <td class="p-2"><code>{{ e.extranonce2 }}</code></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>

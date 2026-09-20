@@ -75,6 +75,7 @@ typedef enum {
     NVS_CONFIG_TPS546,
     NVS_CONFIG_TMP1075,
     NVS_CONFIG_POWER_CONSUMPTION_TARGET,
+    NVS_CONFIG_USE_CUSTOM_WWW,      // Serve a user-uploaded UI from SPIFFS instead of the firmware-embedded UI
     NVS_CONFIG_COUNT
 } NvsConfigKey;
 

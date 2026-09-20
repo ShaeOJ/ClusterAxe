@@ -6,10 +6,17 @@
 
 #include "cJSON.h"
 #include "cluster_config.h"
+#include "global_state.h"
 
 esp_err_t is_network_allowed(httpd_req_t * req);
 esp_err_t start_rest_server(void *pvParameters);
 esp_err_t HTTP_send_json(httpd_req_t * req, const cJSON * item, int * prebuffer_len);
+
+/**
+ * @brief Build a compact JSON object of fast-changing telemetry for the live
+ *        WebSocket feed. Caller owns (must cJSON_Delete) the returned object.
+ */
+cJSON * build_live_info_json(GlobalState * GLOBAL_STATE);
 
 #if CLUSTER_IS_MASTER
 /**

@@ -45,7 +45,7 @@ if %BUILD_RESULT% NEQ 0 (
 
 :: Give the app binary a variant-specific name so master/slave never get mixed up.
 :: (project() names it zombie-os-slave via the cluster-mode check in CMakeLists.)
-copy /Y build_slave\zombie-os-slave.bin build_slave\clusteraxe-gamma601-slave.bin >nul
+copy /Y build_slave\zombie-os.bin build_slave\clusteraxe-gamma601-slave.bin >nul
 
 echo.
 echo ============================================
@@ -57,7 +57,6 @@ echo  - clusteraxe-gamma601-slave.bin (copy of app, variant-named^)
 echo  - zombie-os.bin (main application^)
 echo  - bootloader\bootloader.bin
 echo  - partition_table\partition-table.bin
-echo  - www.bin
 echo.
 echo Flash from build_slave\ (see the esptool line idf.py printed above^).
 echo.

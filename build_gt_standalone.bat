@@ -56,7 +56,6 @@ echo  - clusteraxe-gt801-standalone.bin (copy of app, variant-named^)
 echo  - zombie-os.bin (main application^)
 echo  - bootloader\bootloader.bin
 echo  - partition_table\partition-table.bin
-echo  - www.bin
 echo.
 echo Flash from build_gt_standalone\ (see the esptool line idf.py printed above^).
 echo.

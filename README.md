@@ -75,21 +75,21 @@ Download from [Releases](https://github.com/ShaeOJ/ClusterAxe/releases):
 # Install esptool if needed
 pip install esptool
 
+# The web UI is now embedded in the app binary, so there is no www.bin to flash.
+
 # Flash Master (replace COM3 with your port)
 esptool.py --chip esp32s3 --port COM3 --baud 460800 write_flash \
   -z --flash_mode dio --flash_freq 80m --flash_size detect \
   0x0 bootloader.bin \
   0x8000 partition-table.bin \
-  0x10000 clusteraxe-master.bin \
-  0x410000 www.bin
+  0x10000 clusteraxe-master.bin
 
 # Flash Slave
 esptool.py --chip esp32s3 --port COM4 --baud 460800 write_flash \
   -z --flash_mode dio --flash_freq 80m --flash_size detect \
   0x0 bootloader.bin \
   0x8000 partition-table.bin \
-  0x10000 clusteraxe-slave.bin \
-  0x410000 www.bin
+  0x10000 clusteraxe-slave.bin
 ```
 
 ---

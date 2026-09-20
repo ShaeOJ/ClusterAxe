@@ -14,6 +14,7 @@
 #include "work_queue.h"
 #include "device_config.h"
 #include "display.h"
+#include "scoreboard.h"
 
 #define STRATUM_USER CONFIG_STRATUM_USER
 #define FALLBACK_STRATUM_USER CONFIG_FALLBACK_STRATUM_USER
@@ -87,6 +88,13 @@ typedef struct
     char firmware_update_filename[20];
     char firmware_update_status[20];
     char * asic_status;
+    float cpu_usage;    // Rolling CPU utilization %, updated by cpu_monitor_task
+    Scoreboard scoreboard;  // Top-20 highest-difficulty shares this uptime
+    // Most recently found nonce (any difficulty) + its share context
+    uint32_t last_nonce;
+    double last_nonce_diff;
+    uint32_t last_nonce_version;
+    uint32_t last_nonce_ntime;
 } SystemModule;
 
 typedef struct

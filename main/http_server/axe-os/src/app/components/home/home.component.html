@@ -1004,6 +1004,44 @@
                             {{ info.scriptsig }}
                         </div>
                     </div>
+
+                    <ng-container *ngIf="info.lastNonce">
+                        <div class="flex flex-nowrap align-items-baseline">
+                            <div class="col-fixed-width text-500">
+                                <i class="pi pi-hashtag mr-1"></i><span>Last Nonce</span>
+                            </div>
+                            <div class="code">
+                                {{ info.lastNonce }}
+                            </div>
+                        </div>
+
+                        <div class="flex flex-nowrap">
+                            <div class="col-fixed-width text-500">
+                                <i class="pi pi-gauge mr-1"></i><span>Nonce Diff</span>
+                            </div>
+                            <div *ngIf="info.lastNonceDiff" class="cursor-pointer" pTooltip="{{info.lastNonceDiff | number:'1.0-0'}}" tooltipPosition="bottom">
+                                {{ info.lastNonceDiff | diffSuffix }}
+                            </div>
+                        </div>
+
+                        <div class="flex flex-nowrap align-items-baseline">
+                            <div class="col-fixed-width text-500">
+                                <i class="pi pi-sliders-h mr-1"></i><span>Version</span>
+                            </div>
+                            <div class="code">
+                                {{ info.lastNonceVersion }}
+                            </div>
+                        </div>
+
+                        <div class="flex flex-nowrap" *ngIf="info.lastNonceTime">
+                            <div class="col-fixed-width text-500">
+                                <i class="pi pi-clock mr-1"></i><span>nTime</span>
+                            </div>
+                            <div>
+                                {{ (info.lastNonceTime * 1000) | date:'HH:mm:ss' }}
+                            </div>
+                        </div>
+                    </ng-container>
                 </ng-template>
                 </ng-container>
             </div>

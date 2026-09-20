@@ -268,4 +268,17 @@ export class SystemService {
   public updateSwarm(uri: string = '', swarmConfig: any) {
     return this.httpClient.patch(`${uri}/api/swarm`, swarmConfig);
   }
+
+  public getScoreboard(uri: string = ''): Observable<IScoreboardEntry[]> {
+    return this.httpClient.get<IScoreboardEntry[]>(`${uri}/api/system/scoreboard`).pipe(timeout(5000));
+  }
+}
+
+export interface IScoreboardEntry {
+  difficulty: number;
+  job_id: string;
+  extranonce2: string;
+  ntime: number;
+  nonce: string;
+  version_bits: string;
 }

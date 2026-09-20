@@ -176,5 +176,9 @@
 
         <button *ngIf="settingsUnlocked" pButton pButton="p-button-danger" (click)="toggleOverclockMode(false)"
             class="p-button-danger" pTooltip="Return to safe preset values only">Disable Overclock Mode</button>
+
+        <button *ngIf="!settingsUnlocked" pButton type="button" (click)="toggleOverclockMode(true)"
+            class="p-button-warning" icon="pi pi-lock-open"
+            pTooltip="Unlock custom frequency & voltage input (advanced)">Unlock Overclock Mode</button>
     </div>
 </form>

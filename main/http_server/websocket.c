@@ -10,6 +10,7 @@
 #include "esp_log.h"
 #include "esp_http_server.h"
 #include "websocket.h"
+#include "websocket_api.h"
 #include "http_server.h"
 
 static const char * TAG = "websocket";
@@ -115,7 +116,8 @@ static void remove_client(int fd)
 void websocket_close_fn(httpd_handle_t hd, int fd)
 {
     ESP_LOGI(TAG, "WebSocket client disconnected, fd: %d", fd);
-    remove_client(fd);
+    remove_client(fd);              // log websocket client list
+    websocket_api_remove_client(fd);  // live-telemetry websocket client list
     close(fd);
 }
 

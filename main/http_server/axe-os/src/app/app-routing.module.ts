@@ -12,6 +12,7 @@ import { DesignComponent } from './components/design/design.component';
 import { PoolComponent } from './components/pool/pool.component';
 import { ClusterComponent } from './components/cluster/cluster.component';
 import { TunerComponent } from './components/tuner/tuner.component';
+import { ScoreboardComponent } from './components/scoreboard/scoreboard.component';
 import { AppLayoutComponent } from './layout/app.layout.component';
 import { ApModeGuard } from './guards/ap-mode.guard';
 
@@ -88,6 +89,11 @@ const routes: Routes = [
         path: 'tuner',
         component: TunerComponent,
         title: `${TITLE_PREFIX} Tuner`,
+      },
+      {
+        path: 'scoreboard',
+        component: ScoreboardComponent,
+        title: `${TITLE_PREFIX} Best Shares`,
       }
     ]
   },

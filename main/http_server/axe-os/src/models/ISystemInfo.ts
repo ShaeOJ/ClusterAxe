@@ -44,6 +44,8 @@ export interface ISystemInfo {
     freeHeap: number,
     freeHeapInternal: number,
     freeHeapSpiram: number,
+    cpuUsage?: number,
+    useCustomWWW?: number,
     coreVoltage: number,
     hostname: string,
     macAddr: string,
@@ -99,6 +101,12 @@ export interface ISystemInfo {
     blockHeight?: number,
     scriptsig?: string,
     networkDifficulty?: number,
+
+    // Most recently found nonce (Block Header card)
+    lastNonce?: string,
+    lastNonceDiff?: number,
+    lastNonceVersion?: string,
+    lastNonceTime?: number,
 
     hashrateMonitor: IHashrateMonitor,
     blockFound: number,

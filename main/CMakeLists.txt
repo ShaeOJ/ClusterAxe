@@ -8,6 +8,7 @@ SRCS
     "screen.c"
     "input.c"
     "system.c"
+    "task_monitor.c"
     "work_queue.c"
     "lv_font_portfolio-6x8.c"
     "logo.c"
@@ -19,6 +20,7 @@ SRCS
     "device_config.c"
     "./http_server/http_server.c"
     "./http_server/websocket.c"
+    "./http_server/websocket_api.c"
     "./http_server/theme_api.c"
     "./http_server/axe-os/api/system/asic_settings.c"
     "./self_test/self_test.c"
@@ -28,6 +30,7 @@ SRCS
     "./tasks/asic_result_task.c"
     "./tasks/power_management_task.c"
     "./tasks/statistics_task.c"
+    "./tasks/scoreboard.c"
     "./tasks/hashrate_monitor_task.c"
     "./thermal/EMC2101.c"
     "./thermal/EMC2103.c"
@@ -51,11 +54,14 @@ SRCS
     "./cluster/cluster_espnow.c"
     "./cluster/cluster_watchdog.c"
     "auto_timing.c"
+    # Web UI embedded directly into the app binary (replaces the www.bin SPIFFS image)
+    "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.c"
 
 INCLUDE_DIRS
     "."
     "tasks"
     "http_server"
+    "${CMAKE_CURRENT_BINARY_DIR}"
     "http_server/axe-os/api/system"
     "self_test"
     "bap"
@@ -97,7 +103,20 @@ set(WEB_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/http_server/axe-os")
 if("$ENV{GITHUB_ACTIONS}" STREQUAL "true")
     message(STATUS "Running on GitHub Actions. Web ui will be prebuilt.")
 
-    spiffs_create_partition_image(www ${WEB_SRC_DIR}/dist/axe-os FLASH_IN_PROJECT)
+    # CI provides a prebuilt dist/. Just embed it into the app binary.
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.c" "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.h"
+        COMMAND ${PYTHON} "${CMAKE_SOURCE_DIR}/tools/embed_web_ui.py"
+                "${WEB_SRC_DIR}/dist/axe-os"
+                "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.c"
+                "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.h"
+        DEPENDS "${CMAKE_SOURCE_DIR}/tools/embed_web_ui.py"
+        COMMENT "Generating embedded Web UI source files (CI)"
+        VERBATIM
+    )
+
+    add_custom_target(web_ui_gen DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.c")
+    add_dependencies(${COMPONENT_LIB} web_ui_gen)
 else()
     find_program(NPM_EXECUTABLE npm)
     if(NOT NPM_EXECUTABLE AND NOT EXISTS ${WEB_SRC_DIR}/dist)
@@ -148,5 +167,19 @@ else()
 
     add_dependencies(${COMPONENT_LIB} web_ui_dist)
 
-    spiffs_create_partition_image(www ${WEB_SRC_DIR}/dist/axe-os FLASH_IN_PROJECT DEPENDS web_ui_dist)
+    # Generate embedded C files from the build output directory, then compile
+    # them into the app binary. No more separate www.bin SPIFFS image.
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.c" "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.h"
+        COMMAND ${PYTHON} "${CMAKE_SOURCE_DIR}/tools/embed_web_ui.py"
+                "${WEB_SRC_DIR}/dist/axe-os"
+                "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.c"
+                "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.h"
+        DEPENDS ${WEB_UI_STAMP} "${CMAKE_SOURCE_DIR}/tools/embed_web_ui.py"
+        COMMENT "Generating embedded Web UI source files"
+        VERBATIM
+    )
+
+    add_custom_target(web_ui_gen DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/embedded_web_ui.c")
+    add_dependencies(${COMPONENT_LIB} web_ui_gen)
 endif()

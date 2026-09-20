@@ -446,7 +446,7 @@ static esp_err_t save_mode_to_nvs(cluster_mode_t mode);
 **Build Status:**
 - [x] Master firmware built successfully
 - [x] Slave firmware built successfully
-- [x] Web UI compiled and included in www.bin
+- [x] Web UI compiled and embedded directly into the app binary (no separate www.bin)
 
 ### 7.1 Unit Testing
 
