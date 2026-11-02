@@ -74,7 +74,7 @@
                     <div>
                         <span class="font-medium">Safety Watchdog</span>
                         <span class="text-xs text-500 ml-2">
-                            Temp &ge; {{watchdogStatus.tempThreshold}}°C or Vin &le; {{watchdogStatus.vinThreshold}}V triggers throttle
+                            Temp &ge; {{watchdogStatus.tempThreshold | number:'1.0-0'}}°C or Vin &le; {{watchdogStatus.vinThreshold | number:'1.1-1'}}V triggers throttle
                         </span>
                     </div>
                 </div>
