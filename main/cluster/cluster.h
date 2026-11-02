@@ -403,6 +403,11 @@ void cluster_slave_on_share_found(uint32_t nonce, uint32_t job_id, uint32_t vers
  */
 void cluster_slave_get_shares(uint32_t *shares_found, uint32_t *shares_submitted);
 
+// Remote config/command handlers (ESP-NOW fallback). Payload is the message
+// body after the "$CLSET,"/"$CLCMD," prefix. See cluster_slave.c.
+esp_err_t cluster_slave_apply_remote_setting(const char *payload);
+esp_err_t cluster_slave_apply_remote_command(const char *payload);
+
 #endif // CLUSTER_ENABLED
 
 // ============================================================================

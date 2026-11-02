@@ -315,6 +315,16 @@ esp_err_t cluster_handle_bap_message(const char *msg_type,
             return ret;
         }
 
+        // Remote setting from master (ESP-NOW fallback when slave has no LAN IP)
+        if (strcmp(msg_type, "CLSET") == 0) {
+            return cluster_slave_apply_remote_setting(payload);
+        }
+
+        // Remote command from master (restart/identify)
+        if (strcmp(msg_type, "CLCMD") == 0) {
+            return cluster_slave_apply_remote_command(payload);
+        }
+
         // Registration acknowledgment
         if (strcmp(msg_type, BAP_MSG_ACK) == 0) {
             uint8_t slave_id;

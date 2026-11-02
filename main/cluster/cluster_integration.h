@@ -14,6 +14,7 @@
 
 #include "cluster.h"
 #include "cluster_config.h"
+#include "cluster_remote_config.h"
 #include "global_state.h"
 #include "stratum_api.h"
 
@@ -28,6 +29,15 @@ extern "C" {
 // ============================================================================
 
 #if CLUSTER_IS_MASTER
+
+/**
+ * @brief Deliver a setting/command to a slave over the cluster transport
+ * (ESP-NOW/BAP). Fallback for when the slave has no usable LAN IP or the
+ * HTTP proxy failed. settingId uses the 0x20-0x24 map (freq/voltage/fan/
+ * fanmode/targettemp). The slave filters by slave_id and applies to NVS.
+ */
+esp_err_t cluster_master_send_remote_setting(uint8_t slave_id, uint8_t setting_id, int32_t value);
+esp_err_t cluster_master_send_remote_command(uint8_t slave_id, cluster_remote_cmd_t cmd);
 
 /**
  * @brief Convert mining_notify to cluster_work_t and distribute to slaves

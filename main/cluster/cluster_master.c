@@ -12,6 +12,7 @@
 #include "cluster.h"
 #include "cluster_protocol.h"
 #include "cluster_config.h"
+#include "cluster_remote_config.h"
 #include "auto_timing.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -660,6 +661,60 @@ void cluster_master_update_slave_mac(uint8_t slave_id, const uint8_t *mac)
     }
 
     xSemaphoreGive(g_master->slaves_mutex);
+}
+
+// ============================================================================
+// Remote config / command delivery over the cluster transport (ESP-NOW/BAP)
+// Fallback used when a slave has no usable LAN IP, or HTTP delivery failed.
+// Slaves filter by the slave_id embedded in the payload (same as work).
+// ============================================================================
+
+// Frame an already-built "$CLxxx,..." payload (no checksum yet) with *CS\r\n
+// and broadcast it. buf must hold payload_len chars + room for "*XX\r\n".
+static esp_err_t cluster_send_framed(char *buf, size_t payload_len, size_t buf_len)
+{
+    uint8_t cs = cluster_protocol_calc_checksum(buf + 1);  // XOR of everything after '$'
+    int added = snprintf(buf + payload_len, buf_len - payload_len, "*%02X\r\n", cs);
+    if (added < 0 || (size_t)added >= buf_len - payload_len) {
+        return ESP_FAIL;
+    }
+    size_t total = payload_len + added;
+
+#if defined(CONFIG_CLUSTER_TRANSPORT_ESPNOW) || defined(CONFIG_CLUSTER_TRANSPORT_BOTH)
+    extern esp_err_t cluster_espnow_broadcast(const char *data, size_t len);
+    esp_err_t ret = ESP_FAIL;
+    for (int attempt = 0; attempt < 3; attempt++) {   // broadcast has no ACK — retry
+        ret = cluster_espnow_broadcast(buf, total);
+        if (ret == ESP_OK) break;
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    return ret;
+#else
+    extern esp_err_t BAP_uart_send_raw(const char *data, size_t len);
+    return BAP_uart_send_raw(buf, total);
+#endif
+}
+
+esp_err_t cluster_master_send_remote_setting(uint8_t slave_id, uint8_t setting_id, int32_t value)
+{
+    if (!g_master) return ESP_ERR_INVALID_STATE;
+    char buf[64];
+    int n = snprintf(buf, sizeof(buf), "$CLSET,%u,%u,%ld",
+                     (unsigned)slave_id, (unsigned)setting_id, (long)value);
+    if (n < 0 || (size_t)n >= sizeof(buf)) return ESP_FAIL;
+    ESP_LOGI(TAG, "ESP-NOW remote setting -> slave %u: id=0x%02X val=%ld",
+             slave_id, setting_id, (long)value);
+    return cluster_send_framed(buf, (size_t)n, sizeof(buf));
+}
+
+esp_err_t cluster_master_send_remote_command(uint8_t slave_id, cluster_remote_cmd_t cmd)
+{
+    if (!g_master) return ESP_ERR_INVALID_STATE;
+    char buf[48];
+    int n = snprintf(buf, sizeof(buf), "$CLCMD,%u,%u", (unsigned)slave_id, (unsigned)cmd);
+    if (n < 0 || (size_t)n >= sizeof(buf)) return ESP_FAIL;
+    ESP_LOGI(TAG, "ESP-NOW remote command -> slave %u: cmd=%u", slave_id, (unsigned)cmd);
+    return cluster_send_framed(buf, (size_t)n, sizeof(buf));
 }
 
 /**

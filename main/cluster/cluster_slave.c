@@ -13,10 +13,13 @@
 #include "cluster.h"
 #include "cluster_protocol.h"
 #include "cluster_config.h"
+#include "cluster_remote_config.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_system.h"
 #include "string.h"
 #include "stdio.h"
+#include "cJSON.h"
 
 #if CLUSTER_ENABLED && CLUSTER_IS_SLAVE
 
@@ -716,6 +719,95 @@ void cluster_slave_get_shares(uint32_t *shares_found, uint32_t *shares_submitted
     if (shares_submitted) {
         *shares_submitted = g_slave ? g_slave->shares_submitted : 0;
     }
+}
+
+// ============================================================================
+// Remote config / command handling (ESP-NOW fallback for IP-less slaves)
+// Payloads arrive already stripped of the "$CLSET,"/"$CLCMD," prefix.
+//   CLSET payload: "<target_slave_id>,<setting_id>,<value>"
+//   CLCMD payload: "<target_slave_id>,<cmd>"
+// target 0xFF (255) = broadcast to all slaves.
+// ============================================================================
+
+// Shared apply path used by the slave's own HTTP PATCH handler — reuse it so
+// an ESP-NOW-delivered setting behaves identically (NVS write + live apply).
+extern bool check_settings_and_update(const cJSON * const root);
+
+esp_err_t cluster_slave_apply_remote_setting(const char *payload)
+{
+    if (!payload || !g_slave) return ESP_ERR_INVALID_ARG;
+
+    int target = -1, sid = -1;
+    long val = 0;
+    if (sscanf(payload, "%d,%d,%ld", &target, &sid, &val) != 3) {
+        ESP_LOGW(TAG, "Bad CLSET payload: %s", payload);
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (target != 0xFF && target != g_slave->my_id) {
+        return ESP_OK;  // not addressed to this slave
+    }
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return ESP_ERR_NO_MEM;
+
+    switch (sid) {
+        case 0x20:  // FREQUENCY
+            cJSON_AddNumberToObject(root, "frequency", val);
+            break;
+        case 0x21:  // CORE_VOLTAGE
+            cJSON_AddNumberToObject(root, "coreVoltage", val);
+            break;
+        case 0x22:  // FAN_SPEED (manual) — also disable auto, matching HTTP path
+            cJSON_AddNumberToObject(root, "manualFanSpeed", val);
+            cJSON_AddNumberToObject(root, "autofanspeed", 0);
+            break;
+        case 0x23:  // FAN_MODE (0 = auto -> autofanspeed 1)
+            cJSON_AddNumberToObject(root, "autofanspeed", val == 0 ? 1 : 0);
+            break;
+        case 0x24:  // TARGET_TEMP
+            cJSON_AddNumberToObject(root, "temptarget", val);
+            break;
+        default:
+            cJSON_Delete(root);
+            ESP_LOGW(TAG, "Unknown remote setting id 0x%02X", sid);
+            return ESP_ERR_INVALID_ARG;
+    }
+
+    bool ok = check_settings_and_update(root);
+    cJSON_Delete(root);
+    ESP_LOGI(TAG, "Remote setting 0x%02X=%ld via ESP-NOW: %s", sid, val, ok ? "applied" : "FAILED");
+    return ok ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t cluster_slave_apply_remote_command(const char *payload)
+{
+    if (!payload || !g_slave) return ESP_ERR_INVALID_ARG;
+
+    int target = -1, cmd = -1;
+    if (sscanf(payload, "%d,%d", &target, &cmd) != 2) {
+        ESP_LOGW(TAG, "Bad CLCMD payload: %s", payload);
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (target != 0xFF && target != g_slave->my_id) {
+        return ESP_OK;  // not addressed to this slave
+    }
+
+    switch (cmd) {
+        case CLUSTER_CMD_RESTART:
+            ESP_LOGW(TAG, "Remote RESTART via ESP-NOW — restarting in 200ms");
+            vTaskDelay(pdMS_TO_TICKS(200));
+            esp_restart();  // no return
+            break;
+        case CLUSTER_CMD_IDENTIFY:
+            // No dedicated slave LED-identify hook; log so the operator can see
+            // which unit acknowledged. (Serial/console shows this slave reacting.)
+            ESP_LOGI(TAG, "Remote IDENTIFY via ESP-NOW (slave %d)", g_slave->my_id);
+            break;
+        default:
+            ESP_LOGW(TAG, "Unsupported remote command %d", cmd);
+            return ESP_ERR_NOT_SUPPORTED;
+    }
+    return ESP_OK;
 }
 
 #endif // CLUSTER_ENABLED && CLUSTER_IS_SLAVE

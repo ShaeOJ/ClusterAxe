@@ -1927,11 +1927,6 @@ static esp_err_t cluster_slave_api_handler(httpd_req_t *req)
             return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Slave not found");
         }
 
-        if (strlen(slave_info.ip_addr) == 0 || strcmp(slave_info.ip_addr, "N/A") == 0) {
-            cJSON_Delete(setting_req);
-            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Slave has no IP address for HTTP");
-        }
-
         // Map settingId to /api/system field name
         // 0x20 = frequency, 0x21 = coreVoltage, 0x22 = manualFanSpeed, 0x23 = autofanspeed, 0x24 = temptarget
         char patch_data[128];
@@ -1961,25 +1956,36 @@ static esp_err_t cluster_slave_api_handler(httpd_req_t *req)
 
         cJSON_Delete(setting_req);
 
-        // Proxy to slave via HTTP PATCH
-        ESP_LOGI(TAG, "Applying to slave %s: %s", slave_info.ip_addr, patch_data);
-        char *response = NULL;
-        esp_err_t err = http_proxy_to_slave(slave_info.ip_addr, "/api/system", HTTP_METHOD_PATCH, patch_data, &response);
+        bool has_ip = strlen(slave_info.ip_addr) > 0 &&
+                      strcmp(slave_info.ip_addr, "N/A") != 0 &&
+                      strcmp(slave_info.ip_addr, "0.0.0.0") != 0;
 
-        if (response) {
-            free(response);
+        esp_err_t err = ESP_FAIL;
+        if (has_ip) {
+            // Preferred path: HTTP PATCH to the slave over the LAN.
+            ESP_LOGI(TAG, "Applying to slave %s: %s", slave_info.ip_addr, patch_data);
+            char *response = NULL;
+            err = http_proxy_to_slave(slave_info.ip_addr, "/api/system", HTTP_METHOD_PATCH, patch_data, &response);
+            if (response) free(response);
+        }
+        // Fallback: deliver the setting over ESP-NOW remote-config when the slave
+        // has no usable LAN IP (ESP-NOW-only) or the HTTP proxy failed (flaky WiFi).
+        if (err != ESP_OK) {
+            ESP_LOGI(TAG, "HTTP unavailable for slave %d — sending setting 0x%02X=%d over ESP-NOW",
+                     slave_id, sid, val);
+            err = cluster_master_send_remote_setting(slave_id, (uint8_t)sid, (int32_t)val);
         }
 
         if (err == ESP_OK) {
             httpd_resp_sendstr(req, "{\"success\":true}");
         } else {
-            ESP_LOGE(TAG, "Failed to apply setting to slave %s", slave_info.ip_addr);
+            ESP_LOGE(TAG, "Failed to apply setting to slave %d (HTTP + ESP-NOW both failed)", slave_id);
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to apply setting to slave");
         }
         return err == ESP_OK ? ESP_OK : ESP_FAIL;
 
     } else if (strcmp(action, "command") == 0 && req->method == HTTP_POST) {
-        // POST command
+        // POST command: {command: "restart" | "identify"}
         char buf[256];
         int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
         if (received <= 0) {
@@ -1988,8 +1994,59 @@ static esp_err_t cluster_slave_api_handler(httpd_req_t *req)
         buf[received] = '\0';
 
         ESP_LOGI(TAG, "Command to slave %d: %s", slave_id, buf);
-        httpd_resp_sendstr(req, "{\"success\":true}");
-        return ESP_OK;
+
+        cJSON *cmd_req = cJSON_Parse(buf);
+        if (!cmd_req) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        }
+        cJSON *command = cJSON_GetObjectItem(cmd_req, "command");
+        if (!command || !cJSON_IsString(command)) {
+            cJSON_Delete(cmd_req);
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing command");
+        }
+
+        cluster_slave_t slave_info;
+        if (cluster_master_get_slave_info(slave_id, &slave_info) != ESP_OK) {
+            cJSON_Delete(cmd_req);
+            return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Slave not found");
+        }
+
+        const char *endpoint = NULL;
+        if (strcmp(command->valuestring, "restart") == 0) {
+            endpoint = "/api/system/restart";
+        } else if (strcmp(command->valuestring, "identify") == 0) {
+            endpoint = "/api/system/identify";
+        }
+        cJSON_Delete(cmd_req);
+
+        if (!endpoint) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown command");
+        }
+
+        bool has_ip = strlen(slave_info.ip_addr) > 0 &&
+                      strcmp(slave_info.ip_addr, "N/A") != 0 &&
+                      strcmp(slave_info.ip_addr, "0.0.0.0") != 0;
+
+        esp_err_t err = ESP_FAIL;
+        if (has_ip) {
+            char *response = NULL;
+            err = http_proxy_to_slave(slave_info.ip_addr, endpoint, HTTP_METHOD_POST, "{}", &response);
+            if (response) free(response);
+        }
+        // Fall back to the ESP-NOW remote command path if HTTP isn't available
+        // (slave has no LAN IP) or the proxy failed.
+        if (err != ESP_OK) {
+            cluster_remote_cmd_t rc = (strcmp(endpoint, "/api/system/restart") == 0)
+                                      ? CLUSTER_CMD_RESTART : CLUSTER_CMD_IDENTIFY;
+            err = cluster_master_send_remote_command(slave_id, rc);
+        }
+
+        if (err == ESP_OK) {
+            httpd_resp_sendstr(req, "{\"success\":true}");
+            return ESP_OK;
+        }
+        ESP_LOGE(TAG, "Failed to send command to slave %d (no IP and ESP-NOW send failed)", slave_id);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to send command to slave");
     }
 
     return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Unknown action");
