@@ -76,6 +76,7 @@ export interface DeviceInfo {
   power: number;
   voltage: number;
   errorPercentage: number;    // hardware error rate (%)
+  overheatMode: boolean;      // firmware entered overheat safe-mode (throttled)
 }
 
 @Injectable({
@@ -301,12 +302,35 @@ export class BenchmarkService {
           continue;
         }
 
-        // Wait for stabilization
+        // Wait for stabilization — but keep watching temp/overheat so an
+        // aggressive point can't cook the chip during this window and trip the
+        // firmware's 75°C overheat latch mid-run (which forces fan 100%, knocks
+        // the overclock down, and invalidates the rest of the benchmark).
         this.updateState({ phase: 'stabilizing' });
         this.log(`Stabilizing for ${config.stabilizationMs / 1000}s...`);
-        await this.waitWithProgress(config.stabilizationMs);
+        const guard = await this.stabilizeWithGuard(config);
 
         if (this.stopRequested) break;
+
+        if (guard === 'abort') {
+          this.log('ABORT: device entered overheat safe-mode — stopping benchmark');
+          this.updateState({ error: 'Device overheated (firmware safe-mode). Benchmark stopped.' });
+          break;
+        }
+        if (guard === 'skip') {
+          this.log(`Skipping ${frequency} MHz @ ${voltage} mV — too hot during stabilization`);
+          this.state.results.push({
+            voltage, frequency, expectedHashrate: calcExpectedHashrate(frequency),
+            avgHashrate: 0, efficiency: 999, avgTemp: 0, avgPower: 0,
+            avgErrorPercent: 0, hashratePercent: 0, samples: 0,
+            passed: false, failReason: 'Too hot (pre-sample)'
+          });
+          this.updateState({ results: [...this.state.results] });
+          // Hashrate will only get worse going higher at this voltage — let the
+          // existing smart-skip logic handle the rest via prev tracking.
+          prevVoltage = voltage;
+          continue;
+        }
 
         // Collect samples
         this.updateState({ phase: 'sampling', samplesCollected: 0 });
@@ -464,7 +488,8 @@ export class BenchmarkService {
       vrTemp: response.vrTemp || 0,
       power: response.power || 0,
       voltage: response.voltage || 0,
-      errorPercentage: response.errorPercentage || 0
+      errorPercentage: response.errorPercentage || 0,
+      overheatMode: response.overheat_mode === 1 || response.overheat_mode === true
     };
   }
 
@@ -488,12 +513,48 @@ export class BenchmarkService {
     }
   }
 
+  /**
+   * Wait out the stabilization window while polling the device every 3s.
+   * Returns 'abort' if the firmware entered overheat safe-mode, 'skip' if the
+   * point is too hot (bail before the firmware's ~75°C latch trips), else 'ok'.
+   */
+  private async stabilizeWithGuard(config: BenchmarkConfig): Promise<'ok' | 'skip' | 'abort'> {
+    const endTime = Date.now() + config.stabilizationMs;
+    // Trip a few degrees below the configured max so we bail BEFORE the firmware
+    // safe-mode latches (firmware chip trip is 75°C).
+    const chipGuard = Math.min(config.maxTemp, 73);
+
+    while (Date.now() < endTime && !this.stopRequested) {
+      this.updateState({ timeRemainingMs: endTime - Date.now() });
+      try {
+        const info = await this.getDeviceInfo(config.targetIp);
+        this.updateState({ liveTemp: info.temp, livePower: info.power, liveHashrate: info.hashRate });
+        if (info.overheatMode) return 'abort';
+        if (info.temp > chipGuard) return 'skip';
+        if (info.vrTemp > config.maxVrTemp) return 'skip';
+      } catch (_) {
+        // device may be mid-apply / briefly unreachable — keep waiting
+      }
+      await firstValueFrom(timer(3000));
+    }
+    return 'ok';
+  }
+
   private async collectSamples(config: BenchmarkConfig, samplesNeeded: number): Promise<DeviceInfo[]> {
     const samples: DeviceInfo[] = [];
 
     for (let i = 0; i < samplesNeeded && !this.stopRequested; i++) {
       try {
         const info = await this.getDeviceInfo(config.targetIp);
+
+        // Firmware entered overheat safe-mode — the device is now throttled, so
+        // any further results are invalid. Stop the whole run.
+        if (info.overheatMode) {
+          this.log('ABORT: device entered overheat safe-mode — stopping benchmark');
+          this.updateState({ error: 'Device overheated (firmware safe-mode). Benchmark stopped.' });
+          this.stopRequested = true;
+          break;
+        }
 
         // Safety checks — abort sampling if temp is dangerous
         if (info.temp > config.maxTemp) {
