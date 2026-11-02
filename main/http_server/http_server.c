@@ -1525,6 +1525,7 @@ static esp_err_t GET_cluster_status(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "totalShares", stats.total_shares);
     cJSON_AddNumberToObject(root, "totalSharesAccepted", stats.total_shares_accepted);
     cJSON_AddNumberToObject(root, "totalSharesRejected", stats.total_shares_rejected);
+    cJSON_AddNumberToObject(root, "workDistributed", stats.work_distributed);
 
     // Per-pool stats for dual pool mode
     cJSON_AddNumberToObject(root, "primarySharesAccepted", stats.primary_shares_accepted);
@@ -1590,12 +1591,23 @@ static esp_err_t GET_cluster_status(httpd_req_t *req)
             cJSON_AddNumberToObject(slave, "fanRpm", slave_info.fan_rpm);
             cJSON_AddNumberToObject(slave, "sharesSubmitted", slave_info.shares_submitted);
             cJSON_AddNumberToObject(slave, "sharesAccepted", slave_info.shares_accepted);
+            cJSON_AddNumberToObject(slave, "sharesRejected", slave_info.shares_rejected);
             cJSON_AddNumberToObject(slave, "lastSeen", slave_info.last_seen);
+            cJSON_AddNumberToObject(slave, "lastWorkSent", slave_info.last_work_sent);
             // Extended stats
             cJSON_AddNumberToObject(slave, "frequency", slave_info.frequency);
             cJSON_AddNumberToObject(slave, "coreVoltage", slave_info.core_voltage);
             cJSON_AddFloatToObject(slave, "power", slave_info.power);
             cJSON_AddFloatToObject(slave, "voltageIn", slave_info.voltage_in);
+            // Assigned nonce range (informational — see generate_extranonce2_for_slave)
+            cJSON_AddNumberToObject(slave, "nonceRangeStart", slave_info.nonce_range_start);
+            cJSON_AddNumberToObject(slave, "nonceRangeSize", slave_info.nonce_range_size);
+            // ESP-NOW MAC address (xx:xx:xx:xx:xx:xx)
+            char mac_str[18];
+            snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
+                     slave_info.mac_addr[0], slave_info.mac_addr[1], slave_info.mac_addr[2],
+                     slave_info.mac_addr[3], slave_info.mac_addr[4], slave_info.mac_addr[5]);
+            cJSON_AddStringToObject(slave, "macAddr", mac_str);
             cJSON_AddItemToArray(slaves, slave);
         }
     }

@@ -98,7 +98,22 @@ static void calculate_nonce_ranges(void)
 /**
  * @brief Generate unique extranonce2 for a slave
  *
- * Uses slave ID to ensure unique values across cluster
+ * Uses slave ID ONLY, so the value is DETERMINISTIC and STABLE across every
+ * broadcast of every job. This is the sole separator that actually matters on
+ * BM13xx ASICs: a distinct extranonce2 -> distinct coinbase -> distinct merkle
+ * root -> a disjoint search space per node (the per-node nonce_start offset is
+ * cosmetic — the chip sweeps the whole 2^32 nonce space in milliseconds and
+ * then rolls version/ntime for fresh work).
+ *
+ * IMPORTANT: this was previously salted with a per-second timestamp "for
+ * additional uniqueness". That made a slave's coinbase (and thus merkle root)
+ * drift between work sent in different seconds, so shares still in flight over
+ * ESP-NOW when the coinbase changed could no longer be matched by the pool and
+ * were counted as "unknown"/stale. slave_id alone is already globally unique
+ * within the cluster, so the timestamp added churn, not safety. Removed.
+ * Each new job still yields fresh work via its own prevhash/merkle/ntime, and
+ * within a job the ASIC rolls version (AsicBoost) + ntime + nonce — ample
+ * unique work between broadcasts without changing the coinbase.
  */
 static void generate_extranonce2_for_slave(uint8_t slave_id,
                                             uint8_t *extranonce2,
@@ -107,18 +122,10 @@ static void generate_extranonce2_for_slave(uint8_t slave_id,
     // Clear extranonce2
     memset(extranonce2, 0, len);
 
-    // Embed slave ID in first byte(s)
-    // This ensures each slave produces unique coinbase transactions
+    // Embed slave ID in the first byte — master implicitly owns byte0 == 0,
+    // slaves get slave_id + 1. Stable for the life of the slave's membership.
     if (len >= 1) {
-        extranonce2[0] = slave_id + 1;  // +1 because master uses 0
-    }
-
-    // Add timestamp-based component for additional uniqueness
-    if (len >= 4) {
-        uint32_t ts = (uint32_t)(esp_timer_get_time() / 1000000);
-        extranonce2[1] = (ts >> 16) & 0xFF;
-        extranonce2[2] = (ts >> 8) & 0xFF;
-        extranonce2[3] = ts & 0xFF;
+        extranonce2[0] = slave_id + 1;
     }
 }
 
@@ -762,6 +769,7 @@ void cluster_master_get_stats(cluster_stats_t *stats, uint8_t *active_slaves)
     if (stats) {
         stats->total_hashrate = g_master->total_hashrate;
         stats->total_shares = g_master->total_shares;
+        stats->work_distributed = g_master->work_distributed;
 
         // Calculate accepted/rejected from all slaves (total and per-pool)
         stats->total_shares_accepted = 0;

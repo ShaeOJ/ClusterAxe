@@ -252,6 +252,28 @@ export class ClusterComponent implements OnInit, OnDestroy {
     return Math.round((value / total) * 100);
   }
 
+  // Share reject rate (%) for a slave, from master-tracked accepted/rejected
+  slaveRejectRate(slave: IClusterSlave): number {
+    const acc = slave.sharesAccepted || 0;
+    const rej = slave.sharesRejected || 0;
+    const total = acc + rej;
+    return total > 0 ? (rej / total) * 100 : 0;
+  }
+
+  // Fraction (%) of the 32-bit nonce space assigned to a slave's range
+  nonceRangePercent(size: number | undefined): number {
+    if (!size) return 0;
+    return (size / 0xFFFFFFFF) * 100;
+  }
+
+  // Format an assigned nonce range as a hex span, e.g. "0x55555555–0xAAAAAAA9"
+  formatNonceRange(start: number | undefined, size: number | undefined): string {
+    if (start === undefined || size === undefined) return '—';
+    const end = (start + size - 1) >>> 0;
+    const hex = (v: number) => '0x' + (v >>> 0).toString(16).toUpperCase().padStart(8, '0');
+    return `${hex(start)}–${hex(end)}`;
+  }
+
   // TrackBy function to prevent ngFor from recreating DOM elements
   trackBySlave(index: number, slave: IClusterSlave): number {
     return slave.slot;

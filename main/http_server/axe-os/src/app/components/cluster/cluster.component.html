@@ -42,6 +42,18 @@
                     <span class="text-red-500 text-sm" *ngIf="(status.totalSharesRejected || 0) > 0">/{{status.totalSharesRejected}}</span>
                 </div>
             </div>
+            <div class="surface-card border-round p-2 px-3 text-center flex-grow-1" style="min-width: 100px;" *ngIf="status.totalPower">
+                <div class="text-400 text-xs mb-1">Power</div>
+                <div class="text-xl font-bold text-orange-500">{{status.totalPower | number:'1.1-1'}}<span class="text-sm text-400"> W</span></div>
+            </div>
+            <div class="surface-card border-round p-2 px-3 text-center flex-grow-1" style="min-width: 110px;" *ngIf="status.totalEfficiency">
+                <div class="text-400 text-xs mb-1">Efficiency</div>
+                <div class="text-xl font-bold text-green-500">{{status.totalEfficiency | number:'1.1-1'}}<span class="text-sm text-400"> J/TH</span></div>
+            </div>
+            <div class="surface-card border-round p-2 px-3 text-center flex-grow-1" style="min-width: 110px;" *ngIf="status.workDistributed !== undefined">
+                <div class="text-400 text-xs mb-1" pTooltip="Work packets broadcast to slaves this uptime">Jobs Sent</div>
+                <div class="text-xl font-bold">{{status.workDistributed | number}}</div>
+            </div>
             <div class="surface-card border-round p-2 px-3 text-center flex-grow-1" style="min-width: 100px;" *ngIf="status.transport">
                 <div class="text-400 text-xs mb-1">Transport</div>
                 <div class="text-sm font-medium">
@@ -491,11 +503,34 @@
                                         <div class="flex align-items-center gap-2">
                                             <i class="pi pi-check-circle text-theme"></i>
                                             <div>
-                                                <div class="text-xs text-500">Shares</div>
+                                                <div class="text-xs text-500">Shares (acc/rej)</div>
                                                 <div>
                                                     <span class="font-bold text-theme">{{slave.sharesAccepted}}</span>
-                                                    <span class="text-red-500 text-sm" *ngIf="(slave.sharesSubmitted - slave.sharesAccepted) > 0">/{{slave.sharesSubmitted - slave.sharesAccepted}}</span>
+                                                    <span class="text-red-500 text-sm" *ngIf="(slave.sharesRejected || 0) > 0">/{{slave.sharesRejected}}</span>
+                                                    <span class="text-xs ml-1"
+                                                          [ngClass]="{'text-green-500': slaveRejectRate(slave) < 1, 'text-yellow-500': slaveRejectRate(slave) >= 1 && slaveRejectRate(slave) < 3, 'text-red-500': slaveRejectRate(slave) >= 3}"
+                                                          *ngIf="(slave.sharesAccepted || 0) + (slave.sharesRejected || 0) > 0">
+                                                        ({{slaveRejectRate(slave) | number:'1.1-1'}}%)
+                                                    </span>
                                                 </div>
+                                            </div>
+                                        </div>
+                                        <!-- Nonce range (informational) -->
+                                        <div class="flex align-items-center gap-2" *ngIf="slave.nonceRangeSize">
+                                            <i class="pi pi-hashtag text-indigo-400"></i>
+                                            <div>
+                                                <div class="text-xs text-500" pTooltip="Assigned nonce slot. Informational — real work separation is per-slave extranonce2.">Nonce Range</div>
+                                                <div class="font-mono text-xs">{{formatNonceRange(slave.nonceRangeStart, slave.nonceRangeSize)}}
+                                                    <span class="text-500">({{nonceRangePercent(slave.nonceRangeSize) | number:'1.0-0'}}%)</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <!-- ESP-NOW MAC -->
+                                        <div class="flex align-items-center gap-2" *ngIf="slave.macAddr">
+                                            <i class="pi pi-wifi text-cyan-400"></i>
+                                            <div>
+                                                <div class="text-xs text-500">MAC</div>
+                                                <div class="font-mono text-xs">{{slave.macAddr}}</div>
                                             </div>
                                         </div>
                                     </div>
@@ -503,7 +538,11 @@
 
                                 <!-- Right: Expand -->
                                 <div class="col-12 md:col-2 flex justify-content-end align-items-center gap-2">
-                                    <span class="text-xs text-400 hidden md:inline">{{formatLastSeen(slave.lastSeen)}}</span>
+                                    <span class="text-xs text-400 hidden md:inline text-right">
+                                        <span pTooltip="Last heartbeat from slave">seen {{formatLastSeen(slave.lastSeen)}}</span>
+                                        <br *ngIf="slave.lastWorkSent"/>
+                                        <span *ngIf="slave.lastWorkSent" class="text-500" pTooltip="Last work packet sent to slave">work {{formatLastSeen(slave.lastWorkSent)}}</span>
+                                    </span>
                                     <i class="pi text-lg text-500"
                                        [ngClass]="expandedSlaveId === slave.slot ? 'pi-chevron-up' : 'pi-chevron-down'"></i>
                                 </div>

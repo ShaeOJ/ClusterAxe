@@ -15,12 +15,17 @@ export interface IClusterSlave {
   fanRpm: number;
   sharesSubmitted: number;
   sharesAccepted: number;
+  sharesRejected?: number;
   lastSeen: number;
+  lastWorkSent?: number;
   // Extended stats
   frequency: number;
   coreVoltage: number;
   power: number;
   voltageIn: number;
+  // Assigned nonce range (informational — coinbase/extranonce2 is the real work separator)
+  nonceRangeStart?: number;
+  nonceRangeSize?: number;
   // ESP-NOW specific
   rssi?: number;
 }
@@ -128,6 +133,7 @@ export interface IClusterStatus {
   totalShares?: number;
   totalSharesAccepted?: number;
   totalSharesRejected?: number;
+  workDistributed?: number;
   // Per-pool stats for dual pool mode
   primarySharesAccepted?: number;
   primarySharesRejected?: number;
@@ -183,6 +189,7 @@ export class ClusterService {
       totalShares: 256,
       totalSharesAccepted: 250,
       totalSharesRejected: 6,
+      workDistributed: 18423,
       primarySharesAccepted: 125,
       primarySharesRejected: 3,
       secondarySharesAccepted: 125,
@@ -199,11 +206,16 @@ export class ClusterService {
           fanRpm: 4200,
           sharesSubmitted: 128,
           sharesAccepted: 125,
+          sharesRejected: 3,
           lastSeen: Date.now(),
+          lastWorkSent: Date.now(),
           frequency: 550,
           coreVoltage: 1200,
           power: 12.5,
-          voltageIn: 5.1
+          voltageIn: 5.1,
+          nonceRangeStart: 0x55555555,
+          nonceRangeSize: 0x55555555,
+          macAddr: 'a4:cf:12:ab:cd:01'
         },
         {
           slot: 1,
@@ -216,11 +228,16 @@ export class ClusterService {
           fanRpm: 4500,
           sharesSubmitted: 128,
           sharesAccepted: 125,
+          sharesRejected: 3,
           lastSeen: Date.now(),
+          lastWorkSent: Date.now(),
           frequency: 525,
           coreVoltage: 1180,
           power: 11.8,
-          voltageIn: 5.0
+          voltageIn: 5.0,
+          nonceRangeStart: 0xAAAAAAAA,
+          nonceRangeSize: 0x55555555,
+          macAddr: 'a4:cf:12:ab:cd:02'
         }
       ]
     }).pipe(delay(500));

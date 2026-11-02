@@ -235,6 +235,7 @@ typedef struct {
     uint32_t primary_shares_rejected;
     uint32_t secondary_shares_accepted;
     uint32_t secondary_shares_rejected;
+    uint32_t work_distributed;      // Total work packets broadcast to slaves
 } cluster_stats_t;
 
 // ============================================================================
