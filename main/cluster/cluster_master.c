@@ -96,25 +96,28 @@ static void calculate_nonce_ranges(void)
 // ============================================================================
 
 /**
- * @brief Generate unique extranonce2 for a slave
+ * @brief Generate a fresh, per-slave-unique extranonce2
  *
- * Uses slave ID ONLY, so the value is DETERMINISTIC and STABLE across every
- * broadcast of every job. This is the sole separator that actually matters on
- * BM13xx ASICs: a distinct extranonce2 -> distinct coinbase -> distinct merkle
- * root -> a disjoint search space per node (the per-node nonce_start offset is
- * cosmetic — the chip sweeps the whole 2^32 nonce space in milliseconds and
- * then rolls version/ntime for fresh work).
+ * byte0 partitions the extranonce2 space by slave (master owns 0, slaves get
+ * slave_id + 1), so no two nodes ever share a coinbase. bytes 1..3 carry a
+ * per-slave MONOTONIC counter that advances on every call (every work send /
+ * ~700ms periodic re-broadcast), which is what actually keeps each slave's
+ * ASIC supplied with FRESH work between genuine pool templates.
  *
- * IMPORTANT: this was previously salted with a per-second timestamp "for
- * additional uniqueness". That made a slave's coinbase (and thus merkle root)
- * drift between work sent in different seconds, so shares still in flight over
- * ESP-NOW when the coinbase changed could no longer be matched by the pool and
- * were counted as "unknown"/stale. slave_id alone is already globally unique
- * within the cluster, so the timestamp added churn, not safety. Removed.
- * Each new job still yields fresh work via its own prevhash/merkle/ntime, and
- * within a job the ASIC rolls version (AsicBoost) + ntime + nonce — ample
- * unique work between broadcasts without changing the coinbase.
+ * Why a counter and not a constant: in slave mode create_jobs_task can only
+ * RE-QUEUE the master's stored work (it cannot roll extranonce2 itself — the
+ * merkle root must match what the master computed), so the slave's sole source
+ * of coinbase variety is the value the master stamps here. A constant value
+ * starved slaves of fresh coinbases between templates (they re-mined one
+ * coinbase and produced duplicates → "slower to get shares"). A per-second
+ * wall-clock timestamp (the earlier approach) worked but only refreshed ~1/s
+ * and was non-deterministic; a monotonic counter refreshes every re-broadcast
+ * and never collides across slaves. Share validity is unaffected either way —
+ * each share is submitted with the extranonce2 it was actually mined on
+ * (job_id -> en2 mapping on the slave), not whatever is current.
  */
+static uint32_t s_slave_en2_counter[CLUSTER_MAX_SLAVES] = {0};
+
 static void generate_extranonce2_for_slave(uint8_t slave_id,
                                             uint8_t *extranonce2,
                                             uint8_t len)
@@ -122,10 +125,17 @@ static void generate_extranonce2_for_slave(uint8_t slave_id,
     // Clear extranonce2
     memset(extranonce2, 0, len);
 
-    // Embed slave ID in the first byte — master implicitly owns byte0 == 0,
-    // slaves get slave_id + 1. Stable for the life of the slave's membership.
+    // byte0: per-slave partition (master implicitly owns 0)
     if (len >= 1) {
         extranonce2[0] = slave_id + 1;
+    }
+
+    // bytes1..3: monotonic per-slave counter for a fresh coinbase each send
+    if (len >= 4 && slave_id < CLUSTER_MAX_SLAVES) {
+        uint32_t c = ++s_slave_en2_counter[slave_id];
+        extranonce2[1] = (c >> 16) & 0xFF;
+        extranonce2[2] = (c >> 8) & 0xFF;
+        extranonce2[3] = c & 0xFF;
     }
 }
 
