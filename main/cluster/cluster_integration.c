@@ -583,10 +583,33 @@ void cluster_notify_share_result(int message_id, bool accepted)
 
 #if CLUSTER_IS_SLAVE
 
-// Last work received from master — used to keep refilling the ASIC queue
-// between broadcasts so the hardware never sits idle.
-static cluster_work_t s_last_cluster_work = {0};
-static bool s_has_cluster_work = false;
+// Ring of recent coinbases for the CURRENT job. A slave can't roll its own
+// extranonce2 (it only gets the master's pre-computed merkle root), so its sole
+// source of fresh work is the master's ~1/sec periodic re-broadcast, each
+// carrying a new coinbase for the same job. We accumulate those here and cycle
+// them when refilling the ASIC queue, so the chip mines up to CLUSTER_WORK_RING
+// distinct coinbases in rotation instead of re-mining a single one. The ring is
+// flushed only on a genuinely new job (new job_id or clean_jobs) — re-broadcasts
+// of the same job no longer flush the ASIC queue (they used to, every second).
+#define CLUSTER_WORK_RING 8
+static cluster_work_t s_work_ring[CLUSTER_WORK_RING];
+static uint8_t  s_ring_count = 0;   // valid entries (<= CLUSTER_WORK_RING)
+static uint8_t  s_ring_write = 0;   // next write slot (wraps)
+static uint8_t  s_ring_read  = 0;   // round-robin read cursor for refill
+static uint32_t s_current_job_id = 0;
+static bool     s_has_cluster_work = false;
+
+// True if a coinbase with this merkle root is already in the ring (dedup, so a
+// re-sent/duplicated broadcast doesn't waste a ring slot).
+static bool work_merkle_in_ring(const uint8_t merkle_root[32])
+{
+    for (int i = 0; i < s_ring_count; i++) {
+        if (memcmp(s_work_ring[i].merkle_root, merkle_root, 32) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
 
 /**
  * @brief Build a heap-allocated bm_job from cluster work.
@@ -677,27 +700,42 @@ void cluster_slave_submit_to_asic(GlobalState *GLOBAL_STATE,
         return;
     }
 
-    ESP_LOGI(TAG, "Converting cluster work to ASIC job: job=%lu, nonce=0x%08lX-0x%08lX",
-             (unsigned long)work->job_id,
-             (unsigned long)work->nonce_start,
-             (unsigned long)work->nonce_end);
+    bool new_job = !s_has_cluster_work || work->clean_jobs ||
+                   work->job_id != s_current_job_id;
 
-    // Save work so create_jobs_task can keep the ASIC queue full between broadcasts
-    s_last_cluster_work = *work;
-    s_has_cluster_work = true;
+    if (new_job) {
+        // Genuine new template: reset the ring and flush the ASIC queue
+        // (clean_jobs semantics — shares for the old job would be stale).
+        ESP_LOGI(TAG, "Cluster NEW job %lu (was %lu) — flush + reset ring",
+                 (unsigned long)work->job_id, (unsigned long)s_current_job_id);
+        s_current_job_id = work->job_id;
+        s_ring_count = 0;
+        s_ring_write = 0;
+        s_ring_read  = 0;
+        s_work_ring[s_ring_write] = *work;
+        s_ring_write = (s_ring_write + 1) % CLUSTER_WORK_RING;
+        s_ring_count = 1;
+        s_has_cluster_work = true;
 
-    bm_job *job = create_bm_job_from_cluster_work(GLOBAL_STATE, work);
-    if (!job) return;
-
-    ESP_LOGI(TAG, "Job pool_diff set to: %lu", (unsigned long)job->pool_diff);
-
-    // Discard stale jobs then load fresh work (same as stratum clean_jobs path)
-    ASIC_jobs_queue_clear(&GLOBAL_STATE->ASIC_jobs_queue);
-    queue_enqueue(&GLOBAL_STATE->ASIC_jobs_queue, job);
-
-    // Wake ASIC task in case it is waiting on the semaphore rather than the queue
-    if (GLOBAL_STATE->ASIC_TASK_MODULE.semaphore) {
-        xSemaphoreGive(GLOBAL_STATE->ASIC_TASK_MODULE.semaphore);
+        bm_job *job = create_bm_job_from_cluster_work(GLOBAL_STATE, work);
+        if (job) {
+            ASIC_jobs_queue_clear(&GLOBAL_STATE->ASIC_jobs_queue);
+            queue_enqueue(&GLOBAL_STATE->ASIC_jobs_queue, job);
+            if (GLOBAL_STATE->ASIC_TASK_MODULE.semaphore) {
+                xSemaphoreGive(GLOBAL_STATE->ASIC_TASK_MODULE.semaphore);
+            }
+        }
+    } else {
+        // Same job, fresh coinbase from a periodic re-broadcast: add it to the
+        // ring (deduped) so refill can cycle it. Do NOT flush the ASIC queue —
+        // the chip keeps working; refill tops up from the now-larger ring.
+        if (!work_merkle_in_ring(work->merkle_root)) {
+            s_work_ring[s_ring_write] = *work;
+            s_ring_write = (s_ring_write + 1) % CLUSTER_WORK_RING;
+            if (s_ring_count < CLUSTER_WORK_RING) s_ring_count++;
+            ESP_LOGD(TAG, "Cluster same-job %lu: +coinbase to ring (%d/%d)",
+                     (unsigned long)work->job_id, s_ring_count, CLUSTER_WORK_RING);
+        }
     }
 
     // Update display info from master's work
@@ -718,11 +756,20 @@ void cluster_slave_submit_to_asic(GlobalState *GLOBAL_STATE,
 
 bool cluster_slave_refill_asic_queue(GlobalState *GLOBAL_STATE)
 {
-    if (!GLOBAL_STATE || !s_has_cluster_work) {
+    // Snapshot count once — submit_to_asic (other task) can set it to 0 mid-reset,
+    // so don't use the live value in the modulo (would be a div-by-zero race).
+    uint8_t count = s_ring_count;
+    if (!GLOBAL_STATE || !s_has_cluster_work || count == 0) {
         return false;
     }
 
-    bm_job *job = create_bm_job_from_cluster_work(GLOBAL_STATE, &s_last_cluster_work);
+    // Round-robin through the ring so the chip mines all accumulated coinbases
+    // for this job, not just the most recent one.
+    uint8_t idx = s_ring_read % count;
+    s_ring_read = (idx + 1) % count;
+    cluster_work_t *w = &s_work_ring[idx];
+
+    bm_job *job = create_bm_job_from_cluster_work(GLOBAL_STATE, w);
     if (!job) {
         return false;
     }
