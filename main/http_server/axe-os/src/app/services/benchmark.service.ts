@@ -56,6 +56,12 @@ export interface BenchmarkState {
   bestResult: BenchmarkResult | null;
   error: string | null;
   targetName: string;
+  // Live telemetry from the most recent sample of the current test (so the UI
+  // can show real-time status without the user reading the log stream).
+  liveHashrate: number;
+  liveTemp: number;
+  livePower: number;
+  liveErrorPercent: number;
 }
 
 export interface DeviceInfo {
@@ -76,6 +82,14 @@ export interface DeviceInfo {
   providedIn: 'root'
 })
 export class BenchmarkService {
+  // Per-chip (per-ASIC) whole-board power ceilings, in watts. The device's
+  // `power` reading is whole-board, so the benchmark's maxPower must scale with
+  // the number of ASICs. BM1370 draws roughly 20-25W/chip at efficient points
+  // and up to ~30W/chip when pushed. GT801 = 2× BM1370 → 50W eff / 60W oc
+  // (board max), Gamma601 = 1× → 25W / 30W.
+  private static readonly PER_CHIP_POWER_EFFICIENCY = 25;
+  private static readonly PER_CHIP_POWER_OVERCLOCK = 30;
+
   private state: BenchmarkState = this.getInitialState();
   private state$ = new BehaviorSubject<BenchmarkState>(this.state);
   private stopRequested = false;
@@ -105,7 +119,11 @@ export class BenchmarkService {
       results: [],
       bestResult: null,
       error: null,
-      targetName: ''
+      targetName: '',
+      liveHashrate: 0,
+      liveTemp: 0,
+      livePower: 0,
+      liveErrorPercent: 0
     };
   }
 
@@ -120,7 +138,14 @@ export class BenchmarkService {
     console.log(`[Benchmark] ${message}`);
   }
 
-  getDefaultConfig(mode: BenchmarkMode = 'efficiency'): BenchmarkConfig {
+  /**
+   * Build a default benchmark config. `asicCount` scales the whole-board power
+   * ceiling (the device reports whole-board power), so a 2-chip GT801 gets
+   * double the power budget of a single-chip Gamma. Voltage/frequency ranges
+   * are per-chip and identical across BM1370 boards, so they don't scale.
+   */
+  getDefaultConfig(mode: BenchmarkMode = 'efficiency', asicCount: number = 1): BenchmarkConfig {
+    const chips = Math.max(1, Math.floor(asicCount) || 1);
     if (mode === 'overclock') {
       return {
         mode: 'overclock',
@@ -139,7 +164,7 @@ export class BenchmarkService {
         stabilizationMs: 30000,
         maxTemp: 70,
         maxVrTemp: 90,
-        maxPower: 60,
+        maxPower: BenchmarkService.PER_CHIP_POWER_OVERCLOCK * chips,
         minHashratePercent: 85,  // Allow up to 15% below expected
         maxErrorPercent: 2.0     // Fail if hardware errors exceed 2%
       };
@@ -161,10 +186,24 @@ export class BenchmarkService {
       stabilizationMs: 30000,
       maxTemp: 68,
       maxVrTemp: 86,
-      maxPower: 50,
+      maxPower: BenchmarkService.PER_CHIP_POWER_EFFICIENCY * chips,
       minHashratePercent: 85,  // Allow up to 15% below expected
       maxErrorPercent: 1.5     // Fail if hardware errors exceed 1.5%
     };
+  }
+
+  /**
+   * Fetch the target device's info and return a board-aware default config with
+   * the power ceiling scaled to the detected ASIC count. Falls back to the
+   * single-chip default if the device can't be reached.
+   */
+  async getBoardAwareConfig(mode: BenchmarkMode, targetIp: string): Promise<BenchmarkConfig> {
+    try {
+      const info = await this.getDeviceInfo(targetIp);
+      return { ...this.getDefaultConfig(mode, info.asicCount), targetIp };
+    } catch {
+      return { ...this.getDefaultConfig(mode, 1), targetIp };
+    }
   }
 
   async startBenchmark(config: BenchmarkConfig): Promise<void> {
@@ -245,7 +284,11 @@ export class BenchmarkService {
           totalTests: Math.min(tests.length, maxTests),
           currentVoltage: voltage,
           currentFrequency: frequency,
-          phase: 'starting'
+          phase: 'starting',
+          liveHashrate: 0,
+          liveTemp: 0,
+          livePower: 0,
+          liveErrorPercent: 0
         });
 
         this.log(`Test ${testNum}/${Math.min(tests.length, maxTests)}: ${frequency} MHz @ ${voltage} mV`);
@@ -358,6 +401,29 @@ export class BenchmarkService {
     this.stopRequested = true;
   }
 
+  /**
+   * Reset benchmark state back to idle so the user can configure and run again.
+   * Clears results and the recorded best. No-op while a run is in progress.
+   */
+  resetBenchmark(): void {
+    if (this.state.running) return;
+    this.stopRequested = false;
+    this.updateState({ ...this.getInitialState(), targetName: this.state.targetName });
+    this.log('Benchmark reset — ready to run again');
+  }
+
+  /**
+   * Clear the saved best: revert the device to the given baseline (the run's
+   * start voltage/frequency) and reset benchmark state. Use after a run was
+   * stopped part-way and left the device on an intermediate overclock point.
+   */
+  async clearBest(targetIp: string, baselineVoltage: number, baselineFrequency: number): Promise<void> {
+    this.log(`Clearing saved best — reverting device to ${baselineFrequency} MHz @ ${baselineVoltage} mV`);
+    await this.applySettings(targetIp, baselineVoltage, baselineFrequency);
+    this.log('Saved best cleared, device reverted to baseline');
+    this.resetBenchmark();
+  }
+
   async applyBestResult(targetIp: string): Promise<void> {
     if (!this.state.bestResult) {
       throw new Error('No best result to apply');
@@ -381,7 +447,7 @@ export class BenchmarkService {
     return tests;
   }
 
-  private async getDeviceInfo(targetIp: string): Promise<DeviceInfo> {
+  async getDeviceInfo(targetIp: string): Promise<DeviceInfo> {
     const url = targetIp ? `http://${targetIp}/api/system/info` : '/api/system/info';
     const response = await firstValueFrom(
       this.http.get<any>(url).pipe(timeout(10000))
@@ -446,7 +512,11 @@ export class BenchmarkService {
         samples.push(info);
         this.updateState({
           samplesCollected: samples.length,
-          timeRemainingMs: (samplesNeeded - samples.length) * config.sampleIntervalMs
+          timeRemainingMs: (samplesNeeded - samples.length) * config.sampleIntervalMs,
+          liveHashrate: info.hashRate,
+          liveTemp: info.temp,
+          livePower: info.power,
+          liveErrorPercent: info.errorPercentage
         });
 
       } catch (e) {

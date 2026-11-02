@@ -12,7 +12,7 @@
 
     <!-- ========== WATCHDOG CARD ========== -->
     <div class="col-12 md:col-6">
-      <div class="surface-card border-round p-3">
+      <div class="surface-card border-round border-1 surface-border p-3">
 
         <!-- Header -->
         <div class="flex justify-content-between align-items-center mb-3">
@@ -120,7 +120,7 @@
 
     <!-- ========== AUTO-TUNER CARD ========== -->
     <div class="col-12 md:col-6">
-      <div class="surface-card border-round p-3">
+      <div class="surface-card border-round border-1 surface-border p-3">
 
         <!-- Header -->
         <div class="flex justify-content-between align-items-center mb-3">
@@ -229,7 +229,7 @@
   </div>
 
   <!-- ========== BENCHMARK CARD ========== -->
-  <div *ngIf="!isSlaveMode" class="surface-card border-round p-3 mt-3">
+  <div *ngIf="!isSlaveMode" class="surface-card border-round border-1 surface-border p-3 mt-3">
 
     <!-- Header -->
     <div class="flex justify-content-between align-items-center">
@@ -264,9 +264,29 @@
 
         <!-- Config (idle/not complete) -->
         <div *ngIf="!state.running && state.phase !== 'complete'">
+
+          <!-- Board detection banner — explains the auto-scaled power budget -->
+          <div class="surface-ground border-round p-3 mb-3 flex align-items-center justify-content-between flex-wrap gap-2">
+            <div class="flex align-items-center gap-2">
+              <i class="pi pi-microchip text-primary"></i>
+              <span class="text-sm">
+                Detected
+                <span class="font-bold text-primary">{{ detectedAsicCount }}</span>
+                {{ detectedAsicCount === 1 ? 'ASIC' : 'ASICs' }}
+              </span>
+            </div>
+            <div class="flex align-items-center gap-2">
+              <span class="text-500 text-xs">Power budget auto-scaled to</span>
+              <span class="font-bold text-orange-500">{{ benchmarkConfig.maxPower }} W</span>
+              <span class="text-500 text-xs">({{ detectedAsicCount }} &#215; {{ (benchmarkConfig.maxPower / detectedAsicCount) | number:'1.0-0' }} W/chip)</span>
+            </div>
+          </div>
+
+          <!-- Search range -->
+          <div class="text-600 text-sm font-medium mb-2"><i class="pi pi-sliders-h mr-2"></i>Search Range</div>
           <div class="grid">
             <div class="col-12 sm:col-6">
-              <label class="block text-500 text-sm mb-2">Voltage Range (mV)</label>
+              <label class="block text-500 text-sm mb-2">Voltage (mV)</label>
               <div class="flex align-items-center gap-2">
                 <p-inputNumber [(ngModel)]="benchmarkConfig.minVoltage" [min]="1000" [max]="1400" [step]="25"
                                styleClass="flex-1" inputStyleClass="w-full text-center"></p-inputNumber>
@@ -276,7 +296,7 @@
               </div>
             </div>
             <div class="col-12 sm:col-6">
-              <label class="block text-500 text-sm mb-2">Frequency Range (MHz)</label>
+              <label class="block text-500 text-sm mb-2">Frequency (MHz)</label>
               <div class="flex align-items-center gap-2">
                 <p-inputNumber [(ngModel)]="benchmarkConfig.minFrequency" [min]="400" [max]="999" [step]="25"
                                styleClass="flex-1" inputStyleClass="w-full text-center"></p-inputNumber>
@@ -310,37 +330,155 @@
               </div>
             </div>
           </div>
+
+          <!-- Advanced limits (safety gates) — collapsible -->
+          <button pButton type="button" class="p-button-text p-button-sm w-full justify-content-start mt-2 px-0"
+                  (click)="showAdvancedLimits = !showAdvancedLimits">
+            <i [ngClass]="showAdvancedLimits ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" class="mr-2"></i>
+            <span class="text-600 text-sm font-medium">Advanced Limits</span>
+            <span class="text-500 text-xs ml-2">safety gates — a step fails if it exceeds these</span>
+          </button>
+          <div *ngIf="showAdvancedLimits" class="surface-ground border-round p-3 mt-2">
+            <div class="grid">
+              <div class="col-6 sm:col-4">
+                <label class="block text-500 text-sm mb-2">Max Power</label>
+                <p-inputNumber [(ngModel)]="benchmarkConfig.maxPower" [min]="5" [max]="200" [step]="5"
+                               suffix=" W" styleClass="w-full" inputStyleClass="w-full text-center"></p-inputNumber>
+              </div>
+              <div class="col-6 sm:col-4">
+                <label class="block text-500 text-sm mb-2">Max Chip Temp</label>
+                <p-inputNumber [(ngModel)]="benchmarkConfig.maxTemp" [min]="40" [max]="90" [step]="1"
+                               suffix=" &#176;C" styleClass="w-full" inputStyleClass="w-full text-center"></p-inputNumber>
+              </div>
+              <div class="col-6 sm:col-4">
+                <label class="block text-500 text-sm mb-2">Max VR Temp</label>
+                <p-inputNumber [(ngModel)]="benchmarkConfig.maxVrTemp" [min]="50" [max]="110" [step]="1"
+                               suffix=" &#176;C" styleClass="w-full" inputStyleClass="w-full text-center"></p-inputNumber>
+              </div>
+              <div class="col-6 sm:col-4">
+                <label class="block text-500 text-sm mb-2">Min Hashrate</label>
+                <p-inputNumber [(ngModel)]="benchmarkConfig.minHashratePercent" [min]="50" [max]="100" [step]="5"
+                               suffix=" %" styleClass="w-full" inputStyleClass="w-full text-center"></p-inputNumber>
+              </div>
+              <div class="col-6 sm:col-4">
+                <label class="block text-500 text-sm mb-2">Max HW Errors</label>
+                <p-inputNumber [(ngModel)]="benchmarkConfig.maxErrorPercent" [min]="0.5" [max]="10" [step]="0.5"
+                               [minFractionDigits]="1" suffix=" %" styleClass="w-full" inputStyleClass="w-full text-center"></p-inputNumber>
+              </div>
+            </div>
+          </div>
+
           <button pButton label="Start Benchmark" icon="pi pi-play" class="w-full mt-3 p-button-lg"
                   (click)="startBenchmark()"></button>
         </div>
 
         <!-- Running -->
         <div *ngIf="state.running">
-          <div class="text-center mb-3">
-            <div class="text-lg font-medium mb-1">
-              <i class="pi pi-spin pi-spinner mr-2"></i>
-              <span *ngIf="state.phase === 'starting'">Starting test...</span>
-              <span *ngIf="state.phase === 'stabilizing'">Stabilizing ({{ (state.timeRemainingMs / 1000) | number:'1.0-0' }}s)</span>
-              <span *ngIf="state.phase === 'sampling'">Sampling {{ state.samplesCollected }}/{{ state.samplesNeeded }}</span>
-              <span *ngIf="state.phase === 'analyzing'">Analyzing...</span>
+
+          <!-- Status header: what step, what phase, at-a-glance -->
+          <div class="surface-ground border-round p-3 mb-3">
+            <div class="flex justify-content-between align-items-center mb-2">
+              <div class="flex align-items-center gap-2">
+                <i class="pi pi-spin pi-spinner text-primary"></i>
+                <span class="font-semibold">
+                  <span *ngIf="state.phase === 'starting'">Applying settings…</span>
+                  <span *ngIf="state.phase === 'stabilizing'">Stabilizing</span>
+                  <span *ngIf="state.phase === 'sampling'">Sampling</span>
+                  <span *ngIf="state.phase === 'analyzing'">Analyzing…</span>
+                </span>
+                <span class="text-500 text-sm" *ngIf="state.phase === 'stabilizing'">
+                  {{ (state.timeRemainingMs / 1000) | number:'1.0-0' }}s left
+                </span>
+                <span class="text-500 text-sm" *ngIf="state.phase === 'sampling'">
+                  sample {{ state.samplesCollected }}/{{ state.samplesNeeded }}
+                </span>
+              </div>
+              <p-tag [value]="'Step ' + state.testNumber + ' / ' + state.totalTests" severity="info"></p-tag>
+            </div>
+
+            <!-- Current point under test -->
+            <div class="flex align-items-center justify-content-center gap-2 mb-2 text-lg">
+              <span class="font-bold text-primary">{{ state.currentFrequency }}</span>
+              <span class="text-500 text-sm">MHz</span>
+              <span class="text-500">&#64;</span>
+              <span class="font-bold text-orange-500">{{ state.currentVoltage }}</span>
+              <span class="text-500 text-sm">mV</span>
+            </div>
+
+            <!-- Overall sweep progress -->
+            <div class="flex justify-content-between text-500 text-xs mb-1">
+              <span>Overall sweep</span>
+              <span>{{ state.totalTests ? (state.testNumber / state.totalTests * 100 | number:'1.0-0') : 0 }}%</span>
+            </div>
+            <p-progressBar [value]="state.totalTests ? (state.testNumber / state.totalTests * 100) : 0"
+                           [showValue]="false" styleClass="h-1rem mb-2"></p-progressBar>
+
+            <!-- Current step progress -->
+            <div class="flex justify-content-between text-500 text-xs mb-1">
+              <span>This step</span>
+              <span>{{ benchStepProgress(state) | number:'1.0-0' }}%</span>
+            </div>
+            <p-progressBar [value]="benchStepProgress(state)" [showValue]="false" styleClass="h-1rem"></p-progressBar>
+          </div>
+
+          <!-- Live telemetry tiles — real-time, no need to read the log -->
+          <div class="grid text-center mb-3">
+            <div class="col-3">
+              <div class="surface-ground border-round p-2">
+                <div class="text-500 text-xs mb-1">Hashrate</div>
+                <div class="font-bold text-primary">{{ state.liveHashrate ? (state.liveHashrate | number:'1.0-0') : '—' }}</div>
+                <div class="text-500 text-xs">GH/s</div>
+              </div>
+            </div>
+            <div class="col-3">
+              <div class="surface-ground border-round p-2">
+                <div class="text-500 text-xs mb-1">Chip Temp</div>
+                <div class="font-bold"
+                     [ngClass]="{
+                       'text-green-500': state.liveTemp > 0 && state.liveTemp < benchmarkConfig.maxTemp - 5,
+                       'text-yellow-500': state.liveTemp >= benchmarkConfig.maxTemp - 5 && state.liveTemp < benchmarkConfig.maxTemp,
+                       'text-red-500': state.liveTemp >= benchmarkConfig.maxTemp
+                     }">{{ state.liveTemp ? (state.liveTemp | number:'1.0-0') : '—' }}</div>
+                <div class="text-500 text-xs">&#176;C</div>
+              </div>
+            </div>
+            <div class="col-3">
+              <div class="surface-ground border-round p-2">
+                <div class="text-500 text-xs mb-1">Power</div>
+                <div class="font-bold"
+                     [ngClass]="{
+                       'text-green-500': state.livePower > 0 && state.livePower < benchmarkConfig.maxPower * 0.9,
+                       'text-yellow-500': state.livePower >= benchmarkConfig.maxPower * 0.9 && state.livePower < benchmarkConfig.maxPower,
+                       'text-red-500': state.livePower >= benchmarkConfig.maxPower
+                     }">{{ state.livePower ? (state.livePower | number:'1.1-1') : '—' }}</div>
+                <div class="text-500 text-xs">W</div>
+              </div>
+            </div>
+            <div class="col-3">
+              <div class="surface-ground border-round p-2">
+                <div class="text-500 text-xs mb-1">HW Err</div>
+                <div class="font-bold"
+                     [ngClass]="{
+                       'text-green-500': state.liveErrorPercent < 1,
+                       'text-yellow-500': state.liveErrorPercent >= 1 && state.liveErrorPercent < benchmarkConfig.maxErrorPercent,
+                       'text-red-500': state.liveErrorPercent >= benchmarkConfig.maxErrorPercent
+                     }">{{ state.samplesCollected > 0 ? (state.liveErrorPercent | number:'1.2-2') : '—' }}</div>
+                <div class="text-500 text-xs">%</div>
+              </div>
             </div>
           </div>
-          <div class="flex justify-content-center gap-4 mb-3">
-            <div class="text-center">
-              <div class="text-500 text-xs">Frequency</div>
-              <div class="font-bold text-primary">{{ state.currentFrequency }} MHz</div>
-            </div>
-            <div class="text-center">
-              <div class="text-500 text-xs">Voltage</div>
-              <div class="font-bold text-orange-500">{{ state.currentVoltage }} mV</div>
-            </div>
-            <div class="text-center">
-              <div class="text-500 text-xs">Test</div>
-              <div class="font-bold">{{ state.testNumber }} / {{ state.totalTests }}</div>
-            </div>
+
+          <!-- Best so far -->
+          <div *ngIf="state.bestResult" class="flex align-items-center justify-content-center gap-2 mb-3 text-sm">
+            <i class="pi pi-star-fill text-yellow-500"></i>
+            <span class="text-500">Best so far:</span>
+            <span class="font-medium">{{ state.bestResult.frequency }} MHz &#64; {{ state.bestResult.voltage }} mV</span>
+            <span class="text-500">·</span>
+            <span class="font-medium text-primary">{{ state.bestResult.avgHashrate | number:'1.0-0' }} GH/s</span>
+            <span class="text-500">·</span>
+            <span class="font-medium text-green-500">{{ state.bestResult.efficiency | number:'1.1-1' }} J/TH</span>
           </div>
-          <p-progressBar [value]="state.samplesNeeded ? (state.samplesCollected / state.samplesNeeded * 100) : 0"
-                         [showValue]="false" class="mb-3"></p-progressBar>
+
           <button pButton label="Stop" icon="pi pi-stop" class="w-full p-button-danger"
                   (click)="stopBenchmark()"></button>
         </div>
@@ -425,8 +563,27 @@
               </div>
             </div>
           </div>
-          <button pButton label="Apply These Settings" icon="pi pi-check" class="w-full mt-3 p-button-success"
-                  (click)="applyBenchmarkResult()"></button>
+          <div class="flex gap-2 mt-3">
+            <button pButton label="Apply These Settings" icon="pi pi-check" class="flex-1 p-button-success"
+                    (click)="applyBenchmarkResult()"></button>
+            <button pButton label="Clear" icon="pi pi-trash" class="p-button-outlined p-button-danger"
+                    pTooltip="Discard this best and revert the device to the run's start settings"
+                    (click)="clearSavedBest()"></button>
+          </div>
+        </div>
+
+        <!-- Completion actions — redo the run (works even if no best was found / stopped early) -->
+        <div *ngIf="!state.running && (state.phase === 'complete' || state.phase === 'error')"
+             class="surface-ground border-round p-3 mt-3">
+          <div class="flex align-items-center justify-content-between flex-wrap gap-2">
+            <span class="text-sm text-500">
+              <i class="pi pi-info-circle mr-1"></i>
+              <ng-container *ngIf="state.bestResult">Run finished. Apply the best above, or run again to re-test.</ng-container>
+              <ng-container *ngIf="!state.bestResult">No passing configuration found{{ state.phase === 'error' ? ' (error)' : '' }} — adjust limits and run again.</ng-container>
+            </span>
+            <button pButton label="Run Again" icon="pi pi-replay" class="p-button-outlined"
+                    (click)="runAgain()"></button>
+          </div>
         </div>
 
         <!-- Logs -->
